@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# n5-fand-onfailure — laeuft, wenn n5-fand.service in "failed" geht (auch wenn
+# danach ein automatischer Neustart folgt). Meldet die ECHTE Ursache und ob der
+# Regler wieder laeuft. Cooldown 30 min, damit eine Absturzschleife nicht
+# fuenf Mails erzeugt (StartLimitBurst).
+set -u
+RUN=/run/n5-fand
+mkdir -p "$RUN"
+# Ursache SOFORT lesen — nach dem Neustart zeigt Result den neuen Prozess (success)
+result="$(systemctl show -p Result --value n5-fand 2>/dev/null)"
+code="$(systemctl show -p ExecMainCode --value n5-fand 2>/dev/null)"
+status="$(systemctl show -p ExecMainStatus --value n5-fand 2>/dev/null)"
+sleep 8    # RestartSec=5 abwarten, dann steht fest, ob der Neustart gelang
+nrest="$(systemctl show -p NRestarts --value n5-fand 2>/dev/null)"
+active="$(systemctl is-active n5-fand 2>/dev/null)"
+mod="geladen"; [[ -d /sys/module/minisforum_n5_it5571 ]] || mod="NICHT geladen"
+dk="$(dkms status minisforum-n5-it5571 2>/dev/null | grep -c "$(uname -r).*installed")"
+
+case "$result" in
+    watchdog)  why="Watchdog: Regler hat 60 s nicht geantwortet (haengender Read?)";;
+    signal)    why="Prozess durch Signal beendet (Status $status, z. B. Kill/OOM)";;
+    exit-code) why="Prozess mit Fehlercode $status beendet";;
+    start-limit-hit) why="Startlimit erreicht: 5 Fehlstarts in 5 min";;
+    *)         why="Ergebnis '$result' (Code $code, Status $status)";;
+esac
+
+if [[ "$active" == "active" ]]; then
+    typ="neustart"
+    msg="Regler war ausgefallen und wurde automatisch neu gestartet (Neustart Nr. $nrest).
+Ursache: $why
+Zwischenzeitlich war der Failsafe aktiv (CPU/SSD EC-Automatik, HDD fester Wert).
+Jetzt: Regler laeuft wieder. Pruefen: n5fan status; n5fan log 50"
+else
+    typ="service"
+    msg="Regler ist AUSGEFALLEN und laeuft NICHT mehr.
+Ursache: $why
+Modul: $mod; DKMS fuer $(uname -r): $([[ "$dk" -gt 0 ]] && echo installiert || echo FEHLT)
+Luefter: CPU/SSD in EC-Automatik, HDD auf festem Wert (Failsafe).
+Beheben: systemctl status n5-fand; dkms status minisforum-n5-it5571;
+         systemctl reset-failed n5-fand && systemctl start n5-fand"
+fi
+
+now=$(date +%s); stamp=0
+[[ -r "$RUN/alert.$typ" ]] && stamp=$(<"$RUN/alert.$typ")
+if (( now - stamp < 1800 )); then
+    logger -t n5-fand-onfailure "[$typ] unterdrueckt (Cooldown): $why"
+    exit 0
+fi
+echo "$now" > "$RUN/alert.$typ"
+exec /usr/local/sbin/n5-fand-alert "$typ" "$msg"

@@ -19,7 +19,7 @@ done
 modprobe -r minisforum_n5_it5571 2>/dev/null && echo "  Modul entladen"
 
 echo "--- Dateien ---"
-rm -f /usr/local/sbin/n5-fand /usr/local/sbin/n5-fand-failsafe /usr/local/sbin/n5-fand-alert /usr/local/bin/n5fan
+rm -f /usr/local/sbin/n5-fand /usr/local/sbin/n5-fand-failsafe /usr/local/sbin/n5-fand-alert /usr/local/sbin/n5-fand-onfailure /usr/local/bin/n5fan
 rm -f /etc/modules-load.d/$PKG.conf /etc/modprobe.d/$PKG.conf
 rm -rf /run/n5-fand
 rm -f /etc/pve/notification-templates/default/n5-fand-subject.txt.hbs /etc/pve/notification-templates/default/n5-fand-body.txt.hbs 2>/dev/null

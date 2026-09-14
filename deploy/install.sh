@@ -29,6 +29,7 @@ echo "--- n5-fand + CLI ---"
 install -m 0755 "$ROOT/deploy/n5-fand"          /usr/local/sbin/n5-fand
 install -m 0755 "$ROOT/deploy/n5-fand-failsafe" /usr/local/sbin/n5-fand-failsafe
 install -m 0755 "$ROOT/deploy/n5-fand-alert"    /usr/local/sbin/n5-fand-alert
+install -m 0755 "$ROOT/deploy/n5-fand-onfailure" /usr/local/sbin/n5-fand-onfailure
 install -m 0755 "$ROOT/deploy/n5fan"            /usr/local/bin/n5fan
 if [[ -f /etc/n5-fand.conf ]]; then
     echo "  /etc/n5-fand.conf existiert — nicht ueberschrieben (Vorlage: deploy/n5-fand.conf)"

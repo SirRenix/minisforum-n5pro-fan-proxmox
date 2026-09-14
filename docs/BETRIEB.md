@@ -17,7 +17,7 @@ Vollständige Liste — es gibt nichts Verstecktes:
 | `/etc/systemd/system/n5-fand.service` | Dienst mit Watchdog | nein |
 | `/usr/local/sbin/n5-fand-failsafe` | läuft nach **jedem** Ende des Reglers | ja — setzt CPU/SSD auf Automatik, HDD auf `HDD_STOP_PWM` |
 | `/usr/local/sbin/n5-fand-alert` | Alarm in den PVE-Notification-Stack | nein |
-| `/etc/systemd/system/n5-fand-onfailure.service` | Alarm, wenn der Dienst endgültig scheitert | nein |
+| `/etc/systemd/system/n5-fand-onfailure.service`, `/usr/local/sbin/n5-fand-onfailure` | Alarm bei jedem Ausfall des Reglers: echte Ursache, ob Neustart gelang | nein |
 | `/etc/pve/notification-templates/default/n5-fand-*.hbs` | Mail-Vorlage | nein |
 | `/usr/local/bin/n5fan` | CLI | nur indirekt (Override-Datei) |
 | `/run/n5-fand/` | Laufzeitzustand: `state`, `override.N`, `alert.<typ>` | nein |
@@ -102,7 +102,11 @@ Alarme gehen an den **Proxmox-Notification-Stack** (Severity `warning`, Template
 | `write` | pwm-Write zweimal in Folge gescheitert oder Rücklesewert ≠ Sollwert | 255, Modul-Reload versucht | `dmesg`, `n5fan check` |
 | `config` | `/etc/n5-fand.conf` fehlerhaft | Defaults aktiv | Datei korrigieren, `restart` |
 | `start` | 30 s nach Start kein Modul/hwmon | wartet weiter | `dkms status minisforum-n5-it5571` — Kernel-Update? |
-| `service` | Dienst endgültig `failed` (5 Fehlstarts in 5 min, oder `modprobe` scheitert) | Failsafe-Zustand bleibt | `systemctl status n5-fand`, DKMS prüfen, `systemctl reset-failed n5-fand && systemctl start n5-fand` |
+| `neustart` | Regler ist abgestürzt (Watchdog, Signal, Fehlercode) und wurde **automatisch neu gestartet**; Mail nennt Ursache und Neustart-Nummer | läuft wieder | `n5fan log 50` — Ursache verstehen; häufen sich die Neustarts, `journalctl -u n5-fand` |
+| `service` | Dienst endgültig `failed` (5 Fehlstarts in 5 min, oder `modprobe` scheitert) — Mail nennt Ursache, Modul- und DKMS-Status | Failsafe-Zustand bleibt | `systemctl status n5-fand`, DKMS prüfen, `systemctl reset-failed n5-fand && systemctl start n5-fand` |
+
+`neustart`/`service` werden von `n5-fand-onfailure` erzeugt (liest die echte Ursache
+aus systemd, wartet den Neustart ab, Cooldown 30 min).
 
 Alarmweg selbst testen: `/usr/local/sbin/n5-fand-alert test "Testalarm"`.
 
