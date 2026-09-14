@@ -1,165 +1,293 @@
 #!/usr/bin/env bash
 # n5-fand — Lueftersteuerung fuer Minisforum N5 Pro ueber minisforum_n5_it5571.
 #
-# Warum kein fancontrol: ein Sensor pro Kanal reicht hier nicht (HDD-Kanal =
-# Maximum von vier Platten, SSD-Kanal = Maximum von drei NVMe), und die
-# hwmon-Nummern sind nicht bootstabil. Dieser Regler loest Sensoren ueber
-# ihren Namen auf, faehrt bei Lesefehlern auf Vollgas und begrenzt die
-# Schrittweite pro Zyklus gegen Oszillation.
-#
-# Kanaele (Zuordnung am 14.09.2026 Kanal fuer Kanal per Tacho verifiziert):
+# Kanaele (14.09.2026 per Tacho verifiziert):
 #   pwm1 CPU-Luefter   <- k10temp Tctl
 #   pwm2 SSD-Luefter   <- max(nvme Composite)
 #   pwm3 HDD-Gruppe    <- max(drivetemp)
 #   pwm4 PCIe          nicht geregelt (kein Luefter, kein Tacho)
 #
-# Stoppverhalten: CPU/SSD zurueck an die EC-Automatik (pwmN_enable=2, dort
-# nachweislich funktionsfaehig). HDD bleibt auf HDD_STOP_PWM manuell, weil
-# die EC-Automatik fuer diesen Kanal nach einem Schreibzugriff nicht mehr
-# regelt (Befund 14.09.2026, siehe befunde/BEFUNDE.md).
+# Fehlerbilder und ihre Antwort:
+#   Schleife haengt            -> systemd-Watchdog (WATCHDOG=1 je Zyklus, WatchdogSec in der Unit)
+#   Prozess stirbt/SIGKILL     -> ExecStopPost=n5-fand-failsafe setzt sicheren Zustand
+#   Modul fehlt (Kernelupdate) -> ExecStartPre=modprobe schlaegt laut fehl -> OnFailure-Alarm
+#   Sensor unlesbar/unplausibel/eingefroren -> alle Kanaele 255, Alarm, hwmon neu aufloesen
+#   pwm-Write scheitert / Rueckleseabweichung -> 255, Alarm
+#   Luefter steht (RPM 0 bei Duty >= STALL_MIN_DUTY) -> Kanal 255, Alarm, Auto-Erholung
+#   Fremdeingriff (pwmN_enable != 1)          -> Warnung, Modus wieder auf manuell
+#   Konfigfehler               -> Warnung + Alarm, eingebaute Defaults
+#   Manuell per CLI (n5fan set) -> Override-Datei, TCRIT/Stall gelten trotzdem
+#
+# Stoppverhalten: CPU/SSD -> EC-Automatik (nachweislich funktionsfaehig),
+# HDD -> HDD_STOP_PWM manuell (EC regelt den Kanal nach einem Write nicht mehr).
 set -u
 
 CONF="${N5_FAND_CONF:-/etc/n5-fand.conf}"
+RUN="${N5_FAND_RUN:-/run/n5-fand}"
+ALERT_BIN="${N5_FAND_ALERT:-/usr/local/sbin/n5-fand-alert}"
 
-# ---- Defaults (werden von $CONF ueberschrieben) ------------------------------
-INTERVAL=10          # s
-STEP_UP=40           # max. Duty-Aenderung nach oben pro Zyklus
-STEP_DOWN=15         # max. Duty-Aenderung nach unten pro Zyklus
-# CPU: Tctl in C -> Duty 0..255 (linear zwischen MIN und MAX, darunter/darueber geklemmt)
+# ---- Defaults ------------------------------------------------------------------
+INTERVAL=10; STEP_UP=40; STEP_DOWN=15
 CPU_TMIN=45;  CPU_TMAX=80;  CPU_PMIN=85;  CPU_PMAX=255;  CPU_TCRIT=88
-SSD_TMIN=40;  SSD_TMAX=65;  SSD_PMIN=74;  SSD_PMAX=255;  SSD_TCRIT=72
-HDD_TMIN=40;  HDD_TMAX=52;  HDD_PMIN=105; HDD_PMAX=255;  HDD_TCRIT=56
-HDD_STOP_PWM=119     # manueller Wert fuer den HDD-Kanal beim Beenden
-LOG_EVERY=30         # jeden n-ten Zyklus Status ins Journal (0 = nie)
-DRYRUN=0             # 1 = nur rechnen und loggen, nichts schreiben
-
-[[ -r "$CONF" ]] && . "$CONF"
+SSD_TMIN=48;  SSD_TMAX=65;  SSD_PMIN=74;  SSD_PMAX=255;  SSD_TCRIT=72
+HDD_TMIN=36;  HDD_TMAX=46;  HDD_PMIN=105; HDD_PMAX=255;  HDD_TCRIT=56
+HDD_STOP_PWM=140
+STALL_MIN_DUTY=60; STALL_CYCLES=2; STALE_CYCLES=18
+ALERT_COOLDOWN=1800; LOG_EVERY=30; DRYRUN=0
+declare -A DEF
+for v in INTERVAL STEP_UP STEP_DOWN CPU_TMIN CPU_TMAX CPU_PMIN CPU_PMAX CPU_TCRIT \
+         SSD_TMIN SSD_TMAX SSD_PMIN SSD_PMAX SSD_TCRIT HDD_TMIN HDD_TMAX HDD_PMIN \
+         HDD_PMAX HDD_TCRIT HDD_STOP_PWM STALL_MIN_DUTY STALL_CYCLES STALE_CYCLES \
+         ALERT_COOLDOWN LOG_EVERY DRYRUN; do DEF[$v]="${!v}"; done
 
 log() { printf 'n5-fand: %s\n' "$*"; }
+declare -A LASTMSG
+log_once() {             # $1 key, $2.. msg — gleiche Meldung nicht wiederholen
+    local k=$1; shift
+    [[ "${LASTMSG[$k]:-}" == "$*" ]] && return 0
+    LASTMSG[$k]="$*"; log "$*"
+}
+log_clear() { unset "LASTMSG[$1]"; }
 
-# ---- hwmon-Aufloesung ueber den Namen ---------------------------------------
-find_hwmon() {           # $1 = name -> alle passenden Pfade
-    local h
-    for h in /sys/class/hwmon/hwmon*; do
-        [[ -r "$h/name" && "$(<"$h/name")" == "$1" ]] && echo "$h"
-    done
+alert() {                # $1 typ, $2 text — mit Cooldown je Typ
+    local t=$1 msg=$2 now stamp=0
+    now=$(date +%s)
+    [[ -r "$RUN/alert.$t" ]] && stamp=$(<"$RUN/alert.$t")
+    (( now - stamp < ALERT_COOLDOWN )) && return 0
+    echo "$now" > "$RUN/alert.$t"
+    log "ALARM[$t]: $msg"
+    [[ -x "$ALERT_BIN" ]] && { timeout 30 "$ALERT_BIN" "$t" "$msg" >/dev/null 2>&1 & }
+    return 0
 }
 
+# ---- Konfiguration laden und pruefen ------------------------------------------
+mkdir -p "$RUN"
+if [[ -r "$CONF" ]]; then
+    # shellcheck disable=SC1090
+    if ! . "$CONF" 2>"$RUN/conf.err"; then
+        log "Konfigfehler in $CONF: $(<"$RUN/conf.err") -> Defaults"
+        for v in "${!DEF[@]}"; do printf -v "$v" '%s' "${DEF[$v]}"; done
+        alert config "Konfigurationsdatei $CONF fehlerhaft, eingebaute Defaults aktiv"
+    fi
+fi
+conf_bad=0
+isint() { [[ "$1" =~ ^-?[0-9]+$ ]]; }
+for v in "${!DEF[@]}"; do
+    if ! isint "${!v}"; then log "Konfig: $v='${!v}' keine Zahl -> Default ${DEF[$v]}"; printf -v "$v" '%s' "${DEF[$v]}"; conf_bad=1; fi
+done
+chk() {                  # $1 name, $2 min, $3 max
+    if (( ${!1} < $2 || ${!1} > $3 )); then log "Konfig: $1=${!1} ausserhalb $2..$3 -> Default ${DEF[$1]}"; printf -v "$1" '%s' "${DEF[$1]}"; conf_bad=1; fi
+}
+chk INTERVAL 2 120; chk STEP_UP 1 255; chk STEP_DOWN 1 255
+for p in CPU SSD HDD; do
+    chk ${p}_PMIN 0 255; chk ${p}_PMAX 0 255; chk ${p}_TMIN -20 120; chk ${p}_TMAX -20 120; chk ${p}_TCRIT -20 150
+    tmin=${p}_TMIN; tmax=${p}_TMAX; pmin=${p}_PMIN; pmax=${p}_PMAX; tcrit=${p}_TCRIT
+    if (( ${!tmin} >= ${!tmax} )); then log "Konfig: ${p}_TMIN >= ${p}_TMAX -> Defaults"; printf -v "$tmin" '%s' "${DEF[$tmin]}"; printf -v "$tmax" '%s' "${DEF[$tmax]}"; conf_bad=1; fi
+    if (( ${!pmin} > ${!pmax} )); then log "Konfig: ${p}_PMIN > ${p}_PMAX -> Defaults"; printf -v "$pmin" '%s' "${DEF[$pmin]}"; printf -v "$pmax" '%s' "${DEF[$pmax]}"; conf_bad=1; fi
+    if (( ${!tcrit} <= ${!tmax} )); then log "Konfig: ${p}_TCRIT <= ${p}_TMAX -> Default"; printf -v "$tcrit" '%s' "${DEF[$tcrit]}"; conf_bad=1; fi
+done
+chk HDD_STOP_PWM 80 255; chk STALL_MIN_DUTY 1 255; chk STALL_CYCLES 1 20; chk STALE_CYCLES 3 600
+(( conf_bad )) && alert config "Werte in $CONF ungueltig, teilweise Defaults aktiv (journalctl -u n5-fand)"
+
+# ---- hwmon-Aufloesung ueber den Namen ------------------------------------------
+find_hwmon() { local h; for h in /sys/class/hwmon/hwmon*; do [[ -r "$h/name" && "$(<"$h/name")" == "$1" ]] && echo "$h"; done; return 0; }
+FAN=""; K10=""; NVME=(); HDD=()
 resolve() {
     FAN="$(find_hwmon minisforum_n5_it5571 | head -1)"
     K10="$(find_hwmon k10temp | head -1)"
     mapfile -t NVME < <(find_hwmon nvme)
     mapfile -t HDD  < <(find_hwmon drivetemp)
-    [[ -n "$FAN" && -w "$FAN/pwm1" ]] || return 1
-    [[ -n "$K10" ]] || return 1
-    (( ${#NVME[@]} > 0 )) || return 1
-    (( ${#HDD[@]}  > 0 )) || return 1
-    return 0
+    [[ -n "$FAN" && -w "$FAN/pwm1" && -w "$FAN/pwm2" && -w "$FAN/pwm3" ]] || return 1
+    [[ -n "$K10" && ${#NVME[@]} -gt 0 && ${#HDD[@]} -gt 0 ]] || return 1
+}
+ensure_module() {
+    [[ -d /sys/module/minisforum_n5_it5571 ]] && return 0
+    log "Modul nicht geladen -> modprobe"
+    modprobe minisforum_n5_it5571 2>/dev/null
 }
 
-# max temp1_input (millidegree) ueber mehrere hwmon-Pfade; leer bei Fehler
+# ---- Sensoren ------------------------------------------------------------------
+# max temp1_input (Millicelsius) ueber Pfade; Rueckgabe 1 bei Lese-/Plausibilitaetsfehler
 maxtemp() {
     local m="" h t
     for h in "$@"; do
         t="$(<"$h/temp1_input")" 2>/dev/null || return 1
         [[ "$t" =~ ^-?[0-9]+$ ]] || return 1
+        (( t < -20000 || t > 120000 )) && return 1
         [[ -z "$m" || "$t" -gt "$m" ]] && m="$t"
     done
-    [[ -n "$m" ]] && echo $(( m / 1000 ))
+    [[ -n "$m" ]] || return 1
+    echo "$m"
 }
+fanrpm() { local r; r="$(<"$FAN/fan${1}_input")" 2>/dev/null || { echo -1; return; }; [[ "$r" =~ ^[0-9]+$ ]] && echo "$r" || echo -1; }
 
-# lineare Kurve: $1 temp, $2 tmin, $3 tmax, $4 pmin, $5 pmax
-curve() {
+# ---- Regelung ------------------------------------------------------------------
+curve() {  # temp tmin tmax pmin pmax
     local t=$1 tmin=$2 tmax=$3 pmin=$4 pmax=$5
-    if   (( t <= tmin )); then echo "$pmin"
-    elif (( t >= tmax )); then echo "$pmax"
-    else echo $(( pmin + (t - tmin) * (pmax - pmin) / (tmax - tmin) ))
-    fi
+    if (( t <= tmin )); then echo "$pmin"; elif (( t >= tmax )); then echo "$pmax"
+    else echo $(( pmin + (t - tmin) * (pmax - pmin) / (tmax - tmin) )); fi
 }
-
-# Schrittbegrenzung: $1 aktuell, $2 ziel
-slew() {
+slew() {   # cur tgt
     local cur=$1 tgt=$2
-    if   (( tgt > cur + STEP_UP ))   ; then echo $(( cur + STEP_UP ))
-    elif (( tgt < cur - STEP_DOWN )) ; then echo $(( cur - STEP_DOWN ))
-    else echo "$tgt"
-    fi
+    if (( tgt > cur + STEP_UP )); then echo $(( cur + STEP_UP ))
+    elif (( tgt < cur - STEP_DOWN )); then echo $(( cur - STEP_DOWN ))
+    else echo "$tgt"; fi
 }
-
-setpwm() {               # $1 kanal, $2 duty
+override() {   # $1 kanal -> duty oder leer
+    local f="$RUN/override.$1" v
+    [[ -r "$f" ]] || return 0
+    v="$(<"$f")"
+    if [[ "$v" =~ ^[0-9]+$ ]] && (( v >= 0 && v <= 255 )); then echo "$v"; else log_once "ovr$1" "override.$1 ungueltig ('$v'), ignoriert"; fi
+    return 0
+}
+STARTED=""
+setpwm() {     # $1 kanal, $2 duty -> 0 ok, 1 Fehler
     (( DRYRUN )) && return 0
-    if [[ "$(<"$FAN/pwm${1}_enable")" != "1" ]]; then
-        echo 1 > "$FAN/pwm${1}_enable" || return 1     # Treiber setzt dabei 255
+    local en rb
+    en="$(<"$FAN/pwm${1}_enable")" 2>/dev/null || return 1
+    if [[ "$en" != "1" ]]; then
+        [[ -n "$STARTED" ]] && log "pwm${1}_enable war $en (Fremdeingriff?) -> manuell"
+        echo 1 > "$FAN/pwm${1}_enable" 2>/dev/null || return 1
     fi
-    echo "$2" > "$FAN/pwm$1"
+    echo "$2" > "$FAN/pwm$1" 2>/dev/null || return 1
+    rb="$(<"$FAN/pwm$1")" 2>/dev/null || return 1
+    [[ "$rb" == "$2" ]] || { log "pwm$1: geschrieben $2, gelesen $rb"; return 1; }
+    return 0
 }
+CUR=(255 255 255)
+failsafe_all() { local c; for c in 1 2 3; do setpwm "$c" 255 && CUR[c-1]=255; done; return 0; }
 
-failsafe() {             # alle geregelten Kanaele auf Vollgas
-    local c
-    for c in 1 2 3; do setpwm "$c" 255 2>/dev/null || true; done
-    CUR=(255 255 255)
+TC=""; TS=""; TH=""; RPM=(-1 -1 -1); MODE=(auto auto auto)
+write_state() {   # $1 status — atomar, fuer die CLI
+    {
+        echo "status=$1"; echo "ts=$(date +%s)"
+        echo "cpu_temp=$TC"; echo "ssd_temp=$TS"; echo "hdd_temp=$TH"
+        echo "pwm1=${CUR[0]}"; echo "pwm2=${CUR[1]}"; echo "pwm3=${CUR[2]}"
+        echo "mode1=${MODE[0]}"; echo "mode2=${MODE[1]}"; echo "mode3=${MODE[2]}"
+        echo "rpm1=${RPM[0]}"; echo "rpm2=${RPM[1]}"; echo "rpm3=${RPM[2]}"
+        echo "fan=$FAN"
+    } > "$RUN/state.tmp" 2>/dev/null && mv -f "$RUN/state.tmp" "$RUN/state"
+    return 0
 }
 
 shutdown_handler() {
     trap - EXIT INT TERM
     log "stop: CPU/SSD -> EC-Automatik, HDD -> manuell $HDD_STOP_PWM"
-    if (( ! DRYRUN )) && [[ -n "${FAN:-}" ]]; then
+    if (( ! DRYRUN )) && [[ -n "$FAN" ]]; then
         echo 2 > "$FAN/pwm1_enable" 2>/dev/null || true
         echo 2 > "$FAN/pwm2_enable" 2>/dev/null || true
-        setpwm 3 "$HDD_STOP_PWM" 2>/dev/null || true
+        setpwm 3 "$HDD_STOP_PWM" || true
     fi
+    rm -f "$RUN/state"
     exit 0
 }
 trap shutdown_handler EXIT INT TERM
 
-# ---- Start -------------------------------------------------------------------
-until resolve; do
-    log "warte auf hwmon (Modul geladen? experimental_write=1?)"
+notify() { [[ -n "${NOTIFY_SOCKET:-}" ]] && systemd-notify "$@" 2>/dev/null; return 0; }
+
+# ---- Start ---------------------------------------------------------------------
+tries=0
+until ensure_module && resolve; do
+    tries=$((tries+1))
+    log "warte auf hwmon/Modul ($tries)"
+    (( tries == 6 )) && alert start "Regler kann nach 30 s nicht starten: Modul/hwmon fehlt (dkms status minisforum-n5-it5571?)"
     sleep 5
 done
 log "start: fan=$FAN k10=$K10 nvme=${#NVME[@]} hdd=${#HDD[@]} interval=${INTERVAL}s dryrun=$DRYRUN"
+notify --ready
 
-# Ausgangswert je Kanal: was der Treiber gerade meldet (nach dem Laden 255)
-CUR=( "$(<"$FAN/pwm1")" "$(<"$FAN/pwm2")" "$(<"$FAN/pwm3")" )
+STALLCNT=(0 0 0); STALLED=(0 0 0); RECOV=(0 0 0)
+LASTCPU=""; SAMECPU=0; WRERR=0
 n=0
 while :; do
-    if ! TC="$(maxtemp "$K10")" || ! TS="$(maxtemp "${NVME[@]}")" || ! TH="$(maxtemp "${HDD[@]}")"; then
-        log "Sensorlesefehler -> failsafe 255, hwmon neu aufloesen"
-        failsafe
-        sleep "$INTERVAL"
-        resolve || true
-        continue
+    notify WATCHDOG=1
+    (( n > 0 && n % 60 == 0 )) && { resolve || log "hwmon-Neuaufloesung fehlgeschlagen"; }
+
+    # -- Sensoren ------------------------------------------------------------
+    ok=1; TCr=""; TSr=""; THr=""
+    TCr="$(maxtemp "$K10")" || ok=0
+    TSr="$(maxtemp "${NVME[@]}")" || ok=0
+    THr="$(maxtemp "${HDD[@]}")" || ok=0
+    if (( ok )); then
+        if [[ "$TCr" == "$LASTCPU" ]]; then SAMECPU=$((SAMECPU+1)); else SAMECPU=0; fi
+        LASTCPU="$TCr"
+        if (( SAMECPU >= STALE_CYCLES )); then ok=0; log_once sens "k10temp seit $((SAMECPU*INTERVAL)) s unveraendert ($TCr) -> eingefroren?"; fi
     fi
-
-    # Ziel je Kanal; ab TCRIT sofort Vollgas ohne Schrittbegrenzung
-    T1="$(curve "$TC" "$CPU_TMIN" "$CPU_TMAX" "$CPU_PMIN" "$CPU_PMAX")"
-    T2="$(curve "$TS" "$SSD_TMIN" "$SSD_TMAX" "$SSD_PMIN" "$SSD_PMAX")"
-    T3="$(curve "$TH" "$HDD_TMIN" "$HDD_TMAX" "$HDD_PMIN" "$HDD_PMAX")"
-    (( TC >= CPU_TCRIT )) && { T1=255; CUR[0]=255; }
-    (( TS >= SSD_TCRIT )) && { T2=255; CUR[1]=255; }
-    (( TH >= HDD_TCRIT )) && { T3=255; CUR[2]=255; }
-
-    if (( n == 0 )); then
-        # Erster Zyklus: direkt auf Zielwert, sonst 2 min Vollgas-Rampe nach dem Start
-        N1="$T1"; N2="$T2"; N3="$T3"
-    else
-        N1="$(slew "${CUR[0]}" "$T1")"; N2="$(slew "${CUR[1]}" "$T2")"; N3="$(slew "${CUR[2]}" "$T3")"
-    fi
-
-    ok=1
-    [[ "$N1" != "${CUR[0]}" ]] && { setpwm 1 "$N1" || ok=0; }
-    [[ "$N2" != "${CUR[1]}" ]] && { setpwm 2 "$N2" || ok=0; }
-    [[ "$N3" != "${CUR[2]}" ]] && { setpwm 3 "$N3" || ok=0; }
     if (( ! ok )); then
-        log "pwm-Schreibfehler -> failsafe 255"
-        failsafe
+        log_once sens "Sensorfehler (cpu='$TCr' nvme='$TSr' hdd='$THr') -> alle Kanaele 255"
+        alert sensor "Sensor unlesbar/unplausibel -> Luefter auf 255 (journalctl -u n5-fand)"
+        ensure_module; resolve || true
+        failsafe_all
+        MODE=(SENSORFEHLER SENSORFEHLER SENSORFEHLER)
+        write_state "sensor-fehler"
+        sleep "$INTERVAL"; n=$((n+1)); continue
+    fi
+    log_clear sens
+    TC=$(( TCr / 1000 )); TS=$(( TSr / 1000 )); TH=$(( THr / 1000 ))
+
+    # -- Zielwerte -------------------------------------------------------------
+    T=( "$(curve "$TC" "$CPU_TMIN" "$CPU_TMAX" "$CPU_PMIN" "$CPU_PMAX")" \
+        "$(curve "$TS" "$SSD_TMIN" "$SSD_TMAX" "$SSD_PMIN" "$SSD_PMAX")" \
+        "$(curve "$TH" "$HDD_TMIN" "$HDD_TMAX" "$HDD_PMIN" "$HDD_PMAX")" )
+    MODE=(auto auto auto)
+    for c in 1 2 3; do
+        o="$(override "$c")"
+        [[ -n "$o" ]] && { T[c-1]="$o"; MODE[c-1]=manuell; }
+    done
+    crit=0
+    (( TC >= CPU_TCRIT )) && { T[0]=255; CUR[0]=255; MODE[0]=KRITISCH; crit=1; }
+    (( TS >= SSD_TCRIT )) && { T[1]=255; CUR[1]=255; MODE[1]=KRITISCH; crit=1; }
+    (( TH >= HDD_TCRIT )) && { T[2]=255; CUR[2]=255; MODE[2]=KRITISCH; crit=1; }
+    (( crit )) && alert temp "Temperaturgrenze erreicht: cpu=${TC}C nvme=${TS}C hdd=${TH}C -> 255"
+
+    # -- Stillstand ------------------------------------------------------------
+    RPM=( "$(fanrpm 1)" "$(fanrpm 2)" "$(fanrpm 3)" )
+    for i in 0 1 2; do
+        c=$((i+1))
+        if (( STALLED[i] )); then
+            T[i]=255; MODE[i]=STALL
+            if (( RPM[i] > 0 )); then RECOV[i]=$((RECOV[i]+1)); else RECOV[i]=0; fi
+            if (( RECOV[i] >= 3 )); then STALLED[i]=0; STALLCNT[i]=0; RECOV[i]=0; log "fan$c dreht wieder (${RPM[i]} RPM), Regelung fortgesetzt"; fi
+        elif (( RPM[i] == 0 && CUR[i] >= STALL_MIN_DUTY )); then
+            STALLCNT[i]=$((STALLCNT[i]+1))
+            if (( STALLCNT[i] >= STALL_CYCLES )); then
+                STALLED[i]=1; T[i]=255; CUR[i]=255; MODE[i]=STALL
+                alert stall "fan$c steht (0 RPM bei Duty ${CUR[i]}) -> Kanal auf 255. Luefter/Kabel pruefen."
+            fi
+        else
+            STALLCNT[i]=0
+        fi
+    done
+
+    # -- Anwenden mit Schrittbegrenzung ------------------------------------------
+    N=()
+    for i in 0 1 2; do
+        if (( n == 0 )) || [[ "${MODE[i]}" != auto ]]; then N[i]="${T[i]}"; else N[i]="$(slew "${CUR[i]}" "${T[i]}")"; fi
+    done
+    werr=0
+    for i in 0 1 2; do
+        c=$((i+1))
+        # jede Minute auch unveraendert neu setzen: faengt Fremdeingriffe ab
+        if [[ "${N[i]}" != "${CUR[i]}" ]] || (( n % 6 == 0 )); then
+            if setpwm "$c" "${N[i]}"; then CUR[i]="${N[i]}"; else werr=1; fi
+        fi
+    done
+    if (( werr )); then
+        WRERR=$((WRERR+1))
+        log "pwm-Schreibfehler ($WRERR)"
+        if (( WRERR >= 2 )); then
+            alert write "pwm-Schreibfehler wiederholt -> 255; Modul/EC pruefen (dmesg, journalctl -u n5-fand)"
+            ensure_module; resolve || true; failsafe_all
+        fi
     else
-        CUR=("$N1" "$N2" "$N3")
+        WRERR=0
     fi
 
-    n=$(( n + 1 ))
+    write_state "ok"
+    STARTED=1   # ab jetzt gilt pwmN_enable!=1 als Fremdeingriff
+    n=$((n+1))
     if (( LOG_EVERY > 0 && (n - 1) % LOG_EVERY == 0 )); then
-        log "cpu=${TC}C->pwm1=$N1  nvme=${TS}C->pwm2=$N2  hdd=${TH}C->pwm3=$N3  rpm=$(<"$FAN/fan1_input")/$(<"$FAN/fan2_input")/$(<"$FAN/fan3_input")"
+        log "cpu=${TC}C->pwm1=${CUR[0]}(${MODE[0]})  nvme=${TS}C->pwm2=${CUR[1]}(${MODE[1]})  hdd=${TH}C->pwm3=${CUR[2]}(${MODE[2]})  rpm=${RPM[0]}/${RPM[1]}/${RPM[2]}"
     fi
     sleep "$INTERVAL"
 done

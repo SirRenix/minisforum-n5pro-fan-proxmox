@@ -25,18 +25,33 @@ echo "--- Autoload + Optionen ---"
 install -m 0644 "$ROOT/deploy/$PKG.modprobe.conf"      /etc/modprobe.d/$PKG.conf
 install -m 0644 "$ROOT/deploy/$PKG.modules-load.conf"  /etc/modules-load.d/$PKG.conf
 
-echo "--- n5-fand ---"
-install -m 0755 "$ROOT/deploy/n5-fand" /usr/local/sbin/n5-fand
-[[ -f /etc/n5-fand.conf ]] || install -m 0644 "$ROOT/deploy/n5-fand.conf" /etc/n5-fand.conf
-install -m 0644 "$ROOT/deploy/n5-fand.service" /etc/systemd/system/n5-fand.service
+echo "--- n5-fand + CLI ---"
+install -m 0755 "$ROOT/deploy/n5-fand"          /usr/local/sbin/n5-fand
+install -m 0755 "$ROOT/deploy/n5-fand-failsafe" /usr/local/sbin/n5-fand-failsafe
+install -m 0755 "$ROOT/deploy/n5-fand-alert"    /usr/local/sbin/n5-fand-alert
+install -m 0755 "$ROOT/deploy/n5fan"            /usr/local/bin/n5fan
+if [[ -f /etc/n5-fand.conf ]]; then
+    echo "  /etc/n5-fand.conf existiert — nicht ueberschrieben (Vorlage: deploy/n5-fand.conf)"
+else
+    install -m 0644 "$ROOT/deploy/n5-fand.conf" /etc/n5-fand.conf
+fi
+install -m 0644 "$ROOT/deploy/n5-fand.service"           /etc/systemd/system/n5-fand.service
+install -m 0644 "$ROOT/deploy/n5-fand-onfailure.service" /etc/systemd/system/n5-fand-onfailure.service
+if [[ -d /etc/pve ]]; then
+    # pmxcfs erlaubt kein chmod -> cp statt install
+    mkdir -p /etc/pve/notification-templates/default
+    cp "$ROOT/deploy/pve-notification/n5-fand-subject.txt.hbs" /etc/pve/notification-templates/default/
+    cp "$ROOT/deploy/pve-notification/n5-fand-body.txt.hbs"    /etc/pve/notification-templates/default/
+    echo "  PVE-Notification-Template installiert (Alarme -> Proxmox-Benachrichtigungen)"
+fi
 systemctl daemon-reload
 systemctl enable n5-fand.service
 
 cat <<EOF
 
 Installiert. Naechste Schritte:
-  modprobe -r minisforum_n5_it5571 2>/dev/null; modprobe minisforum_n5_it5571
-  systemctl start n5-fand && journalctl -fu n5-fand
+  systemctl restart n5-fand && n5fan status
+  n5fan check                  # Selbstcheck
 Nach einem Kernel-Update baut DKMS automatisch (AUTOINSTALL). Kontrolle:
   dkms status $PKG
 EOF

@@ -1,0 +1,6 @@
+[Unit]
+Description=n5-fand failure alert
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/n5-fand-alert service "n5-fand.service ist FAILED (Startlimit oder Modul fehlt). Luefter: CPU/SSD in EC-Automatik, HDD auf festem Wert. Pruefen: systemctl status n5-fand; dkms status minisforum-n5-it5571"

@@ -1,16 +1,31 @@
 [Unit]
 Description=n5-fand fan controller (Minisforum N5 Pro, IT5571 via minisforum_n5_it5571)
+Documentation=https://github.com/SirRenix/minisforum-n5pro-fan-proxmox
 After=systemd-modules-load.service
-ConditionPathExistsGlob=/sys/module/minisforum_n5_it5571
+# Nach 5 Fehlstarts in 5 min: Unit "failed" -> OnFailure meldet
+StartLimitIntervalSec=300
+StartLimitBurst=5
+OnFailure=n5-fand-onfailure.service
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=all
+# Modul fehlt (z. B. DKMS nach Kernelupdate nicht gebaut) -> Start scheitert LAUT
+ExecStartPre=/sbin/modprobe minisforum_n5_it5571
 ExecStart=/usr/local/sbin/n5-fand
+# Laeuft nach jedem Ende, auch nach Kill/Absturz/Watchdog
+ExecStopPost=/usr/local/sbin/n5-fand-failsafe
+# Daemon meldet WATCHDOG=1 je Zyklus (INTERVAL 10 s); haengt er 60 s, wird er neu gestartet
+WatchdogSec=60
 Restart=always
 RestartSec=5
 KillSignal=SIGTERM
-TimeoutStopSec=15
+TimeoutStopSec=20
 Nice=-5
+RuntimeDirectory=n5-fand
+RuntimeDirectoryPreserve=yes
+ProtectHome=yes
+PrivateTmp=yes
 
 [Install]
 WantedBy=multi-user.target

@@ -59,19 +59,25 @@ bin/                   gebaute Userspace-Tools (02 legt sie an)
 ## Dauerbetrieb (`deploy/`)
 
 Stand 14.09.2026: alle Phasen bestanden, Kanalzuordnung des N5-Pro-Profils
-per Tacho verifiziert (`befunde/BEFUNDE.md`). Dauerbetrieb läuft über:
+per Tacho verifiziert (`befunde/BEFUNDE.md`). **Anleitung für Betrieb, CLI,
+Kurven, Alarme und Fehlerverhalten: [`docs/BETRIEB.md`](docs/BETRIEB.md).**
 
 ```
-./deploy/install.sh        # DKMS-Modul, Autoload mit experimental_write=1, n5-fand
+./deploy/install.sh        # DKMS-Modul, Autoload, n5-fand, CLI n5fan, Alarm-Template
+n5fan check                # Selbstcheck
+./deploy/uninstall.sh      # alles zurück
 ```
 
 | Datei | Zweck |
 |---|---|
 | `deploy/dkms.conf` | Modul als DKMS-Paket `minisforum-n5-it5571/0.2.0`, baut bei Kernel-Updates automatisch nach |
 | `deploy/*.modprobe.conf`, `*.modules-load.conf` | Autoload; `experimental_write=1` macht die `pwm*`-Knoten sichtbar, schreibt aber beim Laden nichts |
-| `deploy/n5-fand` | Regler (Bash, ~4 MB): CPU ← k10temp, SSD ← max NVMe, HDD ← max drivetemp; Failsafe 255 bei Lesefehlern, Schrittbegrenzung, Sensor-Auflösung über Namen |
+| `deploy/n5-fand` | Regler (Bash, ~4 MB): CPU ← k10temp, SSD ← max NVMe, HDD ← max drivetemp; Failsafe, Stillstands- und Sensorplausibilitätsprüfung, Konfigvalidierung, Watchdog-Ping |
+| `deploy/n5-fand-failsafe` | `ExecStopPost`: sicherer Zustand nach jedem Ende, auch nach Absturz/Kill |
+| `deploy/n5-fand-alert`, `n5-fand-onfailure.service`, `pve-notification/` | Alarme in den Proxmox-Notification-Stack |
+| `deploy/n5fan` | CLI: `status`, `set`, `auto`, `curve`, `log`, `check`, `test` |
 | `deploy/n5-fand.conf` | Kurven (→ `/etc/n5-fand.conf`, wird bei Neuinstallation nicht überschrieben) |
-| `deploy/n5-fand.service` | systemd-Unit, `Restart=always` |
+| `deploy/n5-fand.service` | systemd-Unit: `Type=notify`, `WatchdogSec=60`, `Restart=always`, `OnFailure` |
 
 Warum kein `fancontrol`: ein Sensor pro Kanal reicht nicht (HDD = Maximum von
 vier Platten), und die hwmon-Nummern sind nicht bootstabil.

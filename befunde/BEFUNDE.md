@@ -114,9 +114,16 @@ sicherer Wert (119 ≈ 1900 RPM).
 |---|---|
 | Modul | DKMS `minisforum-n5-it5571/0.2.0`, gebaut + MOK-signiert für 7.0.12-1-pve, `AUTOINSTALL=yes` |
 | Autoload | `modules-load.d` + `modprobe.d` mit `experimental_write=1` (Modul schreibt beim Laden nichts) |
-| Regler | `n5-fand.service`, Bash, ~4 MB RSS, 10-s-Zyklus, Kurven in `/etc/n5-fand.conf` |
+| Regler | `n5-fand.service`, Bash, ~4 MB RSS, 10-s-Zyklus, Kurven in `/etc/n5-fand.conf`; Härtung 14.09. abends: Watchdog, Failsafe-Hook, Stall-/Sensor-/Konfigprüfung, Alarme, CLI `n5fan` (Details `docs/BETRIEB.md`) |
 | Lasttest | 6 Kerne 90 s: DCR1 0x55 → 0xe1, Tctl gehalten bei 73 °C (EC ließ 83 °C zu), Rückregelung 15/Zyklus, SSD/HDD unberührt |
-| Stopptest | CPU/SSD zurück in EC-Automatik (DCR1 wieder 0x55), HDD manuell 119, Neustart sauber |
+| Stopptest | CPU/SSD zurück in EC-Automatik (DCR1 wieder 0x55), HDD manuell, Neustart sauber |
+| Watchdog-Test | SIGSTOP → nach 60 s `ABRT` durch systemd → Failsafe `pwm1=auto pwm2=auto pwm3=140` → OnFailure-Alarm (Mail angekommen) → Neustart, Regler übernimmt |
+| Absturz-Test | SIGKILL → Failsafe → Neustart nach 5 s |
+| Alarmweg | PVE-Notification-Template `n5-fand`, Testmail über SMTP-Target zugestellt |
+| CLI | `set hdd 75%` → 191 manuell, `auto hdd` → Rückkehr mit Schrittbegrenzung, `set hdd 10%` abgelehnt |
+| Konfigfehler | `INTERVAL=abc`, `TMIN>=TMAX`, `TCRIT<=TMAX` → gemeldet, Defaults, Alarm, Start trotzdem |
+| HDD-Kurve | 36 → 105 … 46 → 255 (schärfer als EC); Platten binnen 5 min von 40 auf 39 °C bei ~2500 RPM |
+| Nicht provoziert | Lüfterstillstand, Sensorausfall, Modulverlust zur Laufzeit, Reboot |
 | Boot-Persistenz | konfiguriert, **noch nicht durch Reboot bewiesen** (nächstes Wartungsfenster) |
 
 ## Offene Punkte

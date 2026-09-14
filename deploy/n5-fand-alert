@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# n5-fand-alert TYP TEXT — Alarm in den Proxmox-Notification-Stack einspeisen
+# (Template "n5-fand", Severity warning -> greift der vorhandene Matcher).
+# Ohne PVE (reines Debian) faellt es auf logger + mail(1) zurueck, falls vorhanden.
+# Wird vom Daemon mit Cooldown aufgerufen und von der OnFailure-Unit.
+set -u
+TYPE="${1:-unbekannt}"; MSG="${2:-(kein Text)}"
+HOST="$(hostname -s 2>/dev/null || echo host)"
+WHEN="$(date '+%Y-%m-%d %H:%M:%S')"
+logger -t n5-fand-alert -p daemon.warning "[$TYPE] $MSG"
+
+if [[ -r /usr/share/perl5/PVE/Notify.pm ]]; then
+    export N5_T="$TYPE" N5_M="$MSG" N5_H="$HOST" N5_W="$WHEN"
+    perl -MPVE::Notify -e '
+        PVE::Notify::warning("n5-fand",
+            { title => "$ENV{N5_T}", message => "$ENV{N5_M}", hostname => "$ENV{N5_H}", when => "$ENV{N5_W}" },
+            { type => "n5-fand", hostname => "$ENV{N5_H}" });
+    ' 2>&1 | logger -t n5-fand-alert
+    exit 0
+fi
+if command -v mail >/dev/null; then
+    printf 'n5-fand auf %s meldet:\n\n%s\n\nZeit: %s\n' "$HOST" "$MSG" "$WHEN" | mail -s "[$HOST] n5-fand: $TYPE" root
+fi
+exit 0

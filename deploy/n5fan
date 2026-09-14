@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# n5fan — CLI fuer n5-fand (Minisforum N5 Pro Luefterregler).
+set -u
+RUN="${N5_FAND_RUN:-/run/n5-fand}"
+CONF="${N5_FAND_CONF:-/etc/n5-fand.conf}"
+PROJECT="${N5_PROJECT:-/root/n5pro-ec}"
+
+usage() {
+cat <<'EOF'
+n5fan — Luefterregler Minisforum N5 Pro
+
+  n5fan status              Temperaturen, Duty, RPM, Modus je Kanal
+  n5fan set <kanal> <wert>  manuell: kanal = 1|cpu, 2|ssd, 3|hdd; wert = 0..255 oder 0..100%
+  n5fan auto <kanal>|all    zurueck auf Kurve
+  n5fan curve               aktive Kurven (aus /etc/n5-fand.conf)
+  n5fan log [n]             letzte n Journalzeilen (Default 30)
+  n5fan check               Selbstcheck: Modul, DKMS, Dienst, hwmon, Alarmweg
+  n5fan test <kanal>        Kanalverifikation (stoppt den Regler, laeuft scripts/06, startet ihn wieder)
+
+Manuelle Werte gelten bis 'auto' oder Reboot. Notfallschwellen (TCRIT) und
+Stillstandserkennung greifen auch im manuellen Modus.
+EOF
+}
+
+chan() {   # name -> nummer
+    case "${1,,}" in 1|cpu) echo 1;; 2|ssd|nvme) echo 2;; 3|hdd) echo 3;;
+        *) echo "unbekannter Kanal: $1 (1|cpu, 2|ssd, 3|hdd)" >&2; return 1;; esac
+}
+need_root() { [[ $EUID -eq 0 ]] || { echo "als root ausfuehren" >&2; exit 1; }; }
+fanpath() { local h; for h in /sys/class/hwmon/hwmon*; do [[ -r "$h/name" && "$(<"$h/name")" == "minisforum_n5_it5571" ]] && { echo "$h"; return; }; done; return 1; }
+
+cmd_status() {
+    local active; active="$(systemctl is-active n5-fand 2>/dev/null || echo unbekannt)"
+    if [[ ! -r "$RUN/state" ]]; then
+        echo "Regler: $active — kein Zustand unter $RUN/state (laeuft er?)"
+        local F; F="$(fanpath)" && sensors minisforum_n5_it5571-* 2>/dev/null | grep -E "Fan|Temp"
+        return
+    fi
+    # shellcheck disable=SC1090
+    . "$RUN/state"
+    local age=$(( $(date +%s) - ${ts:-0} ))
+    printf 'Regler: %s, Zustand: %s, Alter: %ss\n\n' "$active" "${status:-?}" "$age"
+    printf '%-6s %-12s %6s %6s %5s %8s\n' Kanal Luefter Temp Duty "%" RPM
+    printf '%-6s %-12s %5sC %6s %4s%% %8s  %s\n' pwm1 CPU   "${cpu_temp:-?}" "${pwm1:-?}" "$(( ${pwm1:-0} * 100 / 255 ))" "${rpm1:-?}" "${mode1:-?}"
+    printf '%-6s %-12s %5sC %6s %4s%% %8s  %s\n' pwm2 SSD   "${ssd_temp:-?}" "${pwm2:-?}" "$(( ${pwm2:-0} * 100 / 255 ))" "${rpm2:-?}" "${mode2:-?}"
+    printf '%-6s %-12s %5sC %6s %4s%% %8s  %s\n' pwm3 HDD   "${hdd_temp:-?}" "${pwm3:-?}" "$(( ${pwm3:-0} * 100 / 255 ))" "${rpm3:-?}" "${mode3:-?}"
+    (( age > 60 )) && echo -e "\n!! Zustand aelter als 60 s — Regler haengt? (journalctl -u n5-fand)"
+    local a; for a in "$RUN"/alert.*; do [[ -r "$a" ]] || continue; printf 'letzter Alarm %s: %s\n' "${a##*/alert.}" "$(date -d @"$(<"$a")" '+%d.%m. %H:%M')"; done
+}
+
+cmd_set() {
+    need_root
+    local c v; c="$(chan "${1:-}")" || exit 1; v="${2:-}"
+    if [[ "$v" =~ ^([0-9]{1,3})%$ ]]; then (( BASH_REMATCH[1] <= 100 )) || { echo "max 100%" >&2; exit 1; }; v=$(( BASH_REMATCH[1] * 255 / 100 ))
+    elif [[ "$v" =~ ^[0-9]{1,3}$ ]] && (( v <= 255 )); then :
+    else echo "Wert: 0..255 oder 0..100%" >&2; exit 1; fi
+    if (( c == 3 && v < 60 )); then echo "HDD-Kanal unter 60 (~24%) nicht sinnvoll — Platten. Abgelehnt." >&2; exit 1; fi
+    mkdir -p "$RUN"; echo "$v" > "$RUN/override.$c"
+    echo "pwm$c manuell = $v ($(( v * 100 / 255 ))%). Regler uebernimmt im naechsten Zyklus. Zurueck: n5fan auto $c"
+}
+cmd_auto() {
+    need_root
+    if [[ "${1:-}" == "all" ]]; then rm -f "$RUN"/override.[123]; echo "alle Kanaele auf Kurve"; return; fi
+    local c; c="$(chan "${1:-}")" || exit 1
+    rm -f "$RUN/override.$c"; echo "pwm$c auf Kurve"
+}
+cmd_curve() {
+    [[ -r "$CONF" ]] || { echo "keine $CONF — Daemon nutzt Defaults"; return; }
+    # shellcheck disable=SC1090
+    . "$CONF"
+    printf '%-4s %-22s %-14s %-14s %s\n' Kanal Sensor "T_min->Duty" "T_max->Duty" Notfall
+    printf '%-4s %-22s %3sC -> %-6s %3sC -> %-6s >= %sC\n' CPU "k10temp Tctl"      "${CPU_TMIN:-?}" "${CPU_PMIN:-?}" "${CPU_TMAX:-?}" "${CPU_PMAX:-?}" "${CPU_TCRIT:-?}"
+    printf '%-4s %-22s %3sC -> %-6s %3sC -> %-6s >= %sC\n' SSD "max NVMe Composite" "${SSD_TMIN:-?}" "${SSD_PMIN:-?}" "${SSD_TMAX:-?}" "${SSD_PMAX:-?}" "${SSD_TCRIT:-?}"
+    printf '%-4s %-22s %3sC -> %-6s %3sC -> %-6s >= %sC\n' HDD "max drivetemp"      "${HDD_TMIN:-?}" "${HDD_PMIN:-?}" "${HDD_TMAX:-?}" "${HDD_PMAX:-?}" "${HDD_TCRIT:-?}"
+    printf '\nSchritt +%s/-%s je %ss, HDD beim Stopp: %s. Aendern: %s, dann systemctl restart n5-fand\n' "${STEP_UP:-?}" "${STEP_DOWN:-?}" "${INTERVAL:-?}" "${HDD_STOP_PWM:-?}" "$CONF"
+}
+cmd_log() { journalctl -u n5-fand -n "${1:-30}" --no-pager -o short-iso; }
+cmd_check() {
+    local ok=1 k; k="$(uname -r)"
+    p() { if "$@" >/dev/null 2>&1; then echo "  ok    $*"; else echo "  FEHLT $*"; ok=0; fi; }
+    echo "Kernel $k"
+    p test -d /sys/module/minisforum_n5_it5571
+    p test -f "/lib/modules/$k/updates/dkms/minisforum_n5_it5571.ko"
+    p grep -q "$k.*installed" <(dkms status minisforum-n5-it5571 2>/dev/null)
+    p test "$(cat /sys/module/minisforum_n5_it5571/parameters/experimental_write 2>/dev/null)" = Y
+    p fanpath
+    p systemctl is-active n5-fand
+    p systemctl is-enabled n5-fand
+    p test -r "$RUN/state"
+    p test -x /usr/local/sbin/n5-fand-failsafe
+    p test -x /usr/local/sbin/n5-fand-alert
+    p test -r /etc/pve/notification-templates/default/n5-fand-body.txt.hbs
+    local W; W="$(systemctl show -p WatchdogUSec --value n5-fand 2>/dev/null)"; echo "  watchdog: ${W:-aus}"
+    (( ok )) && echo "alles ok" || { echo "Probleme — siehe FEHLT"; return 1; }
+}
+cmd_test() {
+    need_root
+    local c; c="$(chan "${1:-}")" || exit 1
+    [[ -x "$PROJECT/scripts/06-pwm-test.sh" ]] || { echo "Projekt nicht unter $PROJECT (N5_PROJECT setzen)" >&2; exit 1; }
+    echo "Stoppe n5-fand fuer den Test ..."; systemctl stop n5-fand
+    ( cd "$PROJECT" && echo "TEST STARTEN" | ./scripts/06-pwm-test.sh "$c" ); rc=$?
+    echo "Starte n5-fand ..."; systemctl start n5-fand
+    exit $rc
+}
+
+case "${1:-}" in
+    status|"") cmd_status;;
+    set)    cmd_set "${2:-}" "${3:-}";;
+    auto)   cmd_auto "${2:-}";;
+    curve)  cmd_curve;;
+    log)    cmd_log "${2:-30}";;
+    check)  cmd_check;;
+    test)   cmd_test "${2:-}";;
+    -h|--help|help) usage;;
+    *) usage; exit 2;;
+esac
