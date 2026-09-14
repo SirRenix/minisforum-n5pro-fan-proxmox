@@ -9,7 +9,8 @@ und für das **N5 Pro** nur ein experimentelles, standardmäßig read-only
 Profil mitbringt.
 
 Es ist **kein Reverse Engineering von Null** nötig. Das EC-Protokoll ist
-bereits erschlossen. Offen ist die **Validierung** auf N5-Pro-Hardware.
+bereits erschlossen. **Stand 14.09.2026: Validierung abgeschlossen, Dauerbetrieb
+läuft** (`deploy/`, `befunde/BEFUNDE.md`). Offen: Reboot-Nachweis, Upstream-Issue.
 
 ## Systemkontext
 
@@ -56,6 +57,12 @@ Treiberinterna (Quellcode-Stand 14.09.2026):
   `experimental_write=1` nicht gesetzt ist (`n5_is_visible()` → 0).
 - Modulparameter: `force` (bool, lädt ohne DMI-Match, read-only),
   `experimental_write` (bool, schaltet PWM auf experimentellen Profilen frei).
+- `pwmN_enable`: 0 = Vollgas, 1 = manuell (setzt beim Wechsel erst 255),
+  2 = EC-Automatik (Default). `pwmN`-Write ohne `enable=1` → `-EBUSY`.
+- I2EC (`bin/n5_i2ec_read 0x1800 16`) zeigt die echten Register: 0x1801 CTR,
+  0x1802–0x1809 DCR0–7. DCR1 CPU, DCR2 SSD, DCR3=DCR4 HDD, DCR5 PCIe.
+- **Befund N5 Pro / BIOS 1.05:** nach Automatik-Befehl 0x2b (HDD) und 0x31
+  (PCIe) bleibt der DCR stehen, keine Regelung mehr. CPU (0x21) regelt weiter.
 
 Kanalzuordnung laut Treiber:
 
@@ -94,8 +101,10 @@ sie laufen ohne Kernelmodul und liefern den EC-Dump zum Abgleich.
   Schreiben in EC-RAM kann Firmware-Zustände zerschießen.
 - Bei jedem unerwarteten Verhalten (Lüfter stoppt, falscher Header reagiert,
   Temperatur springt): sofort `scripts/99-restore.sh`.
-- Keine konkurrierenden Regler auf denselben `pwmN` (kein fancontrol/
-  Dynamix parallel).
+- Keine konkurrierenden Regler auf denselben `pwmN`. Im Dauerbetrieb läuft
+  `n5-fand` — vor jedem Test `systemctl stop n5-fand`, danach wieder starten.
+- Vor jedem Schreibtest I2EC-Snapshot (steht im 06-Skript) — ohne
+  Vergleichswert ist „Automatik wiederhergestellt" nicht beweisbar.
 - Das Modul ist an `uname -r` gebunden. Nach jedem Kernel-Update neu bauen,
   sonst nicht laden.
 
@@ -119,5 +128,6 @@ sie laufen ohne Kernelmodul und liefern den EC-Dump zum Abgleich.
 | 3 Read-only-Probe | `scripts/03-probe-readonly.sh` | nein |
 | 4 Modul bauen | `scripts/04-build-module.sh` | nein |
 | 5 Modul read-only laden | `scripts/05-load-readonly.sh` | nein (PWM gesperrt) |
-| 6 PWM-Test, ein Kanal | `scripts/06-pwm-test.sh` | **ja — Wartungsfenster** |
+| 6 PWM-Test, ein Kanal | `scripts/06-pwm-test.sh` | **ja — Wartungsfenster, n5-fand vorher stoppen** |
+| 7 Dauerbetrieb | `deploy/install.sh` | ja (DKMS, systemd) |
 | — Notfall | `scripts/99-restore.sh` | stellt BIOS-Automatik wieder her |

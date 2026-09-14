@@ -1,0 +1,83 @@
+=== 06-pwm-test  Kanal 2  2026-09-14T17:10:12+02:00 ===
+
+Dieses Skript SCHREIBT in den EC. Es kann einen Luefter verlangsamen oder
+stoppen. Auf diesem Host liegen produktive ZFS-Pools.
+
+Voraussetzungen, die du jetzt bestaetigst:
+  - Wartungsfenster: keine Scrubs, Backups oder grossen Transfers
+  - kein anderer Regler (fancontrol o. ae.) aktiv
+  - Rueckfallweg zum Geraet bekannt (Konsole/KVM), falls rmmod nicht reicht
+
+
+--- Ausgangszustand (EC-Automatik, vor dem Laden) ---
+TACH1: 2009 RPM
+TACH2: 2220 RPM
+TACH3: 1645 RPM
+
+Modul geladen mit experimental_write=1. Sichtbare pwm-Knoten:
+pwm1 pwm1_enable pwm2 pwm2_enable pwm3 pwm3_enable pwm4 pwm4_enable 
+Ausgang (hwmon): pwm2=255 pwm2_enable=2  fan1=2009 fan2=2216 fan3=1645  CPU=36 C  NVMe_max=46 C
+
+--- pwm2_enable = 1 (manuell, startet bei 255) ---
+  danach: pwm2=255 enable=1  fan1=2007 fan2=4687 fan3=1634
+
+--- pwm2 = 255 (~100%) fuer 45 s ---
+  t+05s  fan1=2007  fan2=4697  fan3=1636   CPU=35 C  EC-CPU=33 C  NVMe=45 C
+  t+10s  fan1=2000  fan2=4687  fan3=1643   CPU=36 C  EC-CPU=34 C  NVMe=44 C
+  t+15s  fan1=2007  fan2=4687  fan3=1644   CPU=33 C  EC-CPU=34 C  NVMe=44 C
+  t+20s  fan1=2007  fan2=4697  fan3=1634   CPU=34 C  EC-CPU=33 C  NVMe=44 C
+  t+25s  fan1=2000  fan2=4677  fan3=1643   CPU=33 C  EC-CPU=34 C  NVMe=44 C
+  t+30s  fan1=1996  fan2=4677  fan3=1633   CPU=33 C  EC-CPU=33 C  NVMe=44 C
+  t+35s  fan1=2007  fan2=4667  fan3=1634   CPU=35 C  EC-CPU=33 C  NVMe=44 C
+  t+40s  fan1=2003  fan2=4667  fan3=1633   CPU=35 C  EC-CPU=35 C  NVMe=44 C
+  t+45s  fan1=2007  fan2=4657  fan3=1645   CPU=35 C  EC-CPU=35 C  NVMe=44 C
+
+--- pwm2 = 217 (~85%) fuer 45 s ---
+  t+05s  fan1=1998  fan2=4252  fan3=1648   CPU=34 C  EC-CPU=34 C  NVMe=44 C
+  t+10s  fan1=2005  fan2=4227  fan3=1645   CPU=33 C  EC-CPU=34 C  NVMe=44 C
+  t+15s  fan1=1994  fan2=4227  fan3=1645   CPU=33 C  EC-CPU=33 C  NVMe=44 C
+  t+20s  fan1=1998  fan2=4236  fan3=1651   CPU=34 C  EC-CPU=33 C  NVMe=44 C
+  t+25s  fan1=2007  fan2=4236  fan3=1649   CPU=35 C  EC-CPU=35 C  NVMe=44 C
+  t+30s  fan1=1998  fan2=4227  fan3=1637   CPU=33 C  EC-CPU=34 C  NVMe=44 C
+  t+35s  fan1=2003  fan2=4236  fan3=1637   CPU=34 C  EC-CPU=34 C  NVMe=44 C
+  t+40s  fan1=2000  fan2=4219  fan3=1633   CPU=33 C  EC-CPU=33 C  NVMe=44 C
+  t+45s  fan1=1996  fan2=4227  fan3=1637   CPU=33 C  EC-CPU=33 C  NVMe=44 C
+
+--- pwm2 = 179 (~70%) fuer 45 s ---
+  t+05s  fan1=2005  fan2=3782  fan3=1638   CPU=34 C  EC-CPU=34 C  NVMe=44 C
+  t+10s  fan1=2003  fan2=3796  fan3=1647   CPU=35 C  EC-CPU=35 C  NVMe=44 C
+  t+15s  fan1=2005  fan2=3789  fan3=1637   CPU=34 C  EC-CPU=35 C  NVMe=44 C
+  t+20s  fan1=2002  fan2=3782  fan3=1638   CPU=34 C  EC-CPU=34 C  NVMe=44 C
+  t+25s  fan1=1998  fan2=3809  fan3=1638   CPU=33 C  EC-CPU=34 C  NVMe=44 C
+  t+30s  fan1=1998  fan2=3796  fan3=1651   CPU=34 C  EC-CPU=34 C  NVMe=44 C
+  t+35s  fan1=2009  fan2=3782  fan3=1648   CPU=35 C  EC-CPU=34 C  NVMe=44 C
+  t+40s  fan1=2007  fan2=3789  fan3=1649   CPU=35 C  EC-CPU=35 C  NVMe=44 C
+  t+45s  fan1=1998  fan2=3816  fan3=1645   CPU=35 C  EC-CPU=34 C  NVMe=44 C
+
+--- pwm2 = 140 (~54%) fuer 45 s ---
+  t+05s  fan1=2005  fan2=3286  fan3=1642   CPU=35 C  EC-CPU=34 C  NVMe=44 C
+  t+10s  fan1=2002  fan2=3276  fan3=1642   CPU=34 C  EC-CPU=33 C  NVMe=44 C
+  t+15s  fan1=2003  fan2=3272  fan3=1642   CPU=35 C  EC-CPU=34 C  NVMe=45 C
+  t+20s  fan1=2003  fan2=3291  fan3=1638   CPU=38 C  EC-CPU=35 C  NVMe=45 C
+  t+25s  fan1=2005  fan2=3291  fan3=1640   CPU=35 C  EC-CPU=37 C  NVMe=45 C
+  t+30s  fan1=1998  fan2=3276  fan3=1637   CPU=36 C  EC-CPU=35 C  NVMe=45 C
+  t+35s  fan1=2003  fan2=3291  fan3=1647   CPU=35 C  EC-CPU=35 C  NVMe=45 C
+  t+40s  fan1=2000  fan2=3286  fan3=1651   CPU=35 C  EC-CPU=34 C  NVMe=45 C
+  t+45s  fan1=2005  fan2=3267  fan3=1653   CPU=34 C  EC-CPU=34 C  NVMe=45 C
+
+Testreihe durchgelaufen. Auswertung anhand der Tacho-Spalten:
+  - nur fan2 darf sich zwischen den Stufen bewegt haben (bei Kanal 4: keiner)
+  - bewegte sich ein anderer Tacho, ist die Zuordnung falsch
+Ergebnis in befunde/BEFUNDE.md eintragen.
+
+--- Wiederherstellung: EC-Automatik ---
+pwm2_enable=2 (Automatik) gesetzt, Treiber meldet ok.
+Modul entladen. Warte 20 s, dann Kontrolle gegen Ausgangsniveau (+-150 RPM):
+TACH1: 2000 RPM
+TACH2: 2173 RPM
+TACH3: 1659 RPM
+  TACH1: 2000 RPM, Ausgang 2009 RPM (Delta 9) ok
+  TACH2: 2173 RPM, Ausgang 2220 RPM (Delta 47) ok
+  TACH3: 1659 RPM, Ausgang 1645 RPM (Delta 14) ok
+EC-Automatik wiederhergestellt: JA
+Log: /root/n5pro-ec/befunde/raw/06-pwmtest-ch2-20260914-171012.txt

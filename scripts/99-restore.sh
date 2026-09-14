@@ -13,9 +13,16 @@ for h in /sys/class/hwmon/hwmon*; do
 done
 
 if [[ -n "$HW" ]]; then
-    echo "--- Alle PWM-Kanaele auf Vollgas, bevor entladen wird ---"
+    echo "--- Alle PWM-Kanaele explizit an die EC-Automatik zurueckgeben ---"
+    # pwmN_enable=2 -> n5_set_auto_locked(). Ein direktes 'echo 255 > pwmN'
+    # scheitert im Automatikmodus mit -EBUSY.
     for i in 1 2 3 4; do
-        [[ -w "$HW/pwm$i" ]] && { echo 255 > "$HW/pwm$i" 2>/dev/null && echo "  pwm$i=255"; }
+        [[ -w "$HW/pwm${i}_enable" ]] || continue
+        if echo 2 > "$HW/pwm${i}_enable" 2>/dev/null; then
+            echo "  pwm${i}_enable=2 ok"
+        else
+            echo "  pwm${i}_enable=2 FEHLGESCHLAGEN"
+        fi
     done
     sleep 2
 fi

@@ -49,20 +49,46 @@ docs/DMI-PATCH.md      falls der BIOS-DMI-String nicht exakt passt
 scripts/               die Phasenskripte
 befunde/BEFUNDE.md     Ergebnistabellen zum Ausfüllen
 befunde/raw/           Rohlogs, von den Skripten automatisch abgelegt
+deploy/                DKMS, Autoload, n5-fand, Installer (Dauerbetrieb)
 upstream/              Klon von ltdstudio/minisforum-n5-it5571 (02 legt ihn an)
 build/                 lokaler Modulbau (04 legt ihn an)
+build-tools/           Baukopie der Research-Tools mit glibc-Fix (02 legt sie an)
 bin/                   gebaute Userspace-Tools (02 legt sie an)
 ```
 
-## Wenn es ans Dauerbetreiben geht
+## Dauerbetrieb (`deploy/`)
 
-Läuft die Steuerung, übernimmt `fancontrol` aus `lm-sensors` die Kurven
-(`pwmconfig` erzeugt `/etc/fancontrol`). Nur ein Regler pro `pwmN`.
-Nach jedem Proxmox-Kernel-Update muss das Modul neu gebaut werden —
-dann lohnt eine DKMS-Verpackung statt `insmod` von Hand.
+Stand 14.09.2026: alle Phasen bestanden, Kanalzuordnung des N5-Pro-Profils
+per Tacho verifiziert (`befunde/BEFUNDE.md`). Dauerbetrieb läuft über:
 
-## Nicht vergessen
+```
+./deploy/install.sh        # DKMS-Modul, Autoload mit experimental_write=1, n5-fand
+```
 
-Die Ergebnisse gehören als Issue zurück ins Upstream-Repo. Der Maintainer
-sammelt genau diese Daten, um das N5-Pro-Profil von „experimentell" auf
-„validiert" zu heben. Checkliste dafür steht am Ende von `befunde/BEFUNDE.md`.
+| Datei | Zweck |
+|---|---|
+| `deploy/dkms.conf` | Modul als DKMS-Paket `minisforum-n5-it5571/0.2.0`, baut bei Kernel-Updates automatisch nach |
+| `deploy/*.modprobe.conf`, `*.modules-load.conf` | Autoload; `experimental_write=1` macht die `pwm*`-Knoten sichtbar, schreibt aber beim Laden nichts |
+| `deploy/n5-fand` | Regler (Bash, ~4 MB): CPU ← k10temp, SSD ← max NVMe, HDD ← max drivetemp; Failsafe 255 bei Lesefehlern, Schrittbegrenzung, Sensor-Auflösung über Namen |
+| `deploy/n5-fand.conf` | Kurven (→ `/etc/n5-fand.conf`, wird bei Neuinstallation nicht überschrieben) |
+| `deploy/n5-fand.service` | systemd-Unit, `Restart=always` |
+
+Warum kein `fancontrol`: ein Sensor pro Kanal reicht nicht (HDD = Maximum von
+vier Platten), und die hwmon-Nummern sind nicht bootstabil.
+
+Treiberdetail, das man wissen muss: `pwmN` ist nur beschreibbar, wenn
+`pwmN_enable=1` (manuell) gesetzt ist — sonst `-EBUSY`. Der Wechsel auf 1
+setzt intern zuerst 255. `pwmN_enable=2` gibt an die EC-Automatik zurück;
+auf dem N5 Pro (BIOS 1.05) regelt der EC danach den **HDD-Kanal nicht mehr**
+(Befund Phase 6). `n5-fand` setzt diesen Kanal beim Stoppen deshalb auf einen
+festen sicheren Wert.
+
+Nach einem Kernel-Update: `dkms status minisforum-n5-it5571` muss den neuen
+Kernel als `installed` zeigen, sonst startet `n5-fand` nicht (Condition auf
+`/sys/module/minisforum_n5_it5571`) und die Lüfter bleiben in der EC-Automatik.
+
+## Upstream
+
+Die Ergebnisse gehören als Issue zurück an `ltdstudio/minisforum-n5-it5571`,
+damit das N5-Pro-Profil von „experimentell" auf „validiert" gehoben werden
+kann. Checkliste am Ende von `befunde/BEFUNDE.md`.

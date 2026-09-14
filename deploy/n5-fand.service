@@ -1,0 +1,16 @@
+[Unit]
+Description=n5-fand fan controller (Minisforum N5 Pro, IT5571 via minisforum_n5_it5571)
+After=systemd-modules-load.service
+ConditionPathExistsGlob=/sys/module/minisforum_n5_it5571
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/n5-fand
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=15
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,33 @@
+=== 06-pwm-test  Kanal 4  2026-09-14T16:53:46+02:00 ===
+
+Dieses Skript SCHREIBT in den EC. Es kann einen Luefter verlangsamen oder
+stoppen. Auf diesem Host liegen produktive ZFS-Pools.
+
+Voraussetzungen, die du jetzt bestaetigst:
+  - Wartungsfenster: keine Scrubs, Backups oder grossen Transfers
+  - kein anderer Regler (fancontrol o. ae.) aktiv
+  - Rueckfallweg zum Geraet bekannt (Konsole/KVM), falls rmmod nicht reicht
+
+
+--- Ausgangszustand (EC-Automatik, vor dem Laden) ---
+TACH1: 2022 RPM
+TACH2: 2227 RPM
+TACH3: 1643 RPM
+
+Modul geladen mit experimental_write=1. Sichtbare pwm-Knoten:
+pwm1 pwm1_enable pwm2 pwm2_enable pwm3 pwm3_enable pwm4 pwm4_enable 
+Ausgang (hwmon): pwm4=255  fan1=2022 fan2=2227 fan3=1643  CPU=38 C  NVMe_max=46 C
+
+--- pwm4 = 255 (~100%) fuer 45 s ---
+./scripts/06-pwm-test.sh: line 167: echo: write error: Device or resource busy
+
+--- Wiederherstellung: EC-Automatik ---
+Modul entladen. Warte 20 s, dann Kontrolle gegen Ausgangsniveau (+-150 RPM):
+TACH1: 2024 RPM
+TACH2: 2218 RPM
+TACH3: 1647 RPM
+  TACH1: 2024 RPM, Ausgang 2022 RPM (Delta 2) ok
+  TACH2: 2218 RPM, Ausgang 2227 RPM (Delta 9) ok
+  TACH3: 1647 RPM, Ausgang 1643 RPM (Delta 4) ok
+EC-Automatik wiederhergestellt: JA
+Log: /root/n5pro-ec/befunde/raw/06-pwmtest-ch4-20260914-165346.txt

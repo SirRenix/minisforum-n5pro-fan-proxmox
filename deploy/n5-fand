@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+# n5-fand — Lueftersteuerung fuer Minisforum N5 Pro ueber minisforum_n5_it5571.
+#
+# Warum kein fancontrol: ein Sensor pro Kanal reicht hier nicht (HDD-Kanal =
+# Maximum von vier Platten, SSD-Kanal = Maximum von drei NVMe), und die
+# hwmon-Nummern sind nicht bootstabil. Dieser Regler loest Sensoren ueber
+# ihren Namen auf, faehrt bei Lesefehlern auf Vollgas und begrenzt die
+# Schrittweite pro Zyklus gegen Oszillation.
+#
+# Kanaele (Zuordnung am 14.09.2026 Kanal fuer Kanal per Tacho verifiziert):
+#   pwm1 CPU-Luefter   <- k10temp Tctl
+#   pwm2 SSD-Luefter   <- max(nvme Composite)
+#   pwm3 HDD-Gruppe    <- max(drivetemp)
+#   pwm4 PCIe          nicht geregelt (kein Luefter, kein Tacho)
+#
+# Stoppverhalten: CPU/SSD zurueck an die EC-Automatik (pwmN_enable=2, dort
+# nachweislich funktionsfaehig). HDD bleibt auf HDD_STOP_PWM manuell, weil
+# die EC-Automatik fuer diesen Kanal nach einem Schreibzugriff nicht mehr
+# regelt (Befund 14.09.2026, siehe befunde/BEFUNDE.md).
+set -u
+
+CONF="${N5_FAND_CONF:-/etc/n5-fand.conf}"
+
+# ---- Defaults (werden von $CONF ueberschrieben) ------------------------------
+INTERVAL=10          # s
+STEP_UP=40           # max. Duty-Aenderung nach oben pro Zyklus
+STEP_DOWN=15         # max. Duty-Aenderung nach unten pro Zyklus
+# CPU: Tctl in C -> Duty 0..255 (linear zwischen MIN und MAX, darunter/darueber geklemmt)
+CPU_TMIN=45;  CPU_TMAX=80;  CPU_PMIN=85;  CPU_PMAX=255;  CPU_TCRIT=88
+SSD_TMIN=40;  SSD_TMAX=65;  SSD_PMIN=74;  SSD_PMAX=255;  SSD_TCRIT=72
+HDD_TMIN=40;  HDD_TMAX=52;  HDD_PMIN=105; HDD_PMAX=255;  HDD_TCRIT=56
+HDD_STOP_PWM=119     # manueller Wert fuer den HDD-Kanal beim Beenden
+LOG_EVERY=30         # jeden n-ten Zyklus Status ins Journal (0 = nie)
+DRYRUN=0             # 1 = nur rechnen und loggen, nichts schreiben
+
+[[ -r "$CONF" ]] && . "$CONF"
+
+log() { printf 'n5-fand: %s\n' "$*"; }
+
+# ---- hwmon-Aufloesung ueber den Namen ---------------------------------------
+find_hwmon() {           # $1 = name -> alle passenden Pfade
+    local h
+    for h in /sys/class/hwmon/hwmon*; do
+        [[ -r "$h/name" && "$(<"$h/name")" == "$1" ]] && echo "$h"
+    done
+}
+
+resolve() {
+    FAN="$(find_hwmon minisforum_n5_it5571 | head -1)"
+    K10="$(find_hwmon k10temp | head -1)"
+    mapfile -t NVME < <(find_hwmon nvme)
+    mapfile -t HDD  < <(find_hwmon drivetemp)
+    [[ -n "$FAN" && -w "$FAN/pwm1" ]] || return 1
+    [[ -n "$K10" ]] || return 1
+    (( ${#NVME[@]} > 0 )) || return 1
+    (( ${#HDD[@]}  > 0 )) || return 1
+    return 0
+}
+
+# max temp1_input (millidegree) ueber mehrere hwmon-Pfade; leer bei Fehler
+maxtemp() {
+    local m="" h t
+    for h in "$@"; do
+        t="$(<"$h/temp1_input")" 2>/dev/null || return 1
+        [[ "$t" =~ ^-?[0-9]+$ ]] || return 1
+        [[ -z "$m" || "$t" -gt "$m" ]] && m="$t"
+    done
+    [[ -n "$m" ]] && echo $(( m / 1000 ))
+}
+
+# lineare Kurve: $1 temp, $2 tmin, $3 tmax, $4 pmin, $5 pmax
+curve() {
+    local t=$1 tmin=$2 tmax=$3 pmin=$4 pmax=$5
+    if   (( t <= tmin )); then echo "$pmin"
+    elif (( t >= tmax )); then echo "$pmax"
+    else echo $(( pmin + (t - tmin) * (pmax - pmin) / (tmax - tmin) ))
+    fi
+}
+
+# Schrittbegrenzung: $1 aktuell, $2 ziel
+slew() {
+    local cur=$1 tgt=$2
+    if   (( tgt > cur + STEP_UP ))   ; then echo $(( cur + STEP_UP ))
+    elif (( tgt < cur - STEP_DOWN )) ; then echo $(( cur - STEP_DOWN ))
+    else echo "$tgt"
+    fi
+}
+
+setpwm() {               # $1 kanal, $2 duty
+    (( DRYRUN )) && return 0
+    if [[ "$(<"$FAN/pwm${1}_enable")" != "1" ]]; then
+        echo 1 > "$FAN/pwm${1}_enable" || return 1     # Treiber setzt dabei 255
+    fi
+    echo "$2" > "$FAN/pwm$1"
+}
+
+failsafe() {             # alle geregelten Kanaele auf Vollgas
+    local c
+    for c in 1 2 3; do setpwm "$c" 255 2>/dev/null || true; done
+    CUR=(255 255 255)
+}
+
+shutdown_handler() {
+    trap - EXIT INT TERM
+    log "stop: CPU/SSD -> EC-Automatik, HDD -> manuell $HDD_STOP_PWM"
+    if (( ! DRYRUN )) && [[ -n "${FAN:-}" ]]; then
+        echo 2 > "$FAN/pwm1_enable" 2>/dev/null || true
+        echo 2 > "$FAN/pwm2_enable" 2>/dev/null || true
+        setpwm 3 "$HDD_STOP_PWM" 2>/dev/null || true
+    fi
+    exit 0
+}
+trap shutdown_handler EXIT INT TERM
+
+# ---- Start -------------------------------------------------------------------
+until resolve; do
+    log "warte auf hwmon (Modul geladen? experimental_write=1?)"
+    sleep 5
+done
+log "start: fan=$FAN k10=$K10 nvme=${#NVME[@]} hdd=${#HDD[@]} interval=${INTERVAL}s dryrun=$DRYRUN"
+
+# Ausgangswert je Kanal: was der Treiber gerade meldet (nach dem Laden 255)
+CUR=( "$(<"$FAN/pwm1")" "$(<"$FAN/pwm2")" "$(<"$FAN/pwm3")" )
+n=0
+while :; do
+    if ! TC="$(maxtemp "$K10")" || ! TS="$(maxtemp "${NVME[@]}")" || ! TH="$(maxtemp "${HDD[@]}")"; then
+        log "Sensorlesefehler -> failsafe 255, hwmon neu aufloesen"
+        failsafe
+        sleep "$INTERVAL"
+        resolve || true
+        continue
+    fi
+
+    # Ziel je Kanal; ab TCRIT sofort Vollgas ohne Schrittbegrenzung
+    T1="$(curve "$TC" "$CPU_TMIN" "$CPU_TMAX" "$CPU_PMIN" "$CPU_PMAX")"
+    T2="$(curve "$TS" "$SSD_TMIN" "$SSD_TMAX" "$SSD_PMIN" "$SSD_PMAX")"
+    T3="$(curve "$TH" "$HDD_TMIN" "$HDD_TMAX" "$HDD_PMIN" "$HDD_PMAX")"
+    (( TC >= CPU_TCRIT )) && { T1=255; CUR[0]=255; }
+    (( TS >= SSD_TCRIT )) && { T2=255; CUR[1]=255; }
+    (( TH >= HDD_TCRIT )) && { T3=255; CUR[2]=255; }
+
+    if (( n == 0 )); then
+        # Erster Zyklus: direkt auf Zielwert, sonst 2 min Vollgas-Rampe nach dem Start
+        N1="$T1"; N2="$T2"; N3="$T3"
+    else
+        N1="$(slew "${CUR[0]}" "$T1")"; N2="$(slew "${CUR[1]}" "$T2")"; N3="$(slew "${CUR[2]}" "$T3")"
+    fi
+
+    ok=1
+    [[ "$N1" != "${CUR[0]}" ]] && { setpwm 1 "$N1" || ok=0; }
+    [[ "$N2" != "${CUR[1]}" ]] && { setpwm 2 "$N2" || ok=0; }
+    [[ "$N3" != "${CUR[2]}" ]] && { setpwm 3 "$N3" || ok=0; }
+    if (( ! ok )); then
+        log "pwm-Schreibfehler -> failsafe 255"
+        failsafe
+    else
+        CUR=("$N1" "$N2" "$N3")
+    fi
+
+    n=$(( n + 1 ))
+    if (( LOG_EVERY > 0 && (n - 1) % LOG_EVERY == 0 )); then
+        log "cpu=${TC}C->pwm1=$N1  nvme=${TS}C->pwm2=$N2  hdd=${TH}C->pwm3=$N3  rpm=$(<"$FAN/fan1_input")/$(<"$FAN/fan2_input")/$(<"$FAN/fan3_input")"
+    fi
+    sleep "$INTERVAL"
+done
