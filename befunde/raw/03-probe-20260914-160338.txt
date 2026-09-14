@@ -1,0 +1,99 @@
+=== 03-probe-readonly  2026-09-14T16:03:38+02:00 ===
+Hinweis: Userspace greift hier per ioperm direkt auf die Ports zu und
+umgeht damit die Kernel-Reservierung durch acpi_ec. Ein Aufruf pro Zeit,
+keine Dauerschleifen parallel zu anderen EC-Nutzern.
+
+--- Super-I/O ---
+用法: /root/n5pro-ec/bin/sio_probe id|scan|tach
+sio_probe fehlgeschlagen
+
+--- PMC-Discovery ---
+ITE chip ID: 0x5571
+PMC1 active=0x01 data=0x0062 command/status=0x0066
+PMC2 active=0x01 data=0x0068 command/status=0x006c
+
+--- Lüfterstatus (PWM-Sollwert + TACH1-3) ---
+PWM request: 100% (EC[0x34]=0x64)
+TACH1: 2003 RPM
+TACH2: 2236 RPM
+TACH3: 1656 RPM
+
+--- EC-RAM Dump #1 ---
+EC_SC 状态寄存器: 0x00 (IBF=0 OBF=0)
+EC RAM dump (256 bytes):
+      0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
+00: 00 00 00 0E 20 19 16 00 00 22 00 00 00 00 00 00 
+10: 00 19 00 14 2D 19 17 37 2D 19 41 37 1B 4B 41 1E 
+20: 52 4B 21 57 52 22 64 57 00 00 00 00 00 00 02 00 
+30: 16 3C 00 1A 64 3C 1A 64 64 00 00 00 00 00 00 00 
+40: 01 05 00 00 00 03 00 00 00 00 00 00 00 00 00 00 
+50: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+60: 00 0C 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+70: 0C 22 00 10 64 22 10 64 64 0C 22 00 10 64 22 10 
+80: 64 64 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+90: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+A0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+B0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+C0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+D0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+E0: 00 00 00 00 0D 00 00 00 00 00 00 00 00 00 00 00 
+F0: 00 0A 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+
+非零字节数: 58/256
+
+--- Erwartete Temperaturbytes einzeln ---
+  EC[0x09] = EC[0x09] = 0x23 (35)
+  EC[0x04] = EC[0x04] = 0x20 (32)
+  EC[0x05] = EC[0x05] = 0x19 (25)
+  EC[0x06] = EC[0x06] = 0x16 (22)
+  EC[0x34] = EC[0x34] = 0x64 (100)
+  (0x09 CPU, 0x04 System, 0x05 Board, 0x06 Ambient, 0x34 PWM-Sollwert in %)
+
+--- 60 s Last auf einem Kern, danach zweiter Dump ---
+Zweck: welche Bytes bewegen sich? Bestaetigt die Offset-Zuordnung.
+
+--- Lüfterstatus nach Last ---
+PWM request: 100% (EC[0x34]=0x64)
+TACH1: 2965 RPM
+TACH2: 2211 RPM
+TACH3: 1653 RPM
+
+--- EC-RAM Dump #2 ---
+EC_SC 状态寄存器: 0x00 (IBF=0 OBF=0)
+EC RAM dump (256 bytes):
+      0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
+00: 00 00 00 0E 22 1C 16 00 00 4D 00 00 00 00 00 00 
+10: 00 19 00 14 2D 19 17 37 2D 19 41 37 1B 4B 41 1E 
+20: 52 4B 21 57 52 22 64 57 00 00 00 00 00 00 02 00 
+30: 16 3C 00 1A 64 3C 1A 64 64 00 00 00 00 00 00 00 
+40: 01 05 00 00 00 03 00 00 00 00 00 00 00 00 00 00 
+50: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+60: 00 0C 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+70: 0C 22 00 10 64 22 10 64 64 0C 22 00 10 64 22 10 
+80: 64 64 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+90: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+A0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+B0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+C0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+D0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+E0: 00 00 00 00 0D 00 00 00 00 00 00 00 00 00 00 00 
+F0: 00 0A 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+
+非零字节数: 58/256
+
+--- Referenzwerte zum Abgleich ---
+k10temp-pci-00c3
+Adapter: PCI adapter
+Tctl:         +65.1°C  
+
+/dev/nvme0n1: Temperature:                        41 Celsius
+/dev/nvme1n1: Temperature:                        46 Celsius
+/dev/nvme2n1: Temperature:                        45 Celsius
+
+=== Auswertung, die jetzt ansteht ===
+1. Sind die Werte aus 0x09/0x04/0x05/0x06 plausibel (20-90 °C)?
+2. Folgt 0x09 der k10temp-Kurve zwischen Dump 1 und Dump 2?
+3. Liefern TACH1-3 Werte im Bereich 400-6000 RPM, und steigen sie unter Last?
+4. Welche weiteren Bytes haben sich zwischen den Dumps geaendert?
+
+Ergebnis in befunde/BEFUNDE.md eintragen. Log: /root/n5pro-ec/befunde/raw/03-probe-20260914-160338.txt

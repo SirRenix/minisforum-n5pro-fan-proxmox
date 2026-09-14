@@ -1,0 +1,11 @@
+# Upstream-Klon, Bauartefakte und gebaute Binaries entstehen auf dem Zielhost, nicht hier
+upstream/
+build/
+build-tools/
+bin/
+*.ko
+*.o
+*.mod*
+.*.cmd
+Module.symvers
+modules.order

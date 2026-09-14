@@ -1,0 +1,176 @@
+=== 01-baseline  2026-09-14T16:02:16+02:00 ===
+
+--- Kernel / Distribution ---
+Linux pve 7.0.12-1-pve #1 SMP PREEMPT_DYNAMIC PMX 7.0.12-1 (2026-06-09T21:07Z) x86_64 GNU/Linux
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+VERSION="13 (trixie)"
+pve-manager/9.2.3/d0fde103346cf89a (running kernel: 7.0.12-1-pve)
+
+--- DMI (entscheidend fuer das DMI-Match des Treibers) ---
+sys_vendor       = [Micro Computer (HK) Tech Limited]
+product_name     = [N5 PRO]
+product_version  = [1.0]
+board_vendor     = [Meigao Innovation Technology (Shen Zhen) Co., Ltd]
+board_name       = [F8NAA]
+board_version    = [1.0]
+bios_vendor      = [American Megatrends International, LLC.]
+bios_version     = [1.05]
+bios_date        = [03/31/2026]
+
+Treiber erwartet exakt: product_name=[N5 PRO]  board_name=[F8NAA]
+
+--- Port-Belegung 0x62/0x66 (ACPI EC) und 0x68/0x6c (PMC2) ---
+6:  0060-0060 : keyboard
+7:  0061-0061 : PNP0800:00
+8:  0064-0064 : keyboard
+
+Vollstaendige ioports-Zeilen im Bereich 0x00-0xff:
+0000-03af : PCI Bus 0000:00
+  0000-001f : dma1
+  0020-0021 : pic1
+  0040-0043 : timer0
+  0050-0053 : timer1
+  0060-0060 : keyboard
+  0061-0061 : PNP0800:00
+  0064-0064 : keyboard
+  0070-0071 : rtc0
+  0080-008f : dma page reg
+  00a0-00a1 : pic2
+  00b4-00b4 : ACPI PM2_CNT_BLK
+  00c0-00df : dma2
+  00f0-00ff : fpu
+    00f0-00fe : PNP0C04:00
+
+ACPI-EC-Geraet (PNP0C09) status: 0
+  (0 = in der DSDT deaktiviert -> acpi_ec reserviert 0x62/0x66 nicht)
+
+--- ACPI EC Treiberstatus ---
+lrwxrwxrwx 1 root root 0 Sep 14 15:57 PNP0C09:00 -> ../../../devices/LNXSYSTM:00/LNXSYBUS:00/PNP0A08:00/device:01/PNP0C09:00
+
+--- Bereits geladene hwmon-/Sensor-Module ---
+k10temp                16384  0
+
+--- Vorhandene hwmon-Knoten ---
+/sys/class/hwmon/hwmon0 -> acpitz
+    device name power subsystem temp1_input uevent 
+/sys/class/hwmon/hwmon1 -> r8169_0_c500:00
+    device name power subsystem temp1_input temp1_max uevent 
+/sys/class/hwmon/hwmon10 -> k10temp
+    device name power subsystem temp1_input temp1_label uevent 
+/sys/class/hwmon/hwmon11 -> spd5118
+    device name power subsystem temp1_crit temp1_crit_alarm temp1_enable temp1_input temp1_lcrit temp1_lcrit_alarm temp1_max temp1_max_alarm temp1_min temp1_min_alarm uevent 
+/sys/class/hwmon/hwmon12 -> spd5118
+    device name power subsystem temp1_crit temp1_crit_alarm temp1_enable temp1_input temp1_lcrit temp1_lcrit_alarm temp1_max temp1_max_alarm temp1_min temp1_min_alarm uevent 
+/sys/class/hwmon/hwmon13 -> amdgpu
+    device freq1_input freq1_label in0_input in0_label in1_input in1_label name power power1_average power1_input power1_label subsystem temp1_input temp1_label uevent 
+/sys/class/hwmon/hwmon2 -> nic1
+    device name power subsystem temp1_input temp1_label temp2_input temp2_label uevent 
+/sys/class/hwmon/hwmon3 -> nvme
+    device name power subsystem temp1_alarm temp1_crit temp1_input temp1_label temp1_max temp1_min uevent 
+/sys/class/hwmon/hwmon4 -> nvme
+    device name power subsystem temp1_alarm temp1_crit temp1_input temp1_label temp1_max temp1_min uevent 
+/sys/class/hwmon/hwmon5 -> nvme
+    device name power subsystem temp1_alarm temp1_crit temp1_input temp1_label temp1_max temp1_min uevent 
+/sys/class/hwmon/hwmon6 -> drivetemp
+    device name power subsystem temp1_crit temp1_highest temp1_input temp1_lcrit temp1_lowest temp1_max temp1_min uevent 
+/sys/class/hwmon/hwmon7 -> drivetemp
+    device name power subsystem temp1_crit temp1_highest temp1_input temp1_lcrit temp1_lowest temp1_max temp1_min uevent 
+/sys/class/hwmon/hwmon8 -> drivetemp
+    device name power subsystem temp1_crit temp1_highest temp1_input temp1_lcrit temp1_lowest temp1_max temp1_min uevent 
+/sys/class/hwmon/hwmon9 -> drivetemp
+    device name power subsystem temp1_input uevent 
+
+--- sensors (falls installiert) ---
+drivetemp-scsi-2-0
+Adapter: SCSI adapter
+temp1:        +40.0°C  (low  = +10.0°C, high = +25.0°C)
+                       (crit low =  +5.0°C, crit = +70.0°C)
+                       (lowest = +22.0°C, highest = +47.0°C)
+
+spd5118-i2c-0-51
+Adapter: SMBus PIIX4 adapter port 0 at 0b00
+temp1:        +33.5°C  (low  =  +0.0°C, high = +55.0°C)
+                       (crit low =  +0.0°C, crit = +85.0°C)
+
+drivetemp-scsi-0-0
+Adapter: SCSI adapter
+temp1:        +39.0°C  (low  =  +0.0°C, high = +60.0°C)
+                       (crit low = -40.0°C, crit = +70.0°C)
+                       (lowest = +20.0°C, highest = +44.0°C)
+
+k10temp-pci-00c3
+Adapter: PCI adapter
+Tctl:         +41.0°C  
+
+nvme-pci-c300
+Adapter: PCI adapter
+Composite:    +45.9°C  (low  =  -5.2°C, high = +83.8°C)
+                       (crit = +87.8°C)
+
+nic1-pci-c400
+Adapter: PCI adapter
+PHY Temperature:  +42.0°C  
+MAC Temperature:  +42.0°C  
+
+acpitz-acpi-0
+Adapter: ACPI interface
+temp1:        +20.0°C  
+
+drivetemp-scsi-4-0
+Adapter: SCSI adapter
+temp1:        +32.0°C  
+
+amdgpu-pci-c700
+Adapter: PCI adapter
+vddgfx:        0.00 V  
+vddnb:         0.00 V  
+edge:         +32.0°C  
+PPT:          13.09 W  (avg =  13.09 W)
+sclk:         600 MHz 
+
+drivetemp-scsi-1-0
+Adapter: SCSI adapter
+temp1:        +39.0°C  (low  =  +0.0°C, high = +60.0°C)
+                       (crit low = -40.0°C, crit = +70.0°C)
+                       (lowest = +20.0°C, highest = +44.0°C)
+
+spd5118-i2c-0-50
+Adapter: SMBus PIIX4 adapter port 0 at 0b00
+temp1:        +33.5°C  (low  =  +0.0°C, high = +55.0°C)
+                       (crit low =  +0.0°C, crit = +85.0°C)
+
+nvme-pci-c600
+Adapter: PCI adapter
+Composite:    +45.9°C  (low  =  -5.2°C, high = +83.8°C)
+                       (crit = +87.8°C)
+
+nvme-pci-c200
+Adapter: PCI adapter
+Composite:    +40.9°C  (low  =  -5.2°C, high = +83.8°C)
+                       (crit = +87.8°C)
+
+r8169_0_c500:00-mdio-0
+Adapter: MDIO adapter
+temp1:        +36.5°C  (high = +120.0°C)
+
+
+--- Referenztemperaturen fuer den spaeteren Plausibilitaetscheck ---
+[NVMe]
+/dev/nvme0n1: Temperature:                        41 Celsius
+/dev/nvme1n1: Temperature:                        46 Celsius
+/dev/nvme2n1: Temperature:                        46 Celsius
+[SATA]
+/dev/sda: 194 Temperature_Celsius     0x0002   056   056   000    Old_age   Always       -       39 (Min/Max 20/48)
+/dev/sdb: 194 Temperature_Celsius     0x0002   056   056   000    Old_age   Always       -       39 (Min/Max 20/48)
+/dev/sdc: 194 Temperature_Celsius     0x0022   040   056   000    Old_age   Always       -       40 (0 20 0 0 0)
+/dev/sdd: 194 Temperature_Celsius     0x0022   100   100   014    Old_age   Always       -       32 (Min/Max 17/40)
+[CPU]
+k10temp-pci-00c3
+Adapter: PCI adapter
+Tctl:         +41.1°C  
+
+--- Header fuer den Modulbau ---
+KEINE Header installiert
+/lib/modules/7.0.12-1-pve/build
+
+=== fertig. Log: /root/n5pro-ec/befunde/raw/01-baseline-20260914-160216.txt ===

@@ -1,0 +1,37 @@
+=== 05-load-readonly  2026-09-14T16:05:21+02:00 ===
+--- insmod  ---
+geladen.
+
+--- dmesg (seit Zeitmarke) ---
+[1354265.146293] minisforum_n5_it5571 minisforum_n5_it5571: Minisforum N5 Pro / F8NAA: experimental read-only mode; PWM nodes hidden (set experimental_write=1 only after checking temperature and RPM data)
+[1354265.146297] minisforum_n5_it5571 minisforum_n5_it5571: registered 4 fan and 4 temperature channels
+
+--- hwmon-Knoten ---
+Pfad: /sys/class/hwmon/hwmon14
+  temp1_label              = CPU Temp
+  temp2_label              = System Temp
+  temp3_label              = Board Temp
+  temp4_label              = Ambient Temp
+  temp1_input              = 36000
+  temp2_input              = 34000
+  temp3_input              = 27000
+  temp4_input              = 22000
+  fan1_label               = CPU Fan
+  fan2_label               = SSD Fan
+  fan3_label               = HDD Fan
+  fan4_label               = PCIe Fan (no tach)
+  fan1_input               = 2028
+  fan2_input               = 2225
+  fan3_input               = 1649
+  fan4_input               = 0
+
+pwm-Knoten sind wie erwartet ausgeblendet (experimentelles Profil, read-only).
+
+--- Plausibilitaet gegen Referenzsensoren ---
+k10temp-pci-00c3
+Adapter: PCI adapter
+Tctl:         +39.0°C  
+
+
+Modul entladen mit:  scripts/99-restore.sh
+Log: /root/n5pro-ec/befunde/raw/05-load-20260914-160521.txt

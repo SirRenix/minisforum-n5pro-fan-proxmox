@@ -1,0 +1,16 @@
+filename:       /root/n5pro-ec/build/minisforum_n5_it5571.ko
+version:        0.2.0
+license:        GPL
+description:    Minisforum N5 family IT5571 fan/temp hwmon driver; N5 Pro/Air support is experimental; not affiliated with Minisforum; use at your own risk
+author:         ltdstudio, community exploration for the Minisforum N5 family
+srcversion:     96E49785C432E4B85FAF416
+alias:          dmi*:pn*N5AIR*:rn*F8NAB*:
+alias:          dmi*:pn*N5A*:rn*F8NAB*:
+alias:          dmi*:pn*N5PRO*:rn*F8NAA*:
+alias:          dmi*:pn*N5*:rn*F8NAA*:
+depends:        
+name:           minisforum_n5_it5571
+retpoline:      Y
+vermagic:       7.0.12-1-pve SMP preempt mod_unload modversions 
+parm:           force:Load read-only without a known Minisforum DMI match (bool)
+parm:           experimental_write:Enable PWM writes on experimental or force-loaded systems (bool)
