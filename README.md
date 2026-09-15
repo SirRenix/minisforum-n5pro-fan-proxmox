@@ -1,5 +1,9 @@
 # N5 Pro EC / IT5571 — Lüftersteuerung unter Proxmox
 
+> **Nachfolger:** Der Bash-Regler `n5-fand` aus diesem Repo ist seit 15.09.2026 durch
+> [n5-fangov](https://github.com/SirRenix/n5-fangov) (Go: Regler, CLI, Dashboard) abgelöst.
+> Dieses Repo bleibt die Quelle für Validierung, Messwerte und das DKMS-Modul.
+
 Arbeitsprojekt für Claude Code auf einem Proxmox-Host. Ziel: die vier Lüfterkanäle des
 Minisforum N5 Pro über hwmon ansteuerbar machen und das experimentelle
 N5-Pro-Profil des Community-Treibers validieren.
