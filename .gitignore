@@ -5,7 +5,9 @@ build-tools/
 bin/
 *.ko
 *.o
-*.mod*
+*.mod
+*.mod.c
+*.mod.o
 .*.cmd
 Module.symvers
 modules.order

@@ -29,9 +29,9 @@ Gemessen am 14.09.2026:
 - hwmon vor dem Projekt: k10temp, amdgpu, 3× nvme, 4× drivetemp, spd5118,
   acpitz, NIC-Sensoren — **kein einziger `fan*`/`pwm*`-Knoten**
 - Toolchain vorhanden: gcc, git, make, dkms 3.2.2, lm-sensors, smartmontools
-- Produktivsystem: ZFS-Pools, LXC/VMs. Die NPU ist per DKMS-Modul in
-  Betrieb (`amdxdna` geladen, **nicht** geblacklistet) — jedes weitere
-  Out-of-tree-Modul, also auch dieses, hängt am selben Kernel-Update-Gate.
+- Produktivsystem: ZFS-Pools, LXC/VMs. Die NPU läuft seit 17.09.2026 über das
+  in-tree-`amdxdna` (kein DKMS mehr); an DKMS hängt nur noch dieser Treiber —
+  jedes Kernel-Update braucht den DKMS-Nachweis für ihn.
 - Frühere Stabilitätsprobleme des Hosts sind seit 07/2026 abgeschlossen
   (BIOS 1.05, PCIe-ASPM aus, Watchdog); seither keine Vorfälle.
 
