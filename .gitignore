@@ -11,3 +11,6 @@ bin/
 .*.cmd
 Module.symvers
 modules.order
+
+# Arbeitsanleitung fuer Claude Code, nur lokal
+CLAUDE.md

@@ -1,39 +1,7 @@
-# Projekt: N5 Pro EC / IT5571 — Lüftersteuerung unter Proxmox
+# Validierung: EC-Protokoll, Stolpersteine, Sicherheitsregeln, Phasenplan
 
-## Ziel
-
-Auf einem Minisforum N5 Pro unter Proxmox VE die Lüfter über das
-Betriebssystem ansteuerbar machen. Grundlage ist der Community-Treiber
-`ltdstudio/minisforum-n5-it5571`, der für das **N5** hardware-validiert ist
-und für das **N5 Pro** nur ein experimentelles, standardmäßig read-only
-Profil mitbringt.
-
-Es ist **kein Reverse Engineering von Null** nötig. Das EC-Protokoll ist
-bereits erschlossen. **Stand 14.09.2026: Validierung abgeschlossen, Dauerbetrieb
-läuft** (`deploy/`, `befunde/BEFUNDE.md`). Offen: Reboot-Nachweis, Upstream-Issue.
-
-## Systemkontext
-
-Gemessen am 14.09.2026:
-
-- Host: Minisforum N5 Pro, AMD Ryzen AI 9 HX PRO 370, 96 GB RAM, 24 Threads
-- Proxmox VE 9.2.3, Kernel **7.0.12-1-pve**, Header `proxmox-headers-7.0.12-1-pve`
-  installiert (vor jedem Lauf mit `uname -r` verifizieren)
-- BIOS 1.05 vom 31.03.2026 (Upstream hat das N5 mit BIOS 1.04 validiert)
-- DMI: `product_name=[N5 PRO]`, `board_name=[F8NAA]` — **exakter Match** mit
-  `n5_dmi_table[]`, kein Patch, kein `force=1` nötig
-- Ports 0x62/0x66/0x68/0x6c/0x2e/0x2f sind **frei** (`/proc/ioports`);
-  `PNP0C09:00` hat `status=0` → `acpi_ec` reserviert nichts
-- Secure Boot aus, `module.sig_enforce=N`, lockdown `none` — `ioperm()` und
-  unsigniertes `insmod` funktionieren
-- hwmon vor dem Projekt: k10temp, amdgpu, 3× nvme, 4× drivetemp, spd5118,
-  acpitz, NIC-Sensoren — **kein einziger `fan*`/`pwm*`-Knoten**
-- Toolchain vorhanden: gcc, git, make, dkms 3.2.2, lm-sensors, smartmontools
-- Produktivsystem: ZFS-Pools, LXC/VMs. Die NPU läuft seit 17.09.2026 über das
-  in-tree-`amdxdna` (kein DKMS mehr); an DKMS hängt nur noch dieser Treiber —
-  jedes Kernel-Update braucht den DKMS-Nachweis für ihn.
-- Frühere Stabilitätsprobleme des Hosts sind seit 07/2026 abgeschlossen
-  (BIOS 1.05, PCIe-ASPM aus, Watchdog); seither keine Vorfälle.
+Stand der Messungen: 14.09.2026, Minisforum N5 Pro (`F8NAA`, BIOS 1.05) unter
+Proxmox VE 9.2 — Details und Rohdaten in [`befunde/BEFUNDE.md`](../befunde/BEFUNDE.md).
 
 ## Bekanntes EC-Protokoll (aus dem Treiber-Quellcode)
 
@@ -108,16 +76,6 @@ sie laufen ohne Kernelmodul und liefern den EC-Dump zum Abgleich.
 - Das Modul ist an `uname -r` gebunden. Nach jedem Kernel-Update neu bauen,
   sonst nicht laden.
 
-## Arbeitsweise
-
-- Alle Befunde in `befunde/BEFUNDE.md` eintragen, tabellarisch, mit Datum
-  und Uhrzeit.
-- Rohausgaben landen unter `befunde/raw/`.
-- Bevor ein Schritt ausgeführt wird: kurz sagen, was er tut und ob er
-  schreibend ist.
-- Ziel am Ende: sauberer GitHub-Issue-Report an
-  `ltdstudio/minisforum-n5-it5571`, damit das N5-Pro-Profil offiziell
-  promotet werden kann.
 
 ## Phasenplan
 

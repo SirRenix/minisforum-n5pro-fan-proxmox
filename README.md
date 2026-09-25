@@ -8,8 +8,8 @@ Arbeitsprojekt für Claude Code auf einem Proxmox-Host. Ziel: die vier Lüfterka
 Minisforum N5 Pro über hwmon ansteuerbar machen und das experimentelle
 N5-Pro-Profil des Community-Treibers validieren.
 
-`CLAUDE.md` enthält den Kontext und die verbindlichen Sicherheitsregeln —
-die liest Claude Code beim Projektstart automatisch.
+Sicherheitsregeln, EC-Protokoll und Phasenplan: [`docs/VALIDIERUNG.md`](docs/VALIDIERUNG.md) —
+vor dem ersten Skript lesen.
 
 ## Aufsetzen
 
@@ -48,7 +48,7 @@ Jederzeit:
 ## Struktur
 
 ```
-CLAUDE.md              Kontext + Sicherheitsregeln für Claude Code
+docs/VALIDIERUNG.md    EC-Protokoll, Sicherheitsregeln, Phasenplan
 docs/DMI-PATCH.md      falls der BIOS-DMI-String nicht exakt passt
 scripts/               die Phasenskripte
 befunde/BEFUNDE.md     Ergebnistabellen zum Ausfüllen
