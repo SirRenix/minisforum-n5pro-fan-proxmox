@@ -87,5 +87,5 @@ sie laufen ohne Kernelmodul und liefern den EC-Dump zum Abgleich.
 | 4 Modul bauen | `scripts/04-build-module.sh` | nein |
 | 5 Modul read-only laden | `scripts/05-load-readonly.sh` | nein (PWM gesperrt) |
 | 6 PWM-Test, ein Kanal | `scripts/06-pwm-test.sh` | **ja — Wartungsfenster, n5-fand vorher stoppen** |
-| 7 Dauerbetrieb | `deploy/install.sh` | ja (DKMS, systemd) |
+| 7 Dauerbetrieb | Paket `minisforum-n5-it5571-dkms` + Regler [n5-fangov](https://github.com/SirRenix/n5-fangov) (bis 15.09.2026: `deploy/install.sh` mit n5-fand) | ja (DKMS, systemd) |
 | — Notfall | `scripts/99-restore.sh` | stellt BIOS-Automatik wieder her |

@@ -1,33 +1,26 @@
 #!/usr/bin/env bash
-# Entfernt n5-fand, CLI, Autoload und das DKMS-Modul. Gibt die Luefter an die
-# EC/BIOS-Automatik zurueck. Hinweis: der HDD-Kanal regelt nach einem Write
-# erst nach einem Kaltstart wieder ueber das BIOS (Befund Phase 6).
+# Removes what deploy/install.sh installed: the DKMS module and the two /etc
+# files. The package is removed with `apt remove minisforum-n5-it5571-dkms`.
+# Stop the regulator first; it hands the channels back or sets its safe state.
+# Note: after any write the EC regulates the HDD channel again only after a
+# cold boot (findings phase 6).
 set -u
-[[ $EUID -eq 0 ]] || { echo "als root"; exit 1; }
-PKG="minisforum-n5-it5571"; VER="0.2.0"
-
-echo "--- Dienst stoppen (Failsafe setzt CPU/SSD auf Automatik, HDD auf festen Wert) ---"
-systemctl disable --now n5-fand.service 2>/dev/null || true
-rm -f /etc/systemd/system/n5-fand.service /etc/systemd/system/n5-fand-onfailure.service
-systemctl daemon-reload
-
-echo "--- Alle Kanaele an die EC-Automatik ---"
-for h in /sys/class/hwmon/hwmon*; do
-    [[ -r "$h/name" && "$(<"$h/name")" == "minisforum_n5_it5571" ]] || continue
-    for i in 1 2 3 4; do echo 2 > "$h/pwm${i}_enable" 2>/dev/null && echo "  pwm$i -> auto"; done
-done
-modprobe -r minisforum_n5_it5571 2>/dev/null && echo "  Modul entladen"
-
-echo "--- Dateien ---"
-rm -f /usr/local/sbin/n5-fand /usr/local/sbin/n5-fand-failsafe /usr/local/sbin/n5-fand-alert /usr/local/sbin/n5-fand-onfailure /usr/local/bin/n5fan
-rm -f /etc/modules-load.d/$PKG.conf /etc/modprobe.d/$PKG.conf
-rm -rf /run/n5-fand
-rm -f /etc/pve/notification-templates/default/n5-fand-subject.txt.hbs /etc/pve/notification-templates/default/n5-fand-body.txt.hbs 2>/dev/null
-echo "  /etc/n5-fand.conf bleibt erhalten (bei Bedarf von Hand loeschen)"
+[[ $EUID -eq 0 ]] || { echo "run as root"; exit 1; }
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PKG="minisforum-n5-it5571"
+VER=$(sed -n 's/^PACKAGE_VERSION="\(.*\)"$/\1/p' "$ROOT/deploy/dkms.conf")
+if dpkg-query -W -f='${Status}' "$PKG-dkms" 2>/dev/null | grep -q "install ok installed"; then
+    echo "$PKG-dkms is installed as a package: apt remove $PKG-dkms"
+    exit 1
+fi
 
 echo "--- DKMS ---"
-dkms remove "$PKG/$VER" --all 2>/dev/null && echo "  $PKG/$VER entfernt"
+dkms remove -m "$PKG" -v "$VER" --all 2>/dev/null && echo "  $PKG/$VER removed"
 rm -rf "/usr/src/$PKG-$VER"
 
+echo "--- options + autoload ---"
+rm -f "/etc/modules-load.d/$PKG.conf" "/etc/modprobe.d/$PKG.conf"
+
 echo
-echo "Fertig. Fuer die volle BIOS-Regelung des HDD-Kanals: Kaltstart."
+echo "Done. A loaded module stays until 'modprobe -r minisforum_n5_it5571' or the next boot."
+echo "The Bash regulator n5-fand has its own uninstaller: legacy/uninstall.sh."

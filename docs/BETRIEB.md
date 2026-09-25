@@ -1,5 +1,9 @@
 # Betriebsanleitung — n5-fand auf dem Minisforum N5 Pro
 
+> **Archiviert.** n5-fand ist seit 15.09.2026 durch [n5-fangov](https://github.com/SirRenix/n5-fangov) abgelöst.
+> Seine Dateien liegen in `legacy/`; `deploy/install.sh` installiert heute nur noch den Treiber,
+> im Betrieb das Paket `minisforum-n5-it5571-dkms` nehmen (README).
+
 Stand 14.09.2026. Gilt für Proxmox VE 9 / Debian 13 mit dem Community-Treiber
 `ltdstudio/minisforum-n5-it5571` (Modul `minisforum_n5_it5571`).
 

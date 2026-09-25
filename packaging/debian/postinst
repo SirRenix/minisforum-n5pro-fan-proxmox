@@ -1,0 +1,74 @@
+#!/bin/sh
+# postinst of minisforum-n5-it5571-dkms: take over a hand installation
+# (deploy/install.sh), register the source with DKMS, build and install the
+# module for every kernel that has headers, load it once when it is not.
+set -e
+PKG=minisforum-n5-it5571
+VER=@VERSION@
+MOD=minisforum_n5_it5571
+# sha256 of the two /etc files deploy/install.sh wrote before this package
+# existed; an identical copy is removed (the /usr/lib file applies), an
+# edited one is kept (it overrides the /usr/lib file).
+LEGACY_MODPROBE=5329370f77fb68e1eaa4e73be5613ac0cae7a82b2240d8993d3e8d3d4a652b70
+LEGACY_LOAD=f346cbe2a9cea0372632c7aac1b01db4f54392f46a09f9dd6b1e54cbd076729e
+
+say() { echo "$PKG: $*"; }
+
+adopt_hand_install() {
+	for d in /usr/src/$PKG-*; do
+		[ -d "$d" ] || continue
+		v=${d#/usr/src/$PKG-}
+		[ "$v" = "$VER" ] && continue
+		dpkg-query -S "$d" >/dev/null 2>&1 && continue # another package owns it
+		say "taking over the hand-installed DKMS source $v (deploy/install.sh)"
+		dkms remove -m $PKG -v "$v" --all >/dev/null 2>&1 || true
+		rm -rf "$d"
+	done
+	for pair in "/etc/modprobe.d/$PKG.conf $LEGACY_MODPROBE" "/etc/modules-load.d/$PKG.conf $LEGACY_LOAD"; do
+		set -- $pair
+		[ -f "$1" ] || continue
+		if [ "$(sha256sum "$1" | cut -d' ' -f1)" = "$2" ]; then
+			rm -f "$1"
+			say "removed the hand-installed $1; /usr/lib${1#/etc} applies"
+		else
+			say "keeping $1 (edited); it overrides /usr/lib${1#/etc}"
+		fi
+	done
+}
+
+case "$1" in
+configure)
+	adopt_hand_install
+	dkms status -m $PKG -v $VER 2>/dev/null | grep -q . || dkms add -m $PKG -v $VER >/dev/null
+	running=$(uname -r)
+	failed_running=0
+	for m in /lib/modules/*; do
+		[ -d "$m" ] || continue
+		k=${m##*/}
+		if [ ! -e "$m/build" ]; then
+			if [ "$k" = "$running" ]; then
+				say "WARNING: no headers for the running kernel $k — install proxmox-headers-$k (or linux-headers-$k)" >&2
+			fi
+			continue
+		fi
+		log=$(mktemp)
+		if dkms install -m $PKG -v $VER -k "$k" --force >"$log" 2>&1; then
+			say "built and installed for $k"
+		else
+			say "build FAILED for $k:" >&2
+			tail -n 15 "$log" >&2
+			[ "$k" = "$running" ] && failed_running=1
+		fi
+		rm -f "$log"
+	done
+	[ $failed_running -eq 0 ] || exit 1
+	if lsmod 2>/dev/null | grep -q "^$MOD "; then
+		say "module already loaded; the new build takes effect after 'modprobe -r $MOD && modprobe $MOD' (stop the regulator first) or the next boot"
+	elif modprobe $MOD 2>/dev/null; then
+		say "module loaded"
+	else
+		say "module not loaded now (no matching N5 Pro, or no permission here); it loads at boot via /usr/lib/modules-load.d/$PKG.conf"
+	fi
+	;;
+esac
+exit 0

@@ -1,0 +1,7 @@
+# Driver source packaged by packaging/build-deb.sh (sourced as shell).
+# A new upstream tag: UPSTREAM_TAG + UPSTREAM_COMMIT + PACKAGE_VERSION in
+# deploy/dkms.conf, PKG_REV back to 1. A packaging-only change: PKG_REV + 1.
+UPSTREAM_REPO=https://github.com/ltdstudio/minisforum-n5-it5571.git
+UPSTREAM_TAG=v0.2.1
+UPSTREAM_COMMIT=feb6d9a5fbf6662a52fa7496009537945d2b30b0
+PKG_REV=1

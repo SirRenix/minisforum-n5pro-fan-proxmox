@@ -1,58 +1,45 @@
 #!/usr/bin/env bash
-# Installiert Modul (DKMS), Autoload und n5-fand auf dem Zielhost.
-# Idempotent. Aufruf als root aus dem Projektordner: ./deploy/install.sh
+# Installs the driver from the upstream clone as DKMS module, with the module
+# options and the autoload entry. The path without the package: normally
+# `apt install ./minisforum-n5-it5571-dkms_<ver>_all.deb` (release asset) does
+# the same and keeps it under apt's control.
+# Idempotent. Run as root from the project folder after scripts/02-build-tools.sh.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT/upstream/driver-prototype"
-PKG="minisforum-n5-it5571"; VER="0.2.0"
+PKG="minisforum-n5-it5571"
+VER=$(sed -n 's/^PACKAGE_VERSION="\(.*\)"$/\1/p' "$ROOT/deploy/dkms.conf")
 DK="/usr/src/$PKG-$VER"
 
-[[ $EUID -eq 0 ]] || { echo "als root"; exit 1; }
-[[ -f "$SRC/minisforum_n5_it5571.c" ]] || { echo "upstream fehlt: scripts/02-build-tools.sh"; exit 1; }
+[[ $EUID -eq 0 ]] || { echo "run as root"; exit 1; }
+[[ -f "$SRC/minisforum_n5_it5571.c" ]] || { echo "upstream source missing: scripts/02-build-tools.sh"; exit 1; }
+if dpkg-query -W -f='${Status}' "$PKG-dkms" 2>/dev/null | grep -q "install ok installed"; then
+    echo "$PKG-dkms is installed as a package; update it with apt, not with this script"
+    exit 1
+fi
 
-echo "--- DKMS-Quelle $DK ---"
+echo "--- DKMS source $DK ---"
 mkdir -p "$DK"
 cp "$SRC/minisforum_n5_it5571.c" "$SRC/Makefile" "$ROOT/deploy/dkms.conf" "$DK/"
 git -C "$ROOT/upstream" rev-parse HEAD > "$DK/UPSTREAM_COMMIT"
-if ! dkms status "$PKG/$VER" | grep -q "$PKG"; then
-    dkms add "$PKG/$VER"
+if ! dkms status -m "$PKG" -v "$VER" | grep -q "$PKG"; then
+    dkms add -m "$PKG" -v "$VER"
 fi
-dkms build "$PKG/$VER" -k "$(uname -r)"
-dkms install "$PKG/$VER" -k "$(uname -r)" --force
-dkms status "$PKG"
+for m in /lib/modules/*; do
+    k=${m##*/}
+    [[ -e "$m/build" ]] || { echo "  no headers for $k, skipped"; continue; }
+    dkms install -m "$PKG" -v "$VER" -k "$k" --force
+done
+dkms status -m "$PKG"
 
-echo "--- Autoload + Optionen ---"
-install -m 0644 "$ROOT/deploy/$PKG.modprobe.conf"      /etc/modprobe.d/$PKG.conf
-install -m 0644 "$ROOT/deploy/$PKG.modules-load.conf"  /etc/modules-load.d/$PKG.conf
-
-echo "--- n5-fand + CLI ---"
-install -m 0755 "$ROOT/deploy/n5-fand"          /usr/local/sbin/n5-fand
-install -m 0755 "$ROOT/deploy/n5-fand-failsafe" /usr/local/sbin/n5-fand-failsafe
-install -m 0755 "$ROOT/deploy/n5-fand-alert"    /usr/local/sbin/n5-fand-alert
-install -m 0755 "$ROOT/deploy/n5-fand-onfailure" /usr/local/sbin/n5-fand-onfailure
-install -m 0755 "$ROOT/deploy/n5fan"            /usr/local/bin/n5fan
-if [[ -f /etc/n5-fand.conf ]]; then
-    echo "  /etc/n5-fand.conf existiert — nicht ueberschrieben (Vorlage: deploy/n5-fand.conf)"
-else
-    install -m 0644 "$ROOT/deploy/n5-fand.conf" /etc/n5-fand.conf
-fi
-install -m 0644 "$ROOT/deploy/n5-fand.service"           /etc/systemd/system/n5-fand.service
-install -m 0644 "$ROOT/deploy/n5-fand-onfailure.service" /etc/systemd/system/n5-fand-onfailure.service
-if [[ -d /etc/pve ]]; then
-    # pmxcfs erlaubt kein chmod -> cp statt install
-    mkdir -p /etc/pve/notification-templates/default
-    cp "$ROOT/deploy/pve-notification/n5-fand-subject.txt.hbs" /etc/pve/notification-templates/default/
-    cp "$ROOT/deploy/pve-notification/n5-fand-body.txt.hbs"    /etc/pve/notification-templates/default/
-    echo "  PVE-Notification-Template installiert (Alarme -> Proxmox-Benachrichtigungen)"
-fi
-systemctl daemon-reload
-systemctl enable n5-fand.service
+echo "--- options + autoload ---"
+install -m 0644 "$ROOT/deploy/$PKG.modprobe.conf"     "/etc/modprobe.d/$PKG.conf"
+install -m 0644 "$ROOT/deploy/$PKG.modules-load.conf" "/etc/modules-load.d/$PKG.conf"
 
 cat <<EOF
 
-Installiert. Naechste Schritte:
-  systemctl restart n5-fand && n5fan status
-  n5fan check                  # Selbstcheck
-Nach einem Kernel-Update baut DKMS automatisch (AUTOINSTALL). Kontrolle:
-  dkms status $PKG
+Installed. Load now:   modprobe minisforum_n5_it5571
+Check:                 ls /sys/class/hwmon/*/pwm1 && sensors
+DKMS rebuilds for every new kernel whose headers are installed (AUTOINSTALL).
+Regulator: https://github.com/SirRenix/n5-fangov (the Bash predecessor n5-fand is in legacy/).
 EOF

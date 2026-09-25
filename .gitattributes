@@ -2,3 +2,5 @@
 *.sh text eol=lf
 *.md text eol=lf
 *.txt text eol=lf
+# byte-exact fixtures: postinst compares their sha256
+packaging/test/legacy-*.conf -text -diff

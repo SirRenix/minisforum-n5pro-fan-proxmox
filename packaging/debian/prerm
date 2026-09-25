@@ -1,0 +1,19 @@
+#!/bin/sh
+# prerm of minisforum-n5-it5571-dkms: unregister this version from DKMS
+# (every kernel). A loaded module stays loaded until it is unloaded or the
+# host reboots.
+set -e
+PKG=minisforum-n5-it5571
+VER=@VERSION@
+
+case "$1" in
+remove|upgrade|deconfigure)
+	if dkms status -m $PKG -v $VER 2>/dev/null | grep -q .; then
+		dkms remove -m $PKG -v $VER --all >/dev/null 2>&1 || true
+	fi
+	if [ "$1" = remove ]; then
+		echo "$PKG: module files removed; a loaded module stays until reboot. Without the driver the fans run on the BIOS curve after the next boot."
+	fi
+	;;
+esac
+exit 0

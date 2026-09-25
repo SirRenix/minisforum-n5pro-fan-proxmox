@@ -1,0 +1,21 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: minisforum-n5-it5571
+Upstream-Contact: https://github.com/ltdstudio/minisforum-n5-it5571
+Source: https://github.com/ltdstudio/minisforum-n5-it5571
+
+Files: usr/src/*
+Copyright: ltdstudio and contributors of minisforum-n5-it5571
+License: GPL-2.0-only
+
+Files: *
+Copyright: 2026 SirRenix
+License: GPL-2.0-only
+Comment: packaging, DKMS configuration and module options from
+ https://github.com/SirRenix/minisforum-n5pro-fan-proxmox
+
+License: GPL-2.0-only
+ This program is free software; you can redistribute it and/or modify it
+ under the terms of the GNU General Public License version 2 as published by
+ the Free Software Foundation.
+ .
+ On Debian systems the full text is in /usr/share/common-licenses/GPL-2.

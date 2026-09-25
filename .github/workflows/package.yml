@@ -1,0 +1,73 @@
+# DKMS package: build from the pinned upstream tag and run the installation
+# test in Debian 13 on every push; on a tag v<upstream>-<rev> (v0.2.1-1) also
+# publish a GitHub release with the .deb and its sha256.
+name: package
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: debian:trixie
+    steps:
+      - name: tools
+        run: apt-get update -qq && apt-get install -y -qq git ca-certificates >/dev/null
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: build
+        run: bash packaging/build-deb.sh
+      - name: installation test (hand install taken over, build, reinstall, remove)
+        run: bash packaging/test/test-deb.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deb
+          path: dist/
+          retention-days: 7
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the release and upload assets — nothing else
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: deb
+          path: dist
+      - name: tag matches packaging/UPSTREAM
+        run: |
+          . packaging/UPSTREAM
+          want="${UPSTREAM_TAG}-${PKG_REV}"
+          [ "$GITHUB_REF_NAME" = "$want" ] || { echo "::error::tag $GITHUB_REF_NAME, packaging/UPSTREAM says $want"; exit 1; }
+          (cd dist && sha256sum -c ./*.sha256)
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          . packaging/UPSTREAM
+          deb=$(cd dist && ls ./*.deb | sed 's|^\./||')
+          cat > notes.md <<EOF
+          DKMS package of the IT5571 EC fan driver [ltdstudio/minisforum-n5-it5571](https://github.com/ltdstudio/minisforum-n5-it5571) ${UPSTREAM_TAG} (\`${UPSTREAM_COMMIT:0:7}\`) for the Minisforum N5 Pro.
+
+          \`\`\`
+          apt install ./${deb}
+          \`\`\`
+
+          Builds the module for every kernel with headers, pulls the header meta-package (\`proxmox-default-headers\` or \`linux-headers-amd64\`), sets \`experimental_write=1\` and loads the module at boot. Takes over a hand installation made with \`deploy/install.sh\`. Verify with \`sha256sum -c ${deb}.sha256\`.
+          EOF
+          sed -i 's/^          //' notes.md
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file notes.md
