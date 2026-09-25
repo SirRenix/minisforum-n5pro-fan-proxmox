@@ -15,9 +15,11 @@ sha256sum -c minisforum-n5-it5571-dkms_*_all.deb.sha256
 apt install ./minisforum-n5-it5571-dkms_*_all.deb
 ```
 
-The package pulls `dkms` and the kernel header meta-package (`proxmox-default-headers`,
-on plain Debian `linux-headers-amd64`), builds the module for every kernel with headers
-and rebuilds it for each new kernel. It sets `experimental_write=1` (without it the
+The package pulls `dkms` and the kernel header meta-package — on Proxmox VE
+`proxmox-default-headers`, which follows the default kernel series like
+`proxmox-default-kernel`; on plain Debian `linux-headers-amd64` — builds the module for
+every kernel with headers and rebuilds it for each new kernel. A host that has only
+`proxmox-headers-<series>` gets no headers for the next series: `apt install proxmox-default-headers`. It sets `experimental_write=1` (without it the
 `pwm*` nodes stay hidden) in `/usr/lib/modprobe.d/` and loads the module at boot via
 `/usr/lib/modules-load.d/`; a file of the same name in `/etc/` overrides either.
 Loading writes nothing to the EC — `pwm*_enable` starts at `2` (EC automatic), only a

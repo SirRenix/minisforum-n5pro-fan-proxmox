@@ -4,14 +4,17 @@ Architecture: all
 Maintainer: SirRenix <7069603+SirRenix@users.noreply.github.com>
 Installed-Size: @SIZE@
 Depends: dkms (>= 3.0), proxmox-default-headers | linux-headers-amd64
+Recommends: proxmox-default-headers
 Section: kernel
 Priority: optional
 Homepage: https://github.com/SirRenix/minisforum-n5pro-fan-proxmox
 Description: IT5571 EC fan driver for the Minisforum N5 Pro (DKMS)
  The out-of-tree hwmon driver ltdstudio/minisforum-n5-it5571 (upstream
  @TAG@, commit @COMMIT@) as a DKMS module, rebuilt for every kernel whose
- headers are installed; the header meta-package keeps the headers coming
- with each new kernel.
+ headers are installed. On Proxmox VE the recommended
+ proxmox-default-headers follows the default kernel series like
+ proxmox-default-kernel does (proxmox-headers-<series> alone satisfies the
+ dependency but stops at its series).
  .
  Enables the PWM nodes of the experimental N5 Pro profile
  (experimental_write=1) and loads the module at boot. Loading writes nothing
