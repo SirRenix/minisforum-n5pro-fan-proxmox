@@ -1,0 +1,157 @@
+M5 — BIOS "Fan 1-4 Setting" gegen EC-RAM-Tabellen, 09.10.2026
+=================================================================
+Host: n5host (Minisforum N5 Pro, BIOS 1.05 03/31/2026, EC 0.14). Alles read-only:
+efivars nur gelesen (ls/head/cat), kein Schreiben, kein chattr, kein efibootmgr,
+kein EC-Portzugriff. Firmware-Analyse am Schreibtisch.
+
+Quellen
+- BIOS-Paket: Homelab/PvE/F8NAA_STX_1.05_260331.zip
+  ZIP  sha256 0EDEB88E2144B7B18807775496FE4FCA26A1012B890D25EE858874E2ED0AA7C8
+  F8NAA.BIN sha256 6d2ee15a4c2f02fcdf126e77ceca16f746b009ae346e6efb0eee066df2745c6a
+  (= Image aus bios-f8naa-1.05-analyse.md; EC-Teil = ECVer 00.00.00.0E = 0.14 = live)
+- DXE-Hauptvolume: LZMA @0x010ED5C8 im BIN, entpackt 10 055 696 Byte
+- Reset-Image A: zlib @0x01A02100 im BIN, entpackt 5 767 296 Byte (SEC/PEI)
+- Werkzeuge: eigene Python-Skripte (LZMA/zlib-Entpacker, HII-String-/IFR-Parser,
+  8051-Mini-Disassembler); nur lesend auf Kopien im Scratch-Verzeichnis.
+
+---------------------------------------------------------------------------
+1. efivars auf n5host (gemessen 2026-10-09T23:13+02:00)
+---------------------------------------------------------------------------
+$ ssh n5host 'sudo ls -l /sys/firmware/efi/efivars/ | wc -l'          -> 84 Variablen
+$ ssh n5host 'cd /sys/firmware/efi/efivars; sudo ls -l Setup-ec87d643-eba4-4bb5-a1e5-3f3e36b20da9'
+ls: cannot access 'Setup-ec87d643-eba4-4bb5-a1e5-3f3e36b20da9': No such file or directory
+$ ... sudo ls | grep -ci ec87d643                                     -> 0
+$ ... sudo ls | grep -i setup
+AMD_PBS_SETUP-a339d746-f678-49b3-9fc7-54ce0f9df226
+AmdSetup-3a997502-647a-4c82-998e-52ef9486a247
+AodSetupStx-5ed15dc0-edef-4161-9151-6014c4cc630c
+FBOSetupGroupMap-0c923ca9-df73-4ac8-b6d2-98ddc30d99fc
+SetupMode-8be4df61-93ca-11d2-aa0d-00e098032b8c
+
+-> Die Variable, in der die Lueftereinstellungen liegen (Setup, GUID ec87d643-...,
+   s. Abschnitt 2), ist zur OS-Laufzeit NICHT sichtbar. Die drei sichtbaren
+   Setup-Varianten haben Attribut 07 00 00 00 (NV+BS+RT).
+
+Gegenprobe, ob die Tabellenbytes in einer lesbaren Variable stehen
+(sudo cat <var> | tail -c +5 | od -An -tx1 -v | grep -o <muster> | wc -l):
+                     AmdSetup(1648 B)  AMD_PBS_SETUP(384 B)  AodSetupStx(800 B)
+"00 19 00 14 2d 19"        0                 0                     0
+"14 2d 19"                 0                 0                     0
+"16 3c 00 1a 64 3c"        0                 0                     0
+"0c 22 00 10 64 22"        0                 0                     0
+"1e 32 46 5a" (IFR-Def.)   0                 0                     0
+"64 96 c8 fa" (IFR-Def.)   0                 0                     0
+
+---------------------------------------------------------------------------
+2. IFR des Setup-Moduls (BIOS-Image, Formset 7b59104a-..., Form 10313
+   "Hardware Monitor", erreichbar ueber Advanced 10317)
+---------------------------------------------------------------------------
+Varstore: "Setup" id=0xF101 size=210 (0xD2) guid=ec87d643-eba4-4bb5-a1e5-3f3e36b20da9
+  Roh: 24 1c 43 d6 87 ec a4 eb b5 4b a1 e5 3f 3e 36 b2 0d a9 01 f1 d2 00 53 65 74 75 70 00
+
+Offset  Frage                    Typ      Bereich   IFR-Default
+0xB7    Deep S5                  OneOf    0/1       0
+0xB9    Fan 1 Setting: User Mode OneOf    0/1       0 (Disabled)
+0xBA-BD Fan 1 Temperature 1..4   Numeric  0-120     30 / 50 / 70 / 90
+0xBE-C1 Fan 1 PWM 1..4           Numeric  0-255     100 / 150 / 200 / 250
+0xC2    Fan 2 Setting: User Mode OneOf    0/1       0
+0xC3-C6 Fan 2 Temperature 1..4   Numeric  0-120     30 / 50 / 70 / 90
+0xC7-CA Fan 2 PWM 1..4           Numeric  0-255     100 / 150 / 200 / 250
+0xCB    Fan 3 Setting: User Mode OneOf    0/1       0
+0xCC    Fan 3 PWM 1              Numeric  0-255     100
+0xCD    Fan 4 Setting: User Mode OneOf    0/1       0
+0xCE    Fan 4 PWM 1              Numeric  0-255     100
+Temperatur/PWM-Felder nur sichtbar bei User Mode = Enabled (suppressif qid==0).
+"Set Fan Function mode" steht nur als String im Modul, kein Formular referenziert ihn.
+
+IFR-Rohbytes (Opcode 05=OneOf, 07=Numeric; ... f1 01 = VarStore 0xF101, dann Offset):
+  Fan1 User Mode : 05 91 ce 03 cf 03 c4 00 01 f1 b9 00 10 10 00 01 00
+  Fan1 Temp 1    : 07 91 d2 03 d0 03 c5 00 01 f1 ba 00 10 10 00 78 01
+  Fan1 PWM 1     : 07 91 d7 03 d6 03 c9 00 01 f1 be 00 10 10 00 ff 01
+  Fan3 User Mode : 05 91 ce 03 cf 03 d6 00 01 f1 cb 00 10 10 00 01 00
+  Fan3 PWM 1     : 07 91 d7 03 d6 03 d7 00 01 f1 cc 00 10 10 00 ff 01
+  Fan4 User Mode : 05 91 ce 03 cf 03 d8 00 01 f1 cd 00 10 10 00 01 00
+  Fan4 PWM 1     : 07 91 d7 03 d6 03 d9 00 01 f1 ce 00 10 10 00 ff 01
+
+---------------------------------------------------------------------------
+3. Wer setzt die BIOS-Werte im EC? PEI-Modul im Reset-Image A
+   (TE-Image @0xBE764 im zlib-entpackten Reset-Image, 32-Bit-Code @0xBE900)
+---------------------------------------------------------------------------
+GetVariable mit Groesse 0xD2 (c7 45 5c d2 00 00 00) in Puffer [ebp-0x7C]
+-> Setup-Offset X liegt bei [ebp + X - 0x7C].
+Aufrufe "mov dl,<sub>; mov cl,0xD5; call send" (PMC2-Kommando 0xD5 + Subkommando):
+
+  cmp [ebp+3D],1  (Setup 0xB9 Fan1 User Mode)
+     ja:   0x22<-[3E] 0x24<-[3F] 0x26<-[40] 0x28<-[41]   (Temp 1-4, monoton geklemmt)
+           0x23<-[42] 0x25<-[43] 0x27<-[44] 0x29<-[45]   (PWM 1-4)
+           dann 0x20                  nein: 0x21
+  cmp [ebp+46],1  (0xC2 Fan2)  ja: 0x32/34/36/38 Temp, 0x33/35/37/39 PWM, 0x30   nein: 0x31
+  cmp [ebp+4F],1  (0xCB Fan3)  ja: 0x2C<-[50] (0xCC), 0x2A                       nein: 0x2B
+  cmp [ebp+51],1  (0xCD Fan4)  ja: 0x2F<-[52] (0xCE), 0x2D                       nein: 0x2E
+Rohbytes (Auszug):
+  0be950: 80 7d 3d 01 88 5d 70 88 5d 74 0f 85 ba 00 00 00 8a 45 3e ... b2 22 56 e8 ..
+  0bea18: b2 20 eb 02 b2 21 b1 d5 e8 51 01 00 00 80 7d 46 01 ...
+  0beaf8: b2 30 eb 02 b2 31 b1 d5 e8 75 00 00 00 80 7d 4f 01 5e 75 0f ff 75 50 b2 2c ..
+  0beb16: b2 2a eb 02 b2 2b b1 d5 e8 56 00 00 00 80 7d 51 01 75 0f ff 75 52 b2 2f ..
+  0beb30: b2 2d eb 02 b2 2e b1 d5 ...
+Das Setup-DXE-Modul selbst sendet nur 0xD5 0x18/19, 0x16/17, 0x14/15
+(Tacho-Lesen fuer die Anzeige "CPU/System/SSD Fan Speed").
+
+---------------------------------------------------------------------------
+4. EC-Firmware (BIN 0x0000000-0x001FFFF, ITE 8051, "F8NAA_StrixHowk", 0.14)
+---------------------------------------------------------------------------
+XRAM 0x8300-0x83FF = ACPI-EC-RAM 0x00-0xFF (Tabellen und Sensorbytes liegen exakt
+unter 0x83xx). I2EC 0x1801 = CTR, 0x1803..0x1807 = DCR1..DCR5.
+
+4a. PMC2-Subkommandotabelle (@0xF70B, Eintraege <Handler hi lo> <Sub>):
+  14/15 -> TACH3 (88D0/88D1)    16/17 -> TACH2 (8882/83)    18/19 -> TACH1 (8880/81)
+  20 -> 8860|=01  21 -> 8860&=~01  22..29 -> 8861,8865,8862,8866,8863,8867,8864,8868
+  2A -> 8860|=04  2B -> 8860&=~04  2C -> 887C
+  2D -> 8860|=02  2E -> 8860&=~02  2F -> 887B
+  30 -> 8860|=08  31 -> 8860&=~08  32..39 -> 886A,886E,886B,886F,886C,8870,886D,8871
+  3A -> liefert 8860 (Modusbits)
+  Roh: 0f71d: f7 95 20 f7 9d 21 f7 a5 22 f7 ab 23 ... f8 2b 39 f8 32 3a
+
+4b. Initialisierung der EC-RAM-Tabellen aus Konstanten:
+  Tabelle A @0xA05E: e4 90 83 10 f0 90 83 11 74 19 f0 e4 90 83 12 f0 90 88 b0 f0
+                     90 83 13 74 14 f0 90 83 14 74 2d f0 ...   (bis 0x8327 = 22 64 57,
+                     dazu 0x88B0..0x88B7 = 00 0F 14 14 1E 2A 14 00)
+  Tabelle B @0xA2DB: 90 83 30 74 16 f0 90 83 31 74 3c f0 e4 90 83 32 f0 ... (16 3C 00 1A 64 3C 1A 64 64)
+  Tabelle C @0xA4AB / D analog: Hilfsroutinen 0xADF1 (74 0c f0 a3 74 22 f0 a3 e4 f0 22)
+                     und 0xAD6C (74 10 f0 a3 74 64 f0 a3 22) -> 0C 22 00 10 64 22 10 64 64
+  Suche der Tabellenfolgen als zusammenhaengende Bytes in BIN/DXE/PEI: 0 Treffer.
+
+4c. Regelung je Kanal (Sollwert = Tabellenbyte 0 x 100 rpm, Tacho-Regelung):
+  Rampe (Beispiel DCR1 @0x9E03): Sollwert*100-100 (0xABBE: MUL 0x64, ADD 0x9C/ADDC 0xFF)
+  und Sollwert*100+100 (0xABCF); Tacho < unten -> DCR+1 (bis CTR), > oben -> DCR-1.
+
+  DCR1 (CPU) @0x9E26: Eingang = [888A] falls !=0, sonst EC-RAM 0x09.
+     Punkt-Deskriptoren ROM @0x3F5D (je 9 Byte: ptr T_ob, ptr T_unt, ptr Soll, ptr Steigung, next):
+     83 11 83 12 83 10 88 b0 01 | 83 14 83 15 83 13 88 b1 02 | ... | 83 23 83 24 83 22 88 b6 00
+     Eingang > [0x23]=87 -> Soll = [0x25] = 34 (3400 rpm).
+  DCR2 (SSD)  @0xA18C: Eingang = [888B] falls !=0, sonst EC-RAM 0x05.
+     < [0x31]=60 -> Soll [0x30]=22 ; < [0x34]=100 -> Soll [0x33]=26 ; sonst unveraendert
+  DCR3 (HDD)  @0xA38C: 90 88 d3 e0 90 96 b4 12 ad 43 70 37 90 88 d5 e0 60 02 80 03
+                       90 83 06 e0 90 88 d4 f0 90 83 71 e0 ff 90 88 d4 e0 c3 9f 50 05
+                       90 83 70 80 10 90 83 74 e0 ff 90 88 d4 e0 c3 9f 50 08 90 83 73
+                       e0 90 88 d2 f0 22
+     Eingang = [88D5] falls !=0, sonst EC-RAM 0x06.
+     < [0x71]=34 -> Soll [0x70]=12 ; < [0x74]=100 -> Soll [0x73]=16 ; sonst unveraendert
+     Tacho = 88D0/88D1 (= Subkommando 0x14/0x15 = TACH3)
+  DCR4 (HDD 2) @0xA54F: identisch mit Tabelle D (0x79..0x7D), Eingang [88E5] / EC-RAM 0x06,
+     eigener Tacho 88E0/88E1.
+  DCR5 (PCIe) @0xA6D1: nur wenn 8860 Bit 3 gesetzt (Host-Kurve 886A..8871); sonst
+     keine Schreibstelle -> DCR5 bleibt stehen. Einzige direkte Schreibstelle auf 0x1807.
+  Host-Modi: Bit0 CPU-Kurve 8861..8868 -> DCR1 direkt (@0x9F18); Bit1 SSD fest 887B
+     (@0xA20D); Bit2 HDD fest 887C auf DCR3 (@0xA3FA) und DCR4 (@0xA5C8); Bit3 PCIe-Kurve.
+
+---------------------------------------------------------------------------
+5. Abgleich mit Rohdaten 14.09. (03-probe-20260914-160338.txt, 06-i2ec-dcr-20260914.txt)
+---------------------------------------------------------------------------
+  CPU  EC 0x09=35  TACH1 2003     Tabelle A Band 25..45 -> 2000 rpm +-100   passt
+  CPU  EC 0x09=77  TACH1 2965     Band 75..82 -> 3000 rpm +-100             passt
+  SSD  EC 0x05=25/28  TACH2 2236/2211   < 60 -> 2200 rpm +-100           passt
+  HDD  EC 0x06=22 (konstant), nach 0x2B: TACH3 1237-1240, DCR3 0x57
+                                   < 34 -> 1200 rpm +-100                 passt
+  HDD  16:03, vor jedem Write: TACH3 1656/1653, EC 0x06=22
+                                   Tabelle C sagt 1200 -> passt NICHT (anderer Modus/Override)

@@ -1,0 +1,203 @@
+#!/bin/bash
+# n5vw-report - daily report, final report and status output (F8b).
+#
+#   n5vw-report [--daily]   daily mail "Tag N/7" (statistics over the last 24 h)
+#   n5vw-report --final     final mail with verdict per criterion, then
+#                           disables the sample/check/report timers (data kept)
+#   n5vw-report --status    print the summary to stdout, no mail, no files
+#
+# Verdict per criterion: PASS if it has 0 events or every event is explained
+# in annotations.txt (per event "#N"; for K2..K6/K8 also by key within
+# ANNOT_WINDOW; K1/K7 only per event). K8 additionally needs sample and
+# check coverage >= COVER_MIN % (planned downtime excluded).
+# "PASS" means "no unexplained error observed under these conditions",
+# never "error-free".
+set -euo pipefail
+
+BIN_DIR=$(dirname "$(readlink -f "$0")")
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=n5vw-lib.sh
+. "$BIN_DIR/n5vw-lib.sh"
+vw_load_config
+
+MODE=daily
+case "${1:-}" in
+    ''|--daily) MODE=daily ;;
+    --final) MODE=final ;;
+    --status) MODE=status ;;
+    *) echo "usage: $0 [--daily|--final|--status]" >&2; exit 2 ;;
+esac
+
+if [ "$MODE" != status ]; then
+    mkdir -p "$RUN_DIR/reports"
+    vw_lock
+    vw_flush_outbox
+    if [ "$MODE" = daily ] && [ -e "$RUN_DIR/final.done" ]; then
+        vw_log "run $RUN_ID already finished, no daily report"
+        exit 0
+    fi
+fi
+vw_state_load
+if [ -z "$TAINT_START" ]; then TAINT_START=$(vw_state_get taint_start); fi
+
+NOW=$EPOCHSECONDS
+elapsed=$((NOW - START_EPOCH))
+day=$((elapsed / 86400 + 1))
+if [ "$day" -gt "$DURATION_DAYS" ]; then day=$DURATION_DAYS; fi
+if [ "$day" -lt 1 ]; then day=1; fi
+
+if [ "$MODE" = daily ]; then since=$((NOW - 86400)); else since=$START_EPOCH; fi
+if [ "$since" -lt "$START_EPOCH" ]; then since=$START_EPOCH; fi
+cov_to=$NOW
+if [ "$cov_to" -gt "$END_EPOCH" ]; then cov_to=$END_EPOCH; fi
+
+# per-key counts: whole run and stats period
+declare -A TOT=() EXPL=() UNEX=() PER=()
+while read -r k t e u; do TOT[$k]=$t; EXPL[$k]=$e; UNEX[$k]=$u; done < <(vw_event_table count 0)
+while read -r k t _e _u; do PER[$k]=$t; done < <(vw_event_table count "$since")
+
+# K8 coverage over the whole run so far (planned downtime excluded)
+down=$(vw_down_intervals)
+read -r cov_s unc_s pts_s < <(vw_coverage "$SAMPLES" 2 "$SAMPLE_INTERVAL" "$GAP_MAX" "$START_EPOCH" "$cov_to" "$down")
+read -r cov_c unc_c pts_c < <(vw_coverage "$CHECKS" 1 "$CHECK_INTERVAL" "$CHECK_GAP_MAX" "$START_EPOCH" "$cov_to" "$down")
+cov_fail=$(awk -v a="$cov_s" -v b="$cov_c" -v m="$COVER_MIN" 'BEGIN { print ((a + 0 < m || b + 0 < m) ? 1 : 0) }')
+
+declare -A KV=()
+unexplained=0
+for k in $N5VW_KEYS; do
+    unexplained=$((unexplained + ${UNEX[$k]:-0}))
+    if [ "${UNEX[$k]:-0}" -eq 0 ]; then KV[$k]=PASS; else KV[$k]=FAIL; fi
+done
+if [ "$cov_fail" = 1 ]; then KV[K8]=FAIL; fi
+verdict=PASS
+for k in $N5VW_KEYS; do if [ "${KV[$k]}" = FAIL ]; then verdict=FAIL; fi; done
+
+data_kb=$(du -sk "$RUN_DIR" 2>/dev/null | cut -f1 || echo 0)
+up='' taint=''
+vw_rd /proc/uptime up; up=${up%% *}; up=${up%%.*}
+vw_rd /proc/sys/kernel/tainted taint
+expected=$(((NOW - since) / SAMPLE_INTERVAL))
+last_check=$(vw_state_get last_check 0)
+
+unit_health() {
+    local u
+    for u in n5vw-sample.service n5vw-check.service n5vw-report.service; do
+        printf '  %-22s %s\n' "$u" "$(systemctl show "$u" -p Result -p NRestarts -p ExecMainStatus -p ExecMainExitTimestamp 2>/dev/null | tr '\n' ' ' || echo '?')"
+    done
+    for u in n5vw-sample.timer n5vw-check.timer n5vw-report.timer; do
+        printf '  %-22s %s\n' "$u" "$(systemctl show "$u" -p ActiveState -p UnitFileState -p LastTriggerUSec 2>/dev/null | tr '\n' ' ' || echo '?')"
+    done
+}
+
+body() {
+    printf 'Lauf:        %s auf %s\n' "$RUN_ID" "$HOST"
+    printf 'Start:       %s\n' "$(vw_iso "$START_EPOCH")"
+    printf 'Ende (Soll): %s (%s Tage)\n' "$(vw_iso "$END_EPOCH")" "$DURATION_DAYS"
+    printf 'Jetzt:       %s (Tag %s/%s, %s h seit Start)\n' "$(vw_iso "$NOW")" "$day" "$DURATION_DAYS" $((elapsed / 3600))
+    printf 'Kernel:      %s, Taint %s (Start %s)\n' "$(uname -r)" "$taint" "${TAINT_START:-?}"
+    printf 'Uptime:      %s h\n' $((${up:-0} / 3600))
+    printf 'Statistik-Zeitraum: %s .. %s\n\n' "$(vw_iso "$since")" "$(vw_iso "$NOW")"
+
+    printf 'Kriterien (Urteil bisher, Ereignisse gesamt / annotiert / unerklaert / im Zeitraum):\n'
+    for k in $N5VW_KEYS; do
+        printf '  %s %-4s %4s / %4s / %4s / %4s  %s\n' "$k" "${KV[$k]}" "${TOT[$k]:-0}" "${EXPL[$k]:-0}" "${UNEX[$k]:-0}" "${PER[$k]:-0}" "$(vw_key_desc "$k")"
+    done
+    printf '\nAbdeckung seit Start (K8, Grenze %s %%, geplante Ausfallzeit ausgenommen):\n' "$COVER_MIN"
+    printf '  Sampler: %s %% (%s Samples, ungedeckt %s s)\n' "$cov_s" "$pts_s" "$unc_s"
+    printf '  Check:   %s %% (%s Laeufe, ungedeckt %s s)\n' "$cov_c" "$pts_c" "$unc_c"
+    if [ "$last_check" -gt 0 ]; then
+        printf '  Letzter Check: %s (vor %s min)' "$(vw_iso "$last_check")" $(((NOW - last_check) / 60))
+        if [ $((NOW - last_check)) -gt $((3 * CHECK_INTERVAL)) ]; then printf '  <-- WARNUNG: Check laeuft nicht'; fi
+        printf '\n'
+    else
+        printf '  Letzter Check: noch keiner  <-- WARNUNG\n'
+    fi
+    printf '\nDienste:\n'
+    unit_health
+    printf '\n'
+
+    if [ -r "$SAMPLES" ]; then
+        awk -F, -v since="$since" -v expected="$expected" '
+            NR == 1 { nf = NF; for (i = 1; i <= NF; i++) h[i] = $i; next }
+            NF != nf || $2 !~ /^[0-9]+$/ || $2 + 0 < since { next }
+            {
+                rows++
+                if (first == "") first = $1
+                last = $1
+                if (!($3 in bseen)) { bseen[$3] = 1; nb++; border[nb] = $3; bfirst[$3] = $1 }
+                blast[$3] = $1
+                for (i = 4; i <= NF; i++) {
+                    if (h[i] ~ /^(boot_id|fangov_state)$/) continue
+                    if ($i == "") { miss[i]++; continue }
+                    v = $i + 0
+                    if (!(i in n) || v < mn[i]) mn[i] = v
+                    if (!(i in n) || v > mx[i]) mx[i] = v
+                    n[i]++; s[i] += v
+                }
+                st[$(nf - 1)]++
+                if ($nf != "" && $nf + 0 > maxnr) maxnr = $nf + 0
+            }
+            END {
+                if (rows == 0) { print "Keine Samples im Zeitraum."; exit }
+                printf "Samples im Zeitraum: %d von erwartet %d (%.1f %%), %s .. %s\n\n", rows, expected, (expected > 0 ? 100 * rows / expected : 0), first, last
+                printf "%-20s %9s %9s %9s %7s %7s\n", "Wert", "min", "max", "mittel", "n", "leer"
+                for (i = 4; i < nf; i++) {
+                    if (h[i] ~ /^(boot_id|fangov_state)$/) continue
+                    if (i in n) printf "%-20s %9.1f %9.1f %9.1f %7d %7d\n", h[i], mn[i], mx[i], s[i] / n[i], n[i], miss[i]
+                    else printf "%-20s %9s %9s %9s %7d %7d\n", h[i], "-", "-", "-", 0, miss[i]
+                }
+                printf "\nLuefter-Bereiche (RPM): "
+                for (i = 6; i <= 8; i++) if (i in n) printf "%s %d..%d  ", h[i], mn[i], mx[i]
+                printf "\n(pwm*-Spalten = gecachte Treiberwerte, kein EC-Readback)\n"
+                printf "\nn5-fangov ActiveState in Samples: "
+                for (k in st) printf "%s=%d ", (k == "" ? "leer" : k), st[k]
+                printf "\nn5-fangov NRestarts (max im Zeitraum): %d\n", maxnr
+                printf "\nBoot-IDs im Zeitraum: %d\n", nb
+                for (j = 1; j <= nb; j++) printf "  %s  %s .. %s\n", border[j], bfirst[border[j]], blast[border[j]]
+            }' "$SAMPLES"
+    else
+        printf 'Noch keine Samples (%s fehlt).\n' "$SAMPLES"
+    fi
+    printf '\nDatenverzeichnis: %s (%s KB)\n' "$RUN_DIR" "${data_kb:-0}"
+    if [ -d "$RUN_DIR/outbox" ]; then
+        printf 'Mail-Warteschlange: %s\n' "$(find "$RUN_DIR/outbox" -name '*.eml' | wc -l)"
+    fi
+
+    if [ "$MODE" = final ]; then
+        printf '\nUnerklaerte Ereignisse (alle):\n'
+        vw_event_table open 0 | cut -d' ' -f2- | cut -c1-200 | sed 's/^/  /' | grep . || printf '  keine\n'
+        printf '\nAls erklaert gezaehlte Ereignisse mit der deckenden Annotation:\n'
+        vw_event_table expl 0 | cut -c1-220 | sed 's/^/  /' | grep . || printf '  keine\n'
+    else
+        printf '\nUnerklaerte Ereignisse (hoechstens 15, Nummer fuer annotate.sh --event):\n'
+        vw_event_table open 0 | tail -n 15 | cut -d' ' -f2- | cut -c1-200 | sed 's/^/  /' | grep . || printf '  keine\n'
+        printf '\nAnnotationen: '
+        if [ -s "$ANNOT" ]; then printf '\n'; tail -n 15 "$ANNOT"; else printf 'keine\n'; fi
+    fi
+
+    printf '\nHinweis: "PASS" heisst "kein unerklaerter Fehler beobachtet in %s Tagen\n' "$((elapsed / 86400))"
+    printf 'unter diesen Bedingungen", nicht "fehlerfrei". Fehlt diese Tagesmail, laeuft der Watcher nicht.\n'
+}
+
+case "$MODE" in
+    status)
+        body
+        ;;
+    daily)
+        if [ "$verdict" = PASS ]; then sv="PASS so far"; else sv="FAIL so far"; fi
+        out=$(body)
+        printf '%s\n' "$out" > "$RUN_DIR/reports/day-$day.txt"
+        printf '%s\n' "$out" | vw_mail "[n5-validation] Tag $day/$DURATION_DAYS $RUN_ID: $sv"
+        ;;
+    final)
+        out=$(body)
+        printf '%s\n' "$out" > "$RUN_DIR/reports/final.txt"
+        printf '%s\n' "$out" | vw_mail "[n5-validation] ABSCHLUSS $RUN_ID: $verdict"
+        if [ "$DRY_RUN" != 1 ]; then
+            # final.done first (no second final mail); if disabling fails,
+            # every following check run retries it (n5vw-check start).
+            printf '%s %s\n' "$(vw_iso "$NOW")" "$verdict" > "$RUN_DIR/final.done"
+        fi
+        vw_disable_timers || true
+        ;;
+esac

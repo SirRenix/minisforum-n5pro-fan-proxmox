@@ -1,0 +1,39 @@
+#!/bin/bash
+# ec_probe stub: logs every call with the module state; "dump" prints a
+# fixed EC RAM image (layout of befunde/raw/03-probe-20260914-160338.txt)
+set -eu
+# shellcheck source=../fakek.sh
+. "$FK_TEST_DIR/fakek.sh"
+fk_log "ec_probe $* state=$(fk_state)"
+[ "${F8A_TEST_TOOLFAIL:-}" != ec_probe ] || { echo "ec_probe: read timed out (injected)" >&2; exit 1; }
+[ "${F8A_TEST_SLOWTOOL:-0}" = 0 ] || { sleep "$F8A_TEST_SLOWTOOL"; fk_log "ec_probe done state=$(fk_state)"; }
+[ "${1:-}" = dump ] || { echo "ec_probe stub: only dump is simulated" >&2; exit 1; }
+b34=64
+if [ "${F8A_TEST_CURVE_CHANGE:-0}" = 1 ] && [ "$(cat "$R/fake/last_pwm4" 2>/dev/null)" = 167 ]; then
+    b34=A7
+fi
+n=$(fk_count dumps)
+t9=$(printf '%02X' $((0x22 + n)))
+cat <<EOF
+EC_SC status: 0x00 (IBF=0 OBF=0)
+EC RAM dump (256 bytes):
+      0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
+00: 00 00 00 0E 20 19 16 00 00 $t9 00 00 00 00 00 00
+10: 00 19 00 14 2D 19 17 37 2D 19 41 37 1B 4B 41 1E
+20: 52 4B 21 57 52 22 64 57 00 00 00 00 00 00 02 00
+30: 16 3C 00 1A $b34 3C 1A 64 64 00 00 00 00 00 00 00
+40: 01 05 00 00 00 03 00 00 00 00 00 00 00 00 00 00
+50: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+60: 00 0C 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+70: 0C 22 00 10 64 22 10 64 64 0C 22 00 10 64 22 10
+80: 64 64 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+90: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+A0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+B0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+C0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+D0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+E0: 00 00 00 00 0D 00 00 00 00 00 00 00 00 00 00 00
+F0: 00 0A 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
+nonzero bytes: 58/256
+EOF

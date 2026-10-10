@@ -1,0 +1,116 @@
+P3 Treiber-Review -- B5/B10 ACPI-/Firmware-Konkurrenz an 0x62/0x66/0x68/0x6c
+Datum: 2026-10-09 ~17:00 CEST
+Host: n5host, Kernel 7.0.14-20-pve, BIOS 1.05 (03/31/2026)
+Treiberquelle: driver/upstream/driver-prototype/minisforum_n5_it5571.c
+  SHA256 E8676ED3820C3DB72B6F9821F0A0AF12245EB6290380817D390952E67CB25A74
+Volle Tabellen/DSL NICHT im Repo (Maschinen-Firmware), nur im Session-Scratchpad.
+Disassembler: iasl 20250404 (acpica-tools, debian:trixie-slim, Container auf debdocker, danach geloescht)
+
+== 1. Befehle (n5host, nur lesend) ==
+ls -la /sys/firmware/acpi/tables/ /sys/firmware/acpi/tables/dynamic
+cat /sys/bus/acpi/devices/PNP0C09*/{status,path}; readlink -f
+grep 006x /proc/ioports
+journalctl -k -b | grep -iE "ACPI: EC|PNP0C09|_GLK|global lock|ECDT|EC0"
+ls /sys/bus/acpi/drivers/ec
+sudo cat /sys/firmware/acpi/tables/{DSDT,SSDT*,FACS,FACP} > ~/acpi-p3/  -> tar -> scp -> rm -rf auf n5host (geprueft: 0 Reste)
+debdocker: docker run --rm debian:trixie-slim; iasl -e SSDT*.dat -d DSDT.dat; je SSDT: iasl -e DSDT.dat -d SSDTn.dat;
+  iasl -d FACS.dat FACP.dat; /tmp-Reste + Image entfernt.
+
+Tabellen: DSDT (30648 B), SSDT1..SSDT19, FACS, FACP, APIC, HPET, MCFG, IVRS, PCCT, VFCT, WSMT, ... ; KEINE ECDT; dynamic/ leer.
+SHA256 DSDT.dat  1d1321824efdccd865c9bcb20c30c38d47e07488fd0a868c3b63874429aedb40
+SHA256 SSDT8.dat e4de809d55ced2c14f135bc8f2f4fb463dc707624e74dd4621ab6c8406784b7c
+SHA256 SSDT14.dat 30eafa0686268e54758ba000a71b06deb3bcd703b0c3049e3d269a66feee1f11
+
+== 2. Laufzeit-Zustand ==
+/sys/bus/acpi/devices/PNP0C09:00 -> /sys/devices/LNXSYSTM:00/LNXSYBUS:00/PNP0A08:00/device:01/PNP0C09:00
+status=0
+path=\_SB_.PCI0.SBRG.EC0_
+/sys/bus/acpi/drivers/ec: existiert nicht (kein EC-Treiber gebunden)
+journalctl -k -b: keine Zeile "ACPI: EC", kein ECDT, kein _GLK/Global Lock
+/proc/ioports:
+  0060-0060 : keyboard
+  0061-0061 : PNP0800:00
+  0062-0062 : minisforum_n5_it5571
+  0064-0064 : keyboard
+  0066-0066 : minisforum_n5_it5571
+  0068-0068 : minisforum_n5_it5571
+  006c-006c : minisforum_n5_it5571
+-> acpi_ec haelt keinen der vier Ports; Halter ist ausschliesslich der Treiber.
+
+== 3. AML-Suche (alle 20 DSL: DSDT + SSDT1..19) ==
+OperationRegion EmbeddedControl ............ 0 Treffer
+_GLK ....................................... 0 Treffer
+Method (_Qxx) .............................. 0 Treffer
+_L0B/_E0B (EC0 _GPE 0x0B) .................. 0 Treffer
+Acquire (\_GL) ............................. 0 Treffer
+Field/BankField mit "Lock" (Global Lock) ... 35, ausschliesslich SystemMemory:
+  DSDT.dsl:7742  OperationRegion (TMMB, SystemMemory, 0xFED40000, 0x5000)   (TPM)
+  SSDT1.dsl:1211 OperationRegion (A166, SystemMemory, AGRB, 0x1000)        (+33 BankFields)
+  SSDT9.dsl:152  OperationRegion (CPNV, SystemMemory, 0x70067018, 0x00010117)
+
+SystemIO-Regionen, statische Basis (keine deckt 0x62/0x66/0x68/0x6c):
+  DSDT.dsl:234   DEB0 0x80 len4        DSDT.dsl:459  DEB3 0x80 len1     DSDT.dsl:465  DEB1 0x90 len2
+  DSDT.dsl:2736  PIRQ 0x0C00 len2      DSDT.dsl:2791 KBDD 0x64 len1     DSDT.dsl:3364 DBG0 0x80 len1
+  DSDT.dsl:3370  DBG1 0x80 len4        DSDT.dsl:3376 PCPT 0x80 len4     DSDT.dsl:3382 PSMI 0xB0 len2
+  DSDT.dsl:3448  IOCC 0x0400 len0x80   DSDT.dsl:5188 ECMC 0x72 len2 (CMOS-Index/Data, nicht EC)
+  DSDT.dsl:5557  FPIC 0x0C00 len2      SSDT1.dsl:195/201/207 A001/A003/A005 0x80
+  SSDT8.dsl:164  TP80 0x80 len4        SSDT9.dsl:393 VARQ 0x0CD8 len8
+SystemIO-Regionen, variable Basis:
+  DSDT.dsl:2323  SMI0  SMIO  = 0xB2 (DSDT.dsl:180)
+  DSDT.dsl:8075  TSMI  SMIA  = 0xB2 (DSDT.dsl:201)
+  SSDT10.dsl:1493 PSMI ASMI  = 0xB2 (SSDT10.dsl:1417)
+  DSDT.dsl:5182  SSMI  SMIB  = Byte aus SystemMemory 0xFED80000+0x36A (FCH SMI-Cmd-Port; FADT SMI Command Port = 0xB2)
+  DSDT.dsl:3438  P1E0  P1EB  (PM1-Event-Block; FADT PM1A Event Block = 0x800)
+  SSDT9.dsl:1287 VARM  M231  (AMD-CPM "CpmTriggerSmi", SMI-Cmd-Port)
+  SSDT9.dsl:284/294/304, 1386, 1509, 1593 (AMD-CPM Debug-UART/Postcode via M285/M288)
+  SSDT9.dsl:3970/4006/4018/4175/4451/4659 (AMD-CPM SMBus-Executor, Basis M414 + Arg0<<5)
+  -> Laufzeitwerte von SMIB/M231/M288/M414 sind read-only aus AML nicht auslesbar; nach Funktion
+     (SMI-Cmd, PM1, UART, SMBus) keine EC-/PMC-Ports. Wert-Beleg fuer M414/M288 steht aus (Restunsicherheit gering).
+
+Literale 0x0060..0x006F in Ressourcen (_CRS, keine OperationRegion):
+  DSDT.dsl:2353-2366  \_SB.PCI0.S900 (PNP0C02 Motherboard Resources, _STA 0x0F):
+     IO 0x0063 len1, IO 0x0065 len1, IO 0x0067 len 0x09 (= 0x67..0x6F, deckt 0x68 und 0x6C)
+     Linux pnp/system reserviert Ports < 0x100 nicht; /proc/ioports zeigt keinen PNP0C02-Eintrag in 0x60-0x6F.
+  DSDT.dsl:2539/2545  0x60/0x64 (PS/2-Keyboard)
+  DSDT.dsl:5120       0x61 (PNP0800 Speaker)
+  DSDT.dsl:8309-8331  EC0._CRS: IO 0x62 len1, IO 0x66 len1 (BUF0/BUF1, RDHW=0 -> BUF0)
+
+== 4. EC0 und Verbraucher (Auszuege) ==
+DSDT.dsl:8284 Device (EC0)
+DSDT.dsl:8286   Name (_HID, EisaId ("PNP0C09"))
+DSDT.dsl:8287   Name (_GPE, 0x0B)
+DSDT.dsl:8288   Method (_STA) { If ((M049 (M128, 0x77) == One)) Return (0x0F) Else Return (Zero) }
+                -> gemessen status=0 (NVS-Flag M128 Offset 0x77 = 0)
+DSDT.dsl:8302   Name (OKEC, Zero)
+DSDT.dsl:8352   Mutex (Z009, 0x00)          (AML-Mutex, KEIN Global Lock, nicht fuer OS-Treiber sichtbar)
+DSDT.dsl:8353   Method (_REG) { If (Arg0 == 0x03) { ...; OKEC = Arg1 } }
+DSDT.dsl:8370   Method (ECOK) { Return (OKEC == One) }
+                -> EC0 enthaelt KEINE OperationRegion/Field. Felder DIEH/BTMH/BTML sind nur als
+                   External deklariert (SSDT14.dsl:23, SSDT8.dsl:23-24) und in keiner Tabelle definiert.
+SSDT14.dsl:185 ThermalZone (TZ01) / :190 Method (_TMP):
+                Local0 = 0x0B74; If CondRefOf(EC0.OKEC) && OKEC==One && CondRefOf(EC0.DIEH) -> DIEH lesen
+                -> OKEC=0 und DIEH nicht definiert: liefert konstant 0x0B74 (20,0 degC), kein Portzugriff.
+SSDT8.dsl:295  Method (AST3): If (ECOK()) { Acquire Z009; BTMH/BTML lesen }
+                -> ECOK()=0, kein Portzugriff (bei OKEC=1 wuerde die undefinierte Referenz scheitern).
+OKEC wird nur in EC0._REG(3,1) gesetzt; _REG fuer EmbeddedControl laeuft nur, wenn das OS einen
+EC-Adressraum-Handler installiert -> ohne gebundenen acpi_ec (status=0, kein ECDT) nicht.
+
+== 5. Treiberseite ==
+minisforum_n5_it5571.c:37-41  Portkonstanten 0x62/0x66/0x68/0x6c
+minisforum_n5_it5571.c:553-572 request_region je Port
+Keine acpi_acquire_global_lock()/ACPI-Aufrufe im Quelltext (grep "acpi_|global_lock": 0 Treffer).
+
+== 6. SMM/SMI-Restrisiko (read-only nicht messbar) ==
+AML loest SMIs aus (Schreibzugriff auf 0xB2 via SMI0/TSMI/PSMI/SSMI, SSDT9 M232 CpmTriggerSmi).
+Ob SMM-Handler (oder periodische SMIs) 0x62/0x66/0x68/0x6c bedienen, ist aus den Tabellen nicht ablesbar
+und ohne Firmware-Image/SMM-Analyse nicht ausschliessbar. Keine benannte Quelle schliesst es aus.
+Indiz dagegen: EC0 ist deaktiviert und besitzt keine EC-Region -> die Firmware hat auf diesem Board offenbar
+keinen OS-sichtbaren EC-Pfad vorgesehen; Indiz ist kein Ausschluss.
+Folge bei Kollision waere ein gestoerter Handshake (Timeout/falsches Byte) -> wird im F8b-Lauf (B11) als
+EC-Timeout/Handshake-Fehler sichtbar.
+
+== 7. Ergebnis ==
+(a) acpi_ec haelt die Ports nicht: belegt (status=0, /proc/ioports, kein EC-Treiber, keine ECDT).
+(b) Keine AML-Region (SystemIO oder EmbeddedControl) mit Basis/Ausdehnung ueber 0x62/0x66/0x68/0x6c;
+    kein _GLK, keine _Qxx, kein EC-GPE-Handler; Global Lock nur auf SystemMemory-Regionen.
+(c) SMM-Restrisiko: nicht ausschliessbar, oben benannt; Annahme durch Betreiber erforderlich (B10).

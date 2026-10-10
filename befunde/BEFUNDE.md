@@ -94,25 +94,35 @@ HDD-Lüfter im Treiber stimmt.
 |---|---|---|---|
 | pwm1 CPU | 0x21 | ja (2020 → 2009) | **ja** — DCR1 0x55 → 0x94 unter CPU-Last |
 | pwm2 SSD | 0x2e | ja (2220 → 2173, driftet auf 2130) | nicht separat geprüft |
-| pwm3 HDD | 0x2b | **nein** (1647 → 1117, stabil ~1240) | **nein** — DCR3/4 bleiben 0x57 bei System-Temp 33 → 38 °C und HDD-Leselast |
-| pwm4 PCIe | 0x31 | n/a | **nein** — DCR5 behält den letzten Schreibwert 0x8c (140) |
+| pwm3 HDD | 0x2b | nicht auf Ausgangswert (1647 → 1117, stabil ~1240) — Kriterium ungeeignet, s. u. | **verlässt den Schreibwert: ja** — DCR3/4 0x8c (140) → 0x57 (87); 0x8c ist der letzte Schreibwert (Stufe 140, fan3 ≈ 2250 RPM), **nicht per I2EC gemessen** — der erste I2EC-Wert (17:20) stammt schon von nach 0x2b. **Erklärung seit M5 (09.10., aus EC-Firmware 0.14 abgeleitet, Messwerte passen):** Die EC-Automatik regelt HDD auf eine **Solldrehzahl** (±100 rpm), Eingang ist **EC 0x06 (Ambient)**: < 34 °C → 1200 rpm, 34–99 °C → 1600 rpm. Gemessen nach 0x2b: 1237–1240 rpm bei 0x06 = 22 °C — im Band, also **geregelt**. Keine Reaktion auf HDD-/System-Last, weil 0x06 sich nicht bewegte. Details `p1-ec-tabellen-20261008.md` §5 |
+| pwm4 PCIe | 0x31 | n/a | **nein** — DCR5 behält den letzten Schreibwert 0x8c (140). Seit M5 erklärt (abgeleitet): PCIe hat in der EC-Firmware **keine Automatik**, nach 0x31 schreibt der EC DCR5 nie wieder; kein Lüfter am Header |
 
-Details in `raw/06-i2ec-dcr-20260914.txt`. Ein I2EC-Snapshot **vor** den
-Tests fehlt (seither im Skript). Deshalb ist nicht unterscheidbar, ob der
-HDD-Kanal vor den Tests vom EC geregelt wurde oder ob das BIOS beim Boot
-einen festen Duty gesetzt hatte, den 0x2b nicht kennt. Messbar ist nur: nach
-0x2b steht der HDD-Kanal fest auf 34 % und reagiert auf keine Temperatur.
+Details in `raw/06-i2ec-dcr-20260914.txt` und `raw/06-pwmtest-ch3-20260914-171352.txt`
+(letzte Stufe 140). Ein I2EC-Snapshot **vor** den Tests fehlt (seither im Skript).
 
-**Konsequenz:** Für den Dauerbetrieb wird die Regelung im OS übernommen
-(`deploy/n5-fand`), nicht an den EC zurückgegeben. Stoppverhalten des
-Reglers: CPU/SSD → EC-Automatik (nachweislich funktionsfähig), HDD → fester
-sicherer Wert (119 ≈ 1900 RPM).
+Korrigiert 08.10.2026 nach Hinweis in Upstream-#7 (F8NAB: HDD kehrt nach 0x2b
+zurück, Rampe ~4 min). Die ursprüngliche Aussage „EC regelt HDD nicht mehr" war
+falsch: der Kanal bleibt nicht auf dem Schreibwert. Ob danach die EC-Kurve oder
+ein fester Default greift, unterscheiden weder unsere noch die F8NAB-Daten.
+Fehlerursache: Prüfkriterium „Tacho nach 20 s ±150 RPM am Ausgangswert" — Fenster
+zu kurz, Ausgangswert kein gesicherter EC-Automatik-Zustand. Ob die HDD-Kurve
+auf Temperatur reagiert, ist offen: der Lasttest hat ihren (unbekannten)
+Eingangssensor vermutlich kaum bewegt. Neumessung: `N5Pro/validierung-konzept.md`.
+
+**Konsequenz:** Für den Dauerbetrieb wird die Regelung im OS übernommen, nicht
+an den EC zurückgegeben — seit 15.09.2026 durch n5-fangov (14.–15.09. durch den
+Vorgänger `n5-fand`, heute `legacy/`). Stoppverhalten des Reglers: CPU/SSD →
+EC-Automatik (nachweislich funktionsfähig), HDD → fester sicherer Wert 140
+(≈ 2250 RPM; am 14.09. stand hier noch 119 ≈ 1900 RPM). Ab Treiber `0.2.1+sr1` (Patch 0006)
+setzt der Treiber beim Reboot/Ausschalten HDD und PCIe auf 255 und CPU/SSD auf
+EC-Automatik; der Regler-Failsafe HDD 140 übersteht einen Warmstart dann nicht
+(TESTSPEC T6, ungemessen).
 
 ## Dauerbetrieb (seit 14.09.2026 17:33)
 
 | Komponente | Stand |
 |---|---|
-| Modul | DKMS `minisforum-n5-it5571/0.2.0`, gebaut + MOK-signiert für 7.0.12-1-pve, `AUTOINSTALL=yes` |
+| Modul | DKMS `minisforum-n5-it5571/0.2.0`, gebaut für 7.0.12-1-pve, `AUTOINSTALL=yes`; mit DKMS-Schlüssel signiert, Schlüssel nicht als MOK eingeschrieben (korrigiert 08.10., s. P1) |
 | Autoload | `modules-load.d` + `modprobe.d` mit `experimental_write=1` (Modul schreibt beim Laden nichts) |
 | Regler | `n5-fand.service`, Bash, ~4 MB RSS, 10-s-Zyklus, Kurven in `/etc/n5-fand.conf`; Härtung 14.09. abends: Watchdog, Failsafe-Hook, Stall-/Sensor-/Konfigprüfung, Alarme, CLI `n5fan` (Details `docs/BETRIEB.md`) |
 | Lasttest | 6 Kerne 90 s: DCR1 0x55 → 0xe1, Tctl gehalten bei 73 °C (EC ließ 83 °C zu), Rückregelung 15/Zyklus, SSD/HDD unberührt |
@@ -133,9 +143,33 @@ sicherer Wert (119 ≈ 1900 RPM).
   die DCRs initialisiert (offene Frage aus Phase 6).
 - Bedeutung von EC[0x34] = 100 % konstant ungeklärt; liegt innerhalb einer
   Tabelle bei 0x30–0x38, vermutlich Kurvenpunkt, kein Live-Sollwert.
-- EC-RAM 0x10–0x27 (8 Tripel Temp/PWM/Hysterese, 25–100 %) und 0x70–0x81
-  (2 identische 3-Punkt-Tabellen — DCR3/DCR4?) nicht weiter untersucht.
+- EC-RAM-Tabellen: dekodiert 08.10. (Schreibtisch, Dumps 14.09.) — Tripel
+  (Temperatur, Duty, Duty des Vorpunkts), nicht Temp/PWM/Hysterese. Details und
+  offene Zuordnung in `p1-ec-tabellen-20261008.md`.
 - `n5-fand` vor `modprobe -r` stoppen; das Modul hält keinen Refcount.
+
+## P1 — Read-only-Klärung (08.10.2026)
+
+Plan `N5Pro/plan-treiber-validierung-release.md` P1. Rohdaten `raw/p1-host-20261008.txt`
+(Host, nur lesend), `p1-ec-tabellen-20261008.md` (Schreibtisch, kein Hostzugriff). Jede Aussage
+von einem zweiten Agenten gegengeprüft.
+
+| Punkt | Ergebnis | Status |
+|---|---|---|
+| Kernel | `7.0.14-20-pve` | gemessen |
+| debugfs / Lockdown | eingehängt, `CONFIG_DEBUG_FS_ALLOW_ALL=y`, Lockdown `none` → debugfs-Knoten (Patch 0003) auf diesem Host nutzbar; Verhalten unter Lockdown hier nicht messbar | gemessen |
+| Ports | 0x62/0x66/0x68/0x6c nur durch `minisforum_n5_it5571`; 0x2e/0x4e frei, kein Super-I/O-Treiber geladen (it87/nct6775 als Modul verfügbar) | gemessen |
+| ACPI/Firmware auf den EC-Ports | `PNP0C09` status=0, keine `ACPI: EC`-Zeile; DSDT/SSDT-Zugriffe und SMM nicht geprüft | teils offen |
+| Modulversion | `modinfo` 0.2.0 (`MODULE_VERSION` upstream), Paket/DKMS 0.2.1, `/usr/src/minisforum-n5-it5571-0.2.1` | gemessen |
+| Signatur | mit DKMS-Schlüssel **signiert**, Schlüssel **nicht eingeschrieben** → Prüfung schlägt fehl, Taint `OE`; Secure Boot aus. „MOK-signiert" war falsch | gemessen |
+| EC-Firmware | `/sys/class/dmi/id/ec_firmware_release` = **0.14** (SMBIOS, gefahrlos lesbar); EC-RAM 0x00–0x03 `00 00 00 0E` passt dazu, nur bei entladenem Modul lesbar | gemessen |
+| n5-fangov Unit | `WatchdogSec=60`, `Restart=always`, `ExecStopPost=failsafe`, `KillMode=control-group`; Host-Konfig `profile = "n5pro"` | gemessen |
+| SIGKILL/Absturz | `ExecStopPost` setzt Safe-State (CPU/SSD auto, HDD 140); Hänger: Watchdog nach ≤ 3×Intervall + 60 s (~90 s); Neustart erzeugt kurzen 255-Stoß auf pwm1/2 | aus Code abgeleitet, am Host zu messen |
+| pwm-Cache | Treiber liefert pwm/pwm_enable nur aus Cache → n5-fangov-Read-back-Prüfung wirkungslos, EC-Übernahme nicht erkennbar | aus Code abgeleitet |
+| Profil `auto` | fehlt `experimental_write`, fällt n5-fangov bei `profile = "auto"` (Default) **still auf `monitor`** zurück: `check` besteht, keine Regelung. pve01 betrifft das nicht (`n5pro`) | aus Code abgeleitet |
+| `versionLess` | `0.2.1+sr1` gilt als < `0.2.1`; `~rc` nicht unterscheidbar; kein Test | aus Code abgeleitet |
+| EC-Tabellen | 4 Tripel-Tabellen, Format **(Solldrehzahl/100, T_oben, T_unten)** (M5, 09.10., EC-Code). A 0x10–0x27 = CPU (DCR1, Eingang EC 0x09), B 0x30–0x38 = SSD (DCR2, Eingang EC 0x05), C 0x70–0x78 = HDD DCR3, D 0x79–0x81 = HDD DCR4 (Eingang EC 0x06). Werte aus Konstanten beim EC-Start, OS kann sie nicht beschreiben. Die Setup-Variable „Fan 1–4 Setting“ ist vom OS nicht lesbar | abgeleitet (Firmware-Code), Messwerte 14.09. passen; am Gerät offen: Startphase, Override-Register, BIOS-User-Mode (M1) |
+| PCIe 0x8c | erklärt: keine EC-Automatik für DCR5 (s. o.); „Kurvenpunkte überschrieben“ damit unwahrscheinlich, F1/M2 bestätigt am Gerät | abgeleitet |
 
 ## Für den GitHub-Issue an ltdstudio/minisforum-n5-it5571
 

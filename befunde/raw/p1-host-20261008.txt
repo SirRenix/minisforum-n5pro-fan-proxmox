@@ -1,0 +1,457 @@
+# P1 Host-Messung n5host (n5host), READ-ONLY
+# Datum: 2026-10-08 21:21:26 +02:00 (Workstation-Zeit)
+# Aufruf: Skript p1-host.sh per 'ssh pve bash -s' (Skripttext unten am Ende)
+# Hostname in uname-Ausgabe durch n5host ersetzt
+
+### 1. Kernel
+
+$ uname -a
+Linux n5host 7.0.14-20-pve #1 SMP PREEMPT_DYNAMIC PMX 7.0.14-20 (2026-09-24T10:43Z) x86_64 GNU/Linux
+[rc=0]
+
+$ uname -r
+7.0.14-20-pve
+[rc=0]
+
+$ grep -E "^(# )?CONFIG_(DEBUG_FS|DEBUG_FS_ALLOW_ALL|DEBUG_FS_DISALLOW_MOUNT|DEBUG_FS_ALLOW_NONE|SECURITY_LOCKDOWN_LSM|SECURITY_LOCKDOWN_LSM_EARLY|LOCK_DOWN_KERNEL_FORCE_NONE|LOCK_DOWN_KERNEL_FORCE_INTEGRITY|LOCK_DOWN_KERNEL_FORCE_CONFIDENTIALITY|MODULE_SIG|MODULE_SIG_FORCE|MODULE_SIG_ALL|LSM|IO_STRICT_DEVMEM|STRICT_DEVMEM|DEVPORT)[= ]" /boot/config-$(uname -r)
+CONFIG_MODULE_SIG=y
+# CONFIG_MODULE_SIG_FORCE is not set
+CONFIG_MODULE_SIG_ALL=y
+CONFIG_DEVPORT=y
+CONFIG_SECURITY_LOCKDOWN_LSM=y
+CONFIG_SECURITY_LOCKDOWN_LSM_EARLY=y
+CONFIG_LOCK_DOWN_KERNEL_FORCE_NONE=y
+# CONFIG_LOCK_DOWN_KERNEL_FORCE_INTEGRITY is not set
+# CONFIG_LOCK_DOWN_KERNEL_FORCE_CONFIDENTIALITY is not set
+CONFIG_LSM="lockdown,yama,integrity,apparmor"
+CONFIG_DEBUG_FS=y
+CONFIG_DEBUG_FS_ALLOW_ALL=y
+# CONFIG_DEBUG_FS_ALLOW_NONE is not set
+CONFIG_STRICT_DEVMEM=y
+# CONFIG_IO_STRICT_DEVMEM is not set
+[rc=0]
+
+### 2. debugfs / lockdown / cmdline
+
+$ findmnt /sys/kernel/debug
+TARGET            SOURCE  FSTYPE  OPTIONS
+/sys/kernel/debug debugfs debugfs rw,nosuid,nodev,noexec,relatime
+[rc=0]
+
+$ findmnt -t debugfs
+TARGET            SOURCE  FSTYPE  OPTIONS
+/sys/kernel/debug debugfs debugfs rw,nosuid,nodev,noexec,relatime
+[rc=0]
+
+$ sudo -n cat /sys/kernel/security/lockdown
+[none] integrity confidentiality
+[rc=0]
+
+$ cat /proc/cmdline
+BOOT_IMAGE=/boot/vmlinuz-7.0.14-20-pve root=/dev/mapper/pve-root ro quiet amd_iommu=on iommu=pt nmi_watchdog=1 softlockup_panic=1 sysrq_always_enabled=1 panic=10
+[rc=0]
+
+### 3. ioports / lsmod
+
+$ sudo -n cat /proc/ioports | grep -iE "002e-002f|004e-004f|0062|0066|0068|006c|it87|nct|w83627|f71882|sch5|minisforum|ec"
+  0062-0062 : minisforum_n5_it5571
+  0066-0066 : minisforum_n5_it5571
+  0068-0068 : minisforum_n5_it5571
+  006c-006c : minisforum_n5_it5571
+[rc=0]
+
+$ lsmod | grep -iE "it87|nct6775|nct6683|w83627|f71882|sch5|ec_sys|acpi_ec|minisforum"
+minisforum_n5_it5571    20480  0
+[rc=0]
+
+### 4. Modul
+
+$ modinfo minisforum_n5_it5571
+bash: line 1: modinfo: command not found
+[rc=127]
+
+$ cat /sys/module/minisforum_n5_it5571/version
+0.2.0
+[rc=0]
+
+$ cat /sys/module/minisforum_n5_it5571/srcversion
+96E49785C432E4B85FAF416
+[rc=0]
+
+$ cat /sys/module/minisforum_n5_it5571/taint
+OE
+[rc=0]
+
+$ cat /sys/module/minisforum_n5_it5571/refcnt
+0
+[rc=0]
+
+$ cat /sys/module/minisforum_n5_it5571/initstate
+live
+[rc=0]
+
+$ ls -l /sys/module/minisforum_n5_it5571/parameters/
+total 0
+-r--r--r-- 1 root root 4096 Oct  8 21:21 experimental_write
+-r--r--r-- 1 root root 4096 Oct  8 21:21 force
+[rc=0]
+
+$ for p in /sys/module/minisforum_n5_it5571/parameters/*; do echo "$p = $(sudo -n cat $p)"; done
+/sys/module/minisforum_n5_it5571/parameters/experimental_write = Y
+/sys/module/minisforum_n5_it5571/parameters/force = N
+[rc=0]
+
+$ sudo -n dkms status
+minisforum-n5-it5571/0.2.1, 7.0.12-1-pve, x86_64: installed
+minisforum-n5-it5571/0.2.1, 7.0.14-19-pve, x86_64: installed
+minisforum-n5-it5571/0.2.1, 7.0.14-20-pve, x86_64: installed
+[rc=0]
+
+$ command -v mokutil && mokutil --sb-state
+/usr/bin/mokutil
+SecureBoot disabled
+[rc=0]
+
+$ sudo -n journalctl -k -b --no-pager | grep -i minisforum
+Oct 04 22:17:18 n5host kernel: integrity: Loaded X.509 cert 'MINISFORUM OWN CA: 815a459eeaeb7a9e42fabf9897858520'
+Oct 04 22:17:18 n5host kernel: minisforum_n5_it5571: loading out-of-tree module taints kernel.
+Oct 04 22:17:18 n5host kernel: minisforum_n5_it5571: module verification failed: signature and/or required key missing - tainting kernel
+Oct 04 22:17:18 n5host kernel: minisforum_n5_it5571 minisforum_n5_it5571: Minisforum N5 Pro / F8NAA: EXPERIMENTAL PWM WRITES ENABLED; stop immediately if a fan stops, runs unexpectedly, a channel is mismatched, or temperatures become abnormal
+Oct 04 22:17:18 n5host kernel: minisforum_n5_it5571 minisforum_n5_it5571: registered 4 fan and 4 temperature channels plus 4 writable PWM channels
+[rc=0]
+
+$ cat /proc/sys/kernel/tainted
+12289
+[rc=0]
+
+### 5. n5-fangov
+
+$ systemctl cat n5-fangov
+# /usr/lib/systemd/system/n5-fangov.service
+[Unit]
+Description=n5-fangov guarded fan control (Proxmox VE / Debian)
+Documentation=https://github.com/SirRenix/n5-fangov
+After=systemd-modules-load.service
+# n5-fand is the predecessor; both must never regulate at the same time
+Conflicts=n5-fand.service
+# After 5 failed starts within 5 min the unit stays "failed" -> OnFailure alerts
+StartLimitIntervalSec=300
+StartLimitBurst=5
+OnFailure=n5-fangov-onfailure.service
+
+[Service]
+Type=notify
+NotifyAccess=main
+# Self-check fails LOUDLY when config/profile/sysfs are not usable
+ExecStartPre=/usr/bin/n5-fangov check --quiet
+ExecStart=/usr/bin/n5-fangov serve
+# Runs after EVERY end, also after SIGKILL, watchdog kill or crash
+ExecStopPost=/usr/bin/n5-fangov failsafe
+# The daemon sends WATCHDOG=1 every cycle (interval 2..30 s) and every 10 s from a
+# ticker while the loop is alive (last cycle within 3x interval); a hung loop is restarted
+WatchdogSec=60
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=20
+Nice=-5
+
+# --- directories ---------------------------------------------------------
+# /run/n5-fangov holds the unauthenticated CLI socket: root only
+RuntimeDirectory=n5-fangov
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+# /var/log/n5-fangov: rotating log file ([log].file); journal stays primary
+LogsDirectory=n5-fangov
+LogsDirectoryMode=0750
+# /var/lib/n5-fangov: sessions.json (dashboard "remember me" cookies) and
+# alerts.json (recent alert history); root only, the session tokens are secrets
+StateDirectory=n5-fangov
+StateDirectoryMode=0700
+UMask=0077
+
+# --- sandbox (DESIGN v0.2; verify on the real box after every change) ----
+# The daemon writes pwmN/pwmN_enable under /sys: ProtectKernelTunables MUST
+# stay "no" and /sys/class/hwmon + /sys/devices/platform MUST be in
+# ReadWritePaths — the pwm files of every supported chip live under
+# /sys/devices/platform/<driver>/hwmon/hwmonN (it5571, nct6775 and it87 are
+# platform drivers), /sys/class/hwmon holds the symlinks the daemon opens;
+# everything else under /sys stays read-only, which is all the sensors, the
+# DMI tables and the disk temperatures need.
+# `make verify-deploy` runs systemd-analyze verify over this file.
+NoNewPrivileges=yes
+ProtectSystem=strict
+# "-" = do not fail the start when the path is absent. The postfix
+# maildrop is for the mail(1)/sendmail alert path on non-PVE hosts;
+# PVE::Notify with an SMTP target needs no extra path. NOTE: that mail path
+# also needs CAP_DAC_OVERRIDE (maildrop is 0730 postfix:postdrop and
+# NoNewPrivileges suppresses postdrop's setgid) — see docs/08-https-security.md "Hardening".
+# /etc/pve/notification-templates: the dashboard's "install template" button
+# writes the two n5-fangov .hbs files there (pmxcfs; verified on the reference
+# host: a process under this sandbox creates and removes a file in that
+# directory). The directory itself must exist — a fresh box gets it from
+# install.sh or `n5-fangov alerts template` (both run outside the sandbox).
+ReadWritePaths=-/etc/n5-fangov -/run/n5-fangov -/var/log/n5-fangov -/var/lib/n5-fangov -/sys/class/hwmon -/sys/devices/platform -/var/spool/postfix/maildrop -/etc/pve/notification-templates
+ProtectHome=yes
+PrivateTmp=yes
+# /dev holds only the pseudo devices; [log].file must be under /var/log
+# anyway, and nothing here needs a block or character device
+PrivateDevices=yes
+ProtectKernelTunables=no
+ProtectControlGroups=yes
+# AF_NETLINK: net.Interfaces() (the fallback for the TLS certificate's
+# address list) reads the interface table over netlink
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# Cost-free directives that back the empty capability set up (the daemon
+# runs as uid 0 without capabilities; these keep a code-execution bug in
+# the web handler from reaching what the capabilities would have guarded):
+# no module load/unload, no kernel log ring, no clock or hostname change,
+# no SUID/SGID files, other processes' /proc entries hidden. ProcSubset is
+# NOT set: sysinfo reads /proc/cpuinfo, meminfo, uptime, loadavg and
+# /proc/sys/kernel/osrelease.
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+ProtectProc=invisible
+# The daemon runs as root but needs no capability: sysfs attributes
+# are writable for uid 0 without CAP_DAC_OVERRIDE, the files it writes are
+# its own, and the kernel module is loaded by modules-load.d, never from
+# here (check --after-update only looks at files under /lib/modules).
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
+[rc=0]
+
+$ systemctl show n5-fangov -p ActiveState,SubState,ActiveEnterTimestamp,NRestarts,WatchdogUSec,KillMode,Restart,ExecStopPost,ExecStartPre,OnFailure,MainPID
+Restart=always
+WatchdogUSec=1min
+MainPID=3204
+NRestarts=0
+ExecStartPre={ path=/usr/bin/n5-fangov ; argv[]=/usr/bin/n5-fangov check --quiet ; ignore_errors=no ; start_time=[Sun 2026-10-04 22:17:56 CEST] ; stop_time=[Sun 2026-10-04 22:17:56 CEST] ; pid=2498 ; code=exited ; status=0 }
+ExecStopPost={ path=/usr/bin/n5-fangov ; argv[]=/usr/bin/n5-fangov failsafe ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }
+KillMode=control-group
+OnFailure=n5-fangov-onfailure.service
+ActiveState=active
+SubState=running
+ActiveEnterTimestamp=Sun 2026-10-04 22:17:57 CEST
+[rc=0]
+
+$ dpkg -l | grep -E "n5-fangov|minisforum"
+ii  minisforum-n5-it5571-dkms              0.2.1-1                              all          IT5571 EC fan driver for the Minisforum N5 Pro (DKMS)
+ii  n5-fangov                              0.4.2                                amd64        guarded fan control for Proxmox VE and Debian
+[rc=0]
+
+### 6. hwmon
+
+$ for d in /sys/class/hwmon/hwmon*; do echo "$d $(cat $d/name)"; done
+/sys/class/hwmon/hwmon0 acpitz
+/sys/class/hwmon/hwmon1 nic1
+/sys/class/hwmon/hwmon10 minisforum_n5_it5571
+/sys/class/hwmon/hwmon11 k10temp
+/sys/class/hwmon/hwmon12 spd5118
+/sys/class/hwmon/hwmon13 spd5118
+/sys/class/hwmon/hwmon14 amdgpu
+/sys/class/hwmon/hwmon2 r8169_0_c500:00
+/sys/class/hwmon/hwmon3 nvme
+/sys/class/hwmon/hwmon4 nvme
+/sys/class/hwmon/hwmon5 nvme
+/sys/class/hwmon/hwmon6 drivetemp
+/sys/class/hwmon/hwmon7 drivetemp
+/sys/class/hwmon/hwmon8 drivetemp
+/sys/class/hwmon/hwmon9 drivetemp
+[rc=0]
+
+# minisforum hwmon dir: /sys/class/hwmon/hwmon10
+
+$ ls -l /sys/class/hwmon/hwmon10/
+total 0
+lrwxrwxrwx 1 root root    0 Oct  4 22:18 device -> ../../../minisforum_n5_it5571
+-r--r--r-- 1 root root 4096 Oct  4 22:17 fan1_input
+-r--r--r-- 1 root root 4096 Oct  4 22:18 fan1_label
+-rw-r--r-- 1 root root 4096 Oct  4 22:18 fan1_min
+-r--r--r-- 1 root root 4096 Oct  4 22:17 fan2_input
+-r--r--r-- 1 root root 4096 Oct  4 22:18 fan2_label
+-rw-r--r-- 1 root root 4096 Oct  4 22:18 fan2_min
+-r--r--r-- 1 root root 4096 Oct  4 22:17 fan3_input
+-r--r--r-- 1 root root 4096 Oct  4 22:18 fan3_label
+-rw-r--r-- 1 root root 4096 Oct  4 22:18 fan3_min
+-r--r--r-- 1 root root 4096 Oct  4 22:18 fan4_input
+-r--r--r-- 1 root root 4096 Oct  4 22:18 fan4_label
+-rw-r--r-- 1 root root 4096 Oct  4 22:18 fan4_min
+-r--r--r-- 1 root root 4096 Oct  4 22:17 name
+drwxr-xr-x 2 root root    0 Oct  8 21:21 power
+-rw-r--r-- 1 root root 4096 Oct  8 21:21 pwm1
+-rw-r--r-- 1 root root 4096 Oct  4 22:17 pwm1_enable
+-rw-r--r-- 1 root root 4096 Oct  8 21:20 pwm2
+-rw-r--r-- 1 root root 4096 Oct  4 22:17 pwm2_enable
+-rw-r--r-- 1 root root 4096 Oct  8 21:20 pwm3
+-rw-r--r-- 1 root root 4096 Oct  4 22:17 pwm3_enable
+-rw-r--r-- 1 root root 4096 Oct  4 22:17 pwm4
+-rw-r--r-- 1 root root 4096 Oct  4 22:17 pwm4_enable
+lrwxrwxrwx 1 root root    0 Oct  8 21:21 subsystem -> ../../../../../class/hwmon
+-r--r--r-- 1 root root 4096 Oct  4 22:17 temp1_input
+-r--r--r-- 1 root root 4096 Oct  4 22:17 temp1_label
+-r--r--r-- 1 root root 4096 Oct  4 22:17 temp2_input
+-r--r--r-- 1 root root 4096 Oct  4 22:17 temp2_label
+-r--r--r-- 1 root root 4096 Oct  4 22:17 temp3_input
+-r--r--r-- 1 root root 4096 Oct  4 22:17 temp3_label
+-r--r--r-- 1 root root 4096 Oct  4 22:17 temp4_input
+-r--r--r-- 1 root root 4096 Oct  4 22:17 temp4_label
+-rw-r--r-- 1 root root 4096 Oct  8 21:21 uevent
+[rc=0]
+
+$ cd /sys/class/hwmon/hwmon10 && for f in name pwm1 pwm2 pwm3 pwm4 pwm1_enable pwm2_enable pwm3_enable pwm4_enable fan1_input fan2_input fan3_input fan4_input temp1_input temp2_input temp3_input temp4_input temp1_label temp2_label temp3_label temp4_label; do if [ -e $f ]; then echo "$f = $(cat $f 2>&1)"; else echo "$f = (nicht vorhanden)"; fi; done
+name = minisforum_n5_it5571
+pwm1 = 76
+pwm2 = 97
+pwm3 = 99
+pwm4 = 255
+pwm1_enable = 1
+pwm2_enable = 1
+pwm3_enable = 1
+pwm4_enable = 2
+fan1_input = 1798
+fan2_input = 2588
+fan3_input = 1656
+fan4_input = 0
+temp1_input = 38000
+temp2_input = 32000
+temp3_input = 25000
+temp4_input = 22000
+temp1_label = CPU Temp
+temp2_label = System Temp
+temp3_label = Board Temp
+temp4_label = Ambient Temp
+[rc=0]
+
+$ readlink -f /sys/class/hwmon/hwmon10/device
+/sys/devices/platform/minisforum_n5_it5571
+[rc=0]
+bash: line 37: $'\r': command not found
+
+### Nachtrag (modinfo nicht im PATH des ssh-Users)
+
+$ /usr/sbin/modinfo minisforum_n5_it5571
+filename:       /lib/modules/7.0.14-20-pve/updates/dkms/minisforum_n5_it5571.ko
+version:        0.2.0
+license:        GPL
+description:    Minisforum N5 family IT5571 fan/temp hwmon driver; N5 Pro/Air support is experimental; not affiliated with Minisforum; use at your own risk
+author:         ltdstudio, community exploration for the Minisforum N5 family
+srcversion:     96E49785C432E4B85FAF416
+alias:          dmi*:pn*N5AIR*:rn*F8NAB*:
+alias:          dmi*:pn*N5A*:rn*F8NAB*:
+alias:          dmi*:pn*N5PRO*:rn*F8NAA*:
+alias:          dmi*:pn*N5*:rn*F8NAA*:
+depends:        
+name:           minisforum_n5_it5571
+retpoline:      Y
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+sig_id:         PKCS#7
+signer:         DKMS module signing key
+sig_key:        <redacted>
+sig_hashalgo:   sha512
+signature:      <redacted>
+parm:           force:Load read-only without a known Minisforum DMI match (bool)
+parm:           experimental_write:Enable PWM writes on experimental or force-loaded systems (bool)
+[rc=0]
+
+$ ls -l /lib/modules/$(uname -r)/updates/dkms/ | grep -i minisforum
+-rw-r--r-- 1 root root 31213 Oct  4 22:02 minisforum_n5_it5571.ko
+[rc=0]
+
+$ cat /etc/modprobe.d/*.conf 2>/dev/null | grep -i minisforum; grep -ri minisforum /etc/modules-load.d/ /etc/modules 2>/dev/null
+[rc=1]
+
+$ cd /sys/class/hwmon/hwmon10 && for f in fan1_label fan2_label fan3_label fan4_label fan1_min fan2_min fan3_min fan4_min; do echo "$f = $(cat $f 2>&1)"; done
+fan1_label = CPU Fan
+fan2_label = SSD Fan
+fan3_label = HDD Fan
+fan4_label = PCIe Fan (no tach)
+fan1_min = 0
+fan2_min = 0
+fan3_min = 0
+fan4_min = 0
+[rc=0]
+
+$ systemctl cat n5-fangov-onfailure.service
+Invalid unit name "n5-fangov-onfailure.service
+" escaped as "n5-fangov-onfailure.service\x0d" (maybe you should use systemd-escape?).
+No files found for n5-fangov-onfailure.service\x0d.service.
+[rc=1]
+
+
+### Nachtrag 2 (Einzelaufruf; letzter Befehl im Nachtrag scheiterte an CR aus der PS-5.1-Pipe)
+
+$ systemctl cat n5-fangov-onfailure.service
+# /usr/lib/systemd/system/n5-fangov-onfailure.service
+[Unit]
+Description=n5-fangov failure alert (real cause, restart status, cooldown)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/n5-fangov/n5-fangov-onfailure
+[rc=0]
+
+$ grep -rl minisforum /etc/modules-load.d /usr/lib/modules-load.d /etc/modprobe.d /usr/lib/modprobe.d
+/usr/lib/modules-load.d/minisforum-n5-it5571.conf:minisforum_n5_it5571
+/usr/lib/modprobe.d/minisforum-n5-it5571.conf:options minisforum_n5_it5571 experimental_write=1
+[rc=0]
+
+# Hinweis: Zeile 'bash: line 37: \$'\r': command not found' am Ende des Hauptlaufs stammt vom CRLF der PowerShell-5.1-Pipe nach dem letzten Skriptbefehl; kein Messbefehl betroffen.
+
+
+### Skripttext
+#!/bin/bash
+# P1 host measurement - READ ONLY
+run() { echo; echo "\$ $*"; bash -c "$*" 2>&1; echo "[rc=$?]"; }
+H=$(hostname)
+echo "### 1. Kernel"
+echo; echo '$ uname -a'; uname -a | sed "s/$H/n5host/g"; echo "[rc=$?]"
+run 'uname -r'
+run 'grep -E "^(# )?CONFIG_(DEBUG_FS|DEBUG_FS_ALLOW_ALL|DEBUG_FS_DISALLOW_MOUNT|DEBUG_FS_ALLOW_NONE|SECURITY_LOCKDOWN_LSM|SECURITY_LOCKDOWN_LSM_EARLY|LOCK_DOWN_KERNEL_FORCE_NONE|LOCK_DOWN_KERNEL_FORCE_INTEGRITY|LOCK_DOWN_KERNEL_FORCE_CONFIDENTIALITY|MODULE_SIG|MODULE_SIG_FORCE|MODULE_SIG_ALL|LSM|IO_STRICT_DEVMEM|STRICT_DEVMEM|DEVPORT)[= ]" /boot/config-$(uname -r)'
+echo; echo "### 2. debugfs / lockdown / cmdline"
+run 'findmnt /sys/kernel/debug'
+run 'findmnt -t debugfs'
+run 'sudo -n cat /sys/kernel/security/lockdown'
+run 'cat /proc/cmdline'
+echo; echo "### 3. ioports / lsmod"
+run 'sudo -n cat /proc/ioports | grep -iE "002e-002f|004e-004f|0062|0066|0068|006c|it87|nct|w83627|f71882|sch5|minisforum|ec"'
+run 'lsmod | grep -iE "it87|nct6775|nct6683|w83627|f71882|sch5|ec_sys|acpi_ec|minisforum"'
+echo; echo "### 4. Modul"
+run 'modinfo minisforum_n5_it5571'
+for f in version srcversion taint refcnt initstate; do run "cat /sys/module/minisforum_n5_it5571/$f"; done
+run 'ls -l /sys/module/minisforum_n5_it5571/parameters/'
+run 'for p in /sys/module/minisforum_n5_it5571/parameters/*; do echo "$p = $(sudo -n cat $p)"; done'
+run 'sudo -n dkms status'
+run 'command -v mokutil && mokutil --sb-state'
+run 'sudo -n journalctl -k -b --no-pager | grep -i minisforum'
+run 'cat /proc/sys/kernel/tainted'
+echo; echo "### 5. n5-fangov"
+run 'systemctl cat n5-fangov'
+run 'systemctl show n5-fangov -p ActiveState,SubState,ActiveEnterTimestamp,NRestarts,WatchdogUSec,KillMode,Restart,ExecStopPost,ExecStartPre,OnFailure,MainPID'
+run 'dpkg -l | grep -E "n5-fangov|minisforum"'
+echo; echo "### 6. hwmon"
+run 'for d in /sys/class/hwmon/hwmon*; do echo "$d $(cat $d/name)"; done'
+D=$(for d in /sys/class/hwmon/hwmon*; do n=$(cat $d/name); case "$n" in *minisforum*|*n5*|*it5571*) echo $d;; esac; done | head -1)
+echo; echo "# minisforum hwmon dir: $D"
+run "ls -l $D/"
+run "cd $D && for f in name pwm1 pwm2 pwm3 pwm4 pwm1_enable pwm2_enable pwm3_enable pwm4_enable fan1_input fan2_input fan3_input fan4_input temp1_input temp2_input temp3_input temp4_input temp1_label temp2_label temp3_label temp4_label; do if [ -e \$f ]; then echo \"\$f = \$(cat \$f 2>&1)\"; else echo \"\$f = (nicht vorhanden)\"; fi; done"
+run "readlink -f $D/device"
+
+### Skripttext Nachtrag
+run() { echo; echo "\$ $*"; bash -c "$*" 2>&1; echo "[rc=$?]"; }
+echo "### Nachtrag (modinfo nicht im PATH des ssh-Users)"
+run '/usr/sbin/modinfo minisforum_n5_it5571'
+run 'ls -l /lib/modules/$(uname -r)/updates/dkms/ | grep -i minisforum'
+run 'cat /etc/modprobe.d/*.conf 2>/dev/null | grep -i minisforum; grep -ri minisforum /etc/modules-load.d/ /etc/modules 2>/dev/null'
+run 'cd /sys/class/hwmon/hwmon10 && for f in fan1_label fan2_label fan3_label fan4_label fan1_min fan2_min fan3_min fan4_min; do echo "$f = $(cat $f 2>&1)"; done'
+run 'systemctl cat n5-fangov-onfailure.service'

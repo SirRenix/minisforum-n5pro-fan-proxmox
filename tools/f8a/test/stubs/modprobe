@@ -1,0 +1,19 @@
+#!/bin/bash
+# modprobe stub for the f8a tests (fake kernel below F8A_ROOT)
+set -eu
+# shellcheck source=../fakek.sh
+. "$FK_TEST_DIR/fakek.sh"
+if [ "${1:-}" = -c ]; then
+    # read-only config dump; not logged as a module operation
+    fk_modprobe_c
+    exit 0
+fi
+fk_log "modprobe $* state=$(fk_state)"
+if [ "${1:-}" = -r ]; then
+    [ "${2:-}" = "$FK_MOD" ] || { echo "modprobe stub: unexpected module ${2:-}" >&2; exit 1; }
+    fk_unload
+    exit 0
+fi
+[ "${1:-}" = "$FK_MOD" ] || { echo "modprobe stub: unexpected module ${1:-}" >&2; exit 1; }
+shift
+fk_load "$@"

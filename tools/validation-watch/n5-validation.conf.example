@@ -1,0 +1,45 @@
+# /etc/n5-validation.conf - example. install.sh writes the real file:
+# the run block below is generated, the threshold block is copied from here.
+# The file is sourced by bash (root-owned, 0644).
+
+# --- run (written by install.sh) ---
+RUN_ID=baseline-20261008
+DURATION_DAYS=7
+START_EPOCH=
+TAINT_START=
+BOOT_ID_START=
+MAIL_TO=root
+DATA_ROOT=/var/lib/n5-validation
+
+# --- thresholds and tuning (copied by install.sh) ---
+SAMPLE_INTERVAL=30
+CHECK_INTERVAL=300
+FANGOV_UNIT=n5-fangov.service
+EC_HWMON_NAME=minisforum_n5_it5571
+# K4 temperature limits, degrees C (alert when >= limit)
+TH_TCTL=85
+TH_NVME=70
+TH_HDD=50
+TH_EC_CPU=90
+# K5 maximum gap between two samples, seconds (3 x interval)
+GAP_MAX=90
+# K6
+DATA_MAX_MB=200
+ROOT_MIN_FREE_GB=5
+# K8 coverage: minimum share of the run (percent) covered by samples and by
+# check runs; a check gap counts as uncovered above CHECK_GAP_MAX seconds
+COVER_MIN=99
+CHECK_GAP_MAX=660
+# alert mail rate limit per criterion key, seconds
+ALERT_COOLDOWN=3600
+# a key annotation explains events of its key within +/- this many seconds;
+# keys in ANNOT_EXPLICIT_ONLY can only be explained per event (--event)
+ANNOT_WINDOW=600
+ANNOT_EXPLICIT_ONLY='K1 K7'
+# K1 kernel log pattern (awk/grep -E), lines to ignore (known benign boot
+# lines), lines ignored only when they belong to an earlier boot, and the
+# maximum number of K1 hits recorded individually per check run
+K1_PATTERN='Oops|BUG:|kernel BUG at|general protection|Call Trace|INFO: task .* blocked for more than|hung_task|soft lockup|hard LOCKUP|rcu.*stall|watchdog: |Hardware Error|mce:|Machine check|AER:|PCIe Bus Error|nvme.*(timeout|reset)|minisforum.*(timed? ?out|fail|error)'
+K1_IGNORE='NMI watchdog: Enabled|minisforum_n5_it5571: module verification failed|AER: enabled with IRQ'
+K1_IGNORE_PREVBOOT='watchdog: watchdog[0-9]+: watchdog did not stop'
+K1_MAX_PER_RUN=300
