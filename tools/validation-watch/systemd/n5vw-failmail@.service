@@ -1,0 +1,20 @@
+[Unit]
+Description=n5-validation: failure mail for %i (K8)
+Documentation=file:///usr/local/lib/n5-validation/README.md
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/n5-validation/n5vw-failmail %i
+TimeoutStartSec=60
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=64M
+CPUQuota=10%
+ProtectSystem=strict
+PrivateTmp=yes
+NoNewPrivileges=yes
+LogLevelMax=notice
+ReadWritePaths=/var/spool/postfix
+# rate-limit state, kept across instances
+RuntimeDirectory=n5vw-failmail
+RuntimeDirectoryPreserve=yes

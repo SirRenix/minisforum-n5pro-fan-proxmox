@@ -1,0 +1,230 @@
+P3 Gruppe D - Belegauszuege aus der Upstream-Doku (nur lesend), erzeugt 2026-10-09
+Quelle: n5host /root/n5pro-ec/upstream (git-Klon ltdstudio/minisforum-n5-it5571), HEAD:
+feb6d9a5fbf6662a52fa7496009537945d2b30b0
+(status --porcelain leer = unveraendert)
+Hinweis: driver/upstream/ORIGIN: README/docs wurden NICHT vendort; Auszuege dienen als Beleg fuer D4/D7/D9/D11/D12.
+
+===== README.md Zeilen 20-30 =====
+  20  - CPU, System, Board, and Ambient temperatures.
+  21  - Recommended FanCtrl Plus 2 integration for multi-zone control from disk,
+  22    NVMe, CPU, auxiliary hwmon, StorCLI, and NVIDIA GPU temperatures.
+  23  - Dynamix Fan Auto Control compatibility.
+  24  - Recommended Dynamix System Temperature integration for displaying the CPU,
+  25    System, Board, and Ambient EC sensors.
+  26  - Automatic restoration of native EC/BIOS control on exit or module unload.
+  27  
+  28  ## Screenshots
+  29  
+  30  Real captures from the validation system (Unraid 7.3.2, kernel 6.18.38-Unraid).
+
+===== README.md Zeilen 91-108 =====
+  91  ## hwmon channels
+  92  
+  93  | Node | Function |
+  94  |---|---|
+  95  | `pwm1`, `fan1_input` | CPU Fan |
+  96  | `pwm2`, `fan2_input` | SSD Fan |
+  97  | `pwm3`, `fan3_input` | HDD Fan Group |
+  98  | `pwm4`, `fan4_input` | PCIe Fan; RPM reports zero |
+  99  | `temp1_input` | CPU Temp |
+ 100  | `temp2_input` | System Temp |
+ 101  | `temp3_input` | Board Temp |
+ 102  | `temp4_input` | Ambient Temp |
+ 103  
+ 104  The PCIe header was physically validated: `pwm4=128` noticeably reduces speed,
+ 105  `pwm4=0` stops the fan, and `pwm4=255` reliably starts it from rest and runs it
+ 106  at full speed. All four PWM channels return to EC automatic mode after reboot.
+ 107  The board firmware does not enable or export a safe PCIe tachometer path, so
+ 108  the driver does not fabricate an RPM value.
+
+===== README.md Zeilen 183-186 =====
+ 183  `nvidia-smi`, and FanCtrl Plus 2 supports NVIDIA GPU sensors. Binding that GPU
+ 184  temperature to PCIe Fan is therefore the recommended setup. The PCIe header has
+ 185  no RPM feedback, so a displayed value of zero RPM is expected.
+ 186  
+
+===== README.md Zeilen 233-236 =====
+ 233  - Confirm the physical fan-to-zone mapping before changing PWM values.
+ 234  - Assign each `pwmN` to one fan-control plugin only.
+ 235  - Module unload restores only channels the module actually attempted to modify.
+ 236  
+
+===== driver-prototype/README.md Zeilen 12-27 =====
+  12  ## Channel map
+  13  
+  14  | hwmon node | N5 function | Feedback |
+  15  |---|---|---|
+  16  | `pwm1`, `fan1_input` | CPU fan | TACH1 |
+  17  | `pwm2`, `fan2_input` | SSD fan | TACH2 |
+  18  | `pwm3`, `fan3_input` | HDD fan group | TACH3 |
+  19  | `pwm4`, `fan4_input` | PCIe fan | no tach; reads 0 RPM |
+  20  | `temp1_input` | CPU Temp | EC 0x09 |
+  21  | `temp2_input` | System Temp | EC 0x04 |
+  22  | `temp3_input` | Board Temp | EC 0x05 |
+  23  | `temp4_input` | Ambient Temp | EC 0x06 |
+  24  
+  25  `pwmN_enable=1` selects manual control and `pwmN_enable=2` restores the native
+  26  EC/BIOS automatic curve. Module removal restores channels that the module
+  27  actually attempted to modify.
+
+===== RELEASE-NOTES-v0.2.1.md Zeilen 1-42 =====
+   1  # v0.2.1 — Unraid WebGUI CSS isolation fix
+   2  
+   3  ## English
+   4  
+   5  This maintenance release fixes CSS from the plugin's sensor page leaking into
+   6  the surrounding Unraid Plugins page. The leak could produce unreadable light
+   7  text on a light background when macOS used dark appearance while Unraid used
+   8  the `white` theme.
+   9  
+  10  Changes:
+  11  
+  12  - Removed the standalone `DOCTYPE`, `html`, `head`, and `body` wrapper from the
+  13    embedded Unraid `.page` file.
+  14  - Scoped every CSS rule to the unique `#minisforum-n5-it5571-page` container.
+  15  - Removed `prefers-color-scheme`; the page now follows Unraid's own theme
+  16    variables (`white`, `black`, `gray`, and `azure`).
+  17  - Preserved live PWM, RPM, and temperature refresh behavior.
+  18  - No kernel driver, EC register, fan-control, hardware-profile, or safety logic
+  19    changes. The packaged kernel module is unchanged from v0.2.0.
+  20  
+  21  Users of v0.2.0 should upgrade to v0.2.1, especially if the Plugins page has
+  22  mixed colors or low-contrast text.
+  23  
+  24  ## 中文
+  25  
+  26  本维护版本修复插件传感器页面的 CSS 污染 Unraid 整个“插件”页面的问题。当
+  27  macOS 使用深色外观、而 Unraid 使用 `white` 主题时，该问题可能导致浅色背景上
+  28  出现接近白色的文字，难以阅读。
+  29  
+  30  变更内容：
+  31  
+  32  - 从嵌入式 Unraid `.page` 文件中移除独立网页使用的 `DOCTYPE`、`html`、
+  33    `head` 和 `body` 外壳。
+  34  - 所有 CSS 规则均限定在唯一容器 `#minisforum-n5-it5571-page` 内。
+  35  - 移除 `prefers-color-scheme`，改为跟随 Unraid 自身的主题变量，兼容
+  36    `white`、`black`、`gray` 和 `azure` 主题。
+  37  - 保留 PWM、转速和温度数据的实时刷新功能。
+  38  - 本版本没有修改内核驱动、EC 寄存器、风扇控制、硬件配置或安全逻辑；打包的
+  39    内核模块与 v0.2.0 相同。
+  40  
+  41  建议 v0.2.0 用户升级到 v0.2.1，尤其是遇到插件页面混合配色或文字对比度异常的
+  42  用户。
+
+===== docs/publication/RESULTS.en.md Zeilen 54-63 =====
+  54  ### Firmware-exported tachometers
+  55  
+  56  | Tachometer | Low | High | Validated use |
+  57  |---|---:|---:|---|
+  58  | TACH3 | `0x14` | `0x15` | HDD Fan |
+  59  | TACH2 | `0x16` | `0x17` | SSD Fan |
+  60  | TACH1 | `0x18` | `0x19` | CPU Fan |
+  61  
+  62  The exported value is `rpm = (high << 8) | low`. The driver uses a high-low-high
+  63  sampling sequence to reject torn 16-bit samples.
+
+===== docs/publication/RESULTS.en.md Zeilen 134-156 =====
+ 134  The validated prototype is currently named `minisforum_n5_it5571`; it should be renamed
+ 135  consistently before the first public release.
+ 136  
+ 137  Exposed standard nodes:
+ 138  
+ 139  ```text
+ 140  temp1_input ... temp4_input
+ 141  fan1_input  ... fan4_input
+ 142  fan1_min    ... fan4_min
+ 143  pwm1        ... pwm4
+ 144  pwm1_enable ... pwm4_enable
+ 145  ```
+ 146  
+ 147  `pwmN_enable` semantics:
+ 148  
+ 149  - `0`: fail-safe full speed.
+ 150  - `1`: manual Linux/userspace control.
+ 151  - `2`: native EC/BIOS automatic control.
+ 152  
+ 153  Entering manual mode starts at full speed. Removing the module restores all four
+ 154  channels to EC automatic mode.
+ 155  
+ 156  ## 7. Unraid integration
+
+===== docs/research/N5-PWM-RPM-REVERSE-ENGINEERING.zh-CN.md Zeilen 8-20 =====
+   8  N5 固件已经实现三路风扇转速读取与换算，并通过 **PMC2 主机接口的 `0xD5` 命令族**提供六条单字节子命令。Linux 不需要直接访问 EC 内部 XDATA，也不需要自己读取不稳定的 TACH 硬件计数器。
+   9  
+  10  | 通道 | 低字节命令 | 高字节命令 | 固件 RPM 缓存 |
+  11  |---|---:|---:|---:|
+  12  | TACH1 | `0x18` | `0x19` | `XDATA 0x8880-0x8881` |
+  13  | TACH2 | `0x16` | `0x17` | `XDATA 0x8882-0x8883` |
+  14  | TACH3 | `0x14` | `0x15` | `XDATA 0x88D0-0x88D1` |
+  15  
+  16  组合方式：
+  17  
+  18  ```text
+  19  RPM = (high_byte << 8) | low_byte
+  20  ```
+
+===== docs/research/N5-PWM-RPM-REVERSE-ENGINEERING.zh-CN.md Zeilen 57-85 =====
+  57  ## TACH 硬件与固件换算证据
+  58  
+  59  IT5571 PWM 模块的 EC XDATA 基址是 `0x1800`：
+  60  
+  61  | 功能 | 地址 |
+  62  |---|---:|
+  63  | PWM0-7 duty（DCR0-7） | `0x1802-0x1809` |
+  64  | TACH1 LSB/MSB | `0x181E/0x181F` |
+  65  | TACH2 LSB/MSB | `0x1820/0x1821` |
+  66  | TACH3 LSB/MSB | `0x1845/0x1846` |
+  67  
+  68  固件读取位置：
+  69  
+  70  - `0x9EDC`：读取 TACH1
+  71  - `0xA1D1`：读取 TACH2
+  72  - `0x9D28`：读取 TACH3
+  73  
+  74  固件在 `0xAC1D` 准备常数 `0x0020E6DA = 2,156,250`，随后调用 `0x53B7` 做除法：
+  75  
+  76  ```text
+  77  RPM = 2,156,250 / tach_count
+  78  ```
+  79  
+  80  这与数据手册公式完全一致：EC 时钟 9.2 MHz，TACH 采样时钟为 `9.2 MHz / 128 = 71,875 Hz`，风扇每转 2 个脉冲：
+  81  
+  82  ```text
+  83  RPM = 60 * 71,875 / (tach_count * 2)
+  84      = 2,156,250 / tach_count
+  85  ```
+
+===== docs/publication/RESULTS.en.md Zeilen 98-125 =====
+  98  ### PCIe RPM result
+  99  
+ 100  The three firmware-exported tachometers did not change between PCIe stopped and
+ 101  full-speed states:
+ 102  
+ 103  ```text
+ 104  STOP: TACH1≈2005, TACH2=0, TACH3≈1279
+ 105  FULL: TACH1≈2013, TACH2=0, TACH3≈1278
+ 106  ```
+ 107  
+ 108  Read-only I2EC inspection showed:
+ 109  
+ 110  | Register | Value | Meaning |
+ 111  |---|---:|---|
+ 112  | `0x1848` | `0x08` | TACH0 and TACH1 select their A inputs |
+ 113  | `0x184f` | `0x02` | TACH2 selects its A input |
+ 114  | `0x16f4` | `0x00` | TACH0B and TACH1B are disabled |
+ 115  | `0x16fe` | `0x00` | TACH2B is disabled |
+ 116  
+ 117  The IT5571 has three tachometer counters, each switchable between A and B pins.
+ 118  The N5 firmware configures and exports only the three A inputs. The B pins are
+ 119  currently ordinary GPIOs; forcing them into tachometer mode could affect other
+ 120  board functions and is inappropriate for a public driver.
+ 121  
+ 122  Final result: PCIe PWM control is fully supported, but there is no safe,
+ 123  confirmed PCIe RPM feedback. The public label should be
+ 124  `PCIe Fan (no RPM feedback)` and `fan4_input` should return zero.
+ 125  
+
+===== Grep nach Cache-/errno-Doku in Upstream-*.md (cache|errno|EBUSY|ENODATA|EAGAIN|ETIMEDOUT|EPERM) =====
+README-FIRST.md:67:host addresses, build caches, and kernel source trees are intentionally excluded.
+MANIFEST.md:67:- Zig/compiler caches, object files, temporary binaries, logs, and SSH records.
+(Ende Grep)

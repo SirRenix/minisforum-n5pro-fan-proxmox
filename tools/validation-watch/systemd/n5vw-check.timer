@@ -1,0 +1,11 @@
+[Unit]
+Description=n5-validation: check every 5 min
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=10s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

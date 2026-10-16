@@ -1,8 +1,9 @@
-# Upstream-Klon, Bauartefakte und gebaute Binaries entstehen auf dem Zielhost, nicht hier
-upstream/
+# Upstream-Klon (nur im Repo-Wurzelverzeichnis; driver/upstream/ ist versioniert),
+# Bauartefakte und gebaute Binaries entstehen auf dem Zielhost, nicht hier
+/upstream/
 build/
 build-tools/
-bin/
+/bin/
 *.ko
 *.o
 *.mod
@@ -14,3 +15,7 @@ modules.order
 
 # Arbeitsanleitung fuer Claude Code, nur lokal
 CLAUDE.md
+
+# n5-ectest: Go module files (*.mod above is for kernel build output), local build output (releases come from CI)
+!go.mod
+/ectest/dist/

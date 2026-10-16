@@ -1,0 +1,15 @@
+#!/bin/bash
+# n5_i2ec_read stub: logs the call; prints 0x1800-0x182F; DCR5 (0x1807)
+# follows the last pwm4 value seen at an unload
+set -eu
+# shellcheck source=../fakek.sh
+. "$FK_TEST_DIR/fakek.sh"
+fk_log "n5_i2ec_read $* state=$(fk_state)"
+[ "${F8A_TEST_TOOLFAIL:-}" != n5_i2ec_read ] || { echo "n5_i2ec_read: read timed out (injected)" >&2; exit 1; }
+[ "${F8A_TEST_SLOWTOOL:-0}" = 0 ] || { sleep "$F8A_TEST_SLOWTOOL"; fk_log "n5_i2ec_read done state=$(fk_state)"; }
+[ "${1:-} ${2:-}" = "0x1800 48" ] || { echo "n5_i2ec_read stub: unexpected $*" >&2; exit 2; }
+d5=8c
+if [ -r "$R/fake/last_pwm4" ]; then d5=$(printf '%02x' "$(cat "$R/fake/last_pwm4")"); fi
+echo "1800: 00 ff 00 55 4a 57 57 $d5 00 00 00 06 00 00 00 00"
+echo "1810: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 38 04"
+echo "1820: ef 03 00 02 00 00 00 02 00 00 00 48 00 00 00 00"

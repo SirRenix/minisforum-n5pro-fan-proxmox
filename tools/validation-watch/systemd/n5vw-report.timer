@@ -1,0 +1,10 @@
+[Unit]
+Description=n5-validation: daily report at 07:00
+
+[Timer]
+OnCalendar=*-*-* 07:00:00
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

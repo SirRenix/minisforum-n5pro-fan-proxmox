@@ -1,0 +1,836 @@
+P3 tool run 2026-10-09 (UTC ~15:03-15:07): checklist v0.3 items F1-F7.
+Hostnames replaced: production host = n5host, Docker build host = buildhost
+(containers: debian:trixie image 9cc080028c43, hostname buildhost-ct, run with
+--rm; three runs: A = main run, B = supplement sparse-from-git/checkpatch
+compare/negative controls, C = W=1 flag check). Input copied into the
+containers read-only (/src): only driver/upstream/driver-prototype/
+minisforum_n5_it5571.c + Makefile and deploy/dkms.conf (packaged unchanged for
+0.2.1, see build-deb.sh step 4 / sha256 below). Proxmox repo/key setup as in
+p2-gegenprobe-20261008.txt A0. Afterwards: no p3 container left, temp dir
+/tmp/p3x-20261009 removed on buildhost; the debian:trixie image was already
+present and kept.
+
+Notes for reading:
+- "warning: pahole version differs" is a kbuild toolchain notice (no pahole
+  in the container, BTF skipped); it does not originate from the driver source.
+- Run A, section F2: Debian sparse 0.6.4-5 is rejected by the 7.0 kbuild
+  ("C=2 specified, but sparse is not available or not up to date") -> sparse
+  did NOT run there. The valid F2 result is run B (sparse v0.6.5-rc1 from
+  git.kernel.org, accepted by scripts/checker-valid.sh), with negative control.
+- Run A, section F7: dkms removes the build/ dir after a build, so the
+  sha256 of build/*.c fails (exit 1); the source identity is shown by
+  srcversion (hash over the module source) == n5host module, both kernels.
+- checkpatch --strict is informational only; the checklist criterion is
+  --no-tree -f (0 errors, 0 warnings).
+
+################################################################################
+### N0 n5host, read-only (user claude; modinfo/cat/sha256sum/grep only)
+$ uname -r
+7.0.14-20-pve
+
+$ /usr/sbin/modinfo minisforum_n5_it5571 | grep -vE "^(sig_key|signature|\s)"
+filename:       /lib/modules/7.0.14-20-pve/updates/dkms/minisforum_n5_it5571.ko
+version:        0.2.0
+license:        GPL
+description:    Minisforum N5 family IT5571 fan/temp hwmon driver; N5 Pro/Air support is experimental; not affiliated with Minisforum; use at your own risk
+author:         ltdstudio, community exploration for the Minisforum N5 family
+srcversion:     96E49785C432E4B85FAF416
+alias:          dmi*:pn*N5AIR*:rn*F8NAB*:
+alias:          dmi*:pn*N5A*:rn*F8NAB*:
+alias:          dmi*:pn*N5PRO*:rn*F8NAA*:
+alias:          dmi*:pn*N5*:rn*F8NAA*:
+depends:        
+name:           minisforum_n5_it5571
+retpoline:      Y
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+sig_id:         PKCS#7
+signer:         DKMS module signing key
+sig_hashalgo:   sha512
+parm:           force:Load read-only without a known Minisforum DMI match (bool)
+parm:           experimental_write:Enable PWM writes on experimental or force-loaded systems (bool)
+
+$ for k in 7.0.14-20-pve 7.0.12-1-pve; do /usr/sbin/modinfo -k $k minisforum_n5_it5571 | grep -E "^(filename|version|srcversion|vermagic)"; done
+filename:       /lib/modules/7.0.14-20-pve/updates/dkms/minisforum_n5_it5571.ko
+version:        0.2.0
+srcversion:     96E49785C432E4B85FAF416
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+filename:       /lib/modules/7.0.12-1-pve/updates/dkms/minisforum_n5_it5571.ko
+version:        0.2.0
+srcversion:     96E49785C432E4B85FAF416
+vermagic:       7.0.12-1-pve SMP preempt mod_unload modversions 
+
+$ dpkg-query -W minisforum-n5-it5571-dkms; sha256sum /usr/src/minisforum-n5-it5571-0.2.1/*; cat /usr/src/minisforum-n5-it5571-0.2.1/dkms.conf
+minisforum-n5-it5571-dkms	0.2.1-1
+7f8c1efd6bd1d5b03b092ceb0942301da77dd15ba3ab7d3a5ab7f014987e77c9  /usr/src/minisforum-n5-it5571-0.2.1/dkms.conf
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  /usr/src/minisforum-n5-it5571-0.2.1/Makefile
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  /usr/src/minisforum-n5-it5571-0.2.1/minisforum_n5_it5571.c
+25d1bb834db207191e1b2238db1231c15a15ed0920e1f9671fc08d669fa6bbd3  /usr/src/minisforum-n5-it5571-0.2.1/UPSTREAM_COMMIT
+PACKAGE_NAME="minisforum-n5-it5571"
+PACKAGE_VERSION="0.2.1"
+BUILT_MODULE_NAME[0]="minisforum_n5_it5571"
+DEST_MODULE_LOCATION[0]="/updates/dkms"
+MAKE[0]="make -C ${kernel_source_dir} M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build modules"
+CLEAN="make -C ${kernel_source_dir} M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build clean"
+AUTOINSTALL="yes"
+
+$ cat /etc/dkms/framework.conf.d/*.conf
+autoinstall_all_kernels="yes"
+
+$ grep -E "^# command|CC \[M\]|warning|error|exit code" /var/lib/dkms/minisforum-n5-it5571/0.2.1/{7.0.14-20-pve,7.0.12-1-pve}/x86_64/log/make.log
+/var/lib/dkms/minisforum-n5-it5571/0.2.1/7.0.14-20-pve/x86_64/log/make.log:# command: make -j24 KERNELRELEASE=7.0.14-20-pve -C /lib/modules/7.0.14-20-pve/build M=/var/lib/dkms/minisforum-n5-it5571/0.2.1/build modules
+/var/lib/dkms/minisforum-n5-it5571/0.2.1/7.0.14-20-pve/x86_64/log/make.log:  CC [M]  minisforum_n5_it5571.o
+/var/lib/dkms/minisforum-n5-it5571/0.2.1/7.0.14-20-pve/x86_64/log/make.log:  CC [M]  minisforum_n5_it5571.mod.o
+/var/lib/dkms/minisforum-n5-it5571/0.2.1/7.0.14-20-pve/x86_64/log/make.log:  CC [M]  .module-common.o
+/var/lib/dkms/minisforum-n5-it5571/0.2.1/7.0.14-20-pve/x86_64/log/make.log:# exit code: 0
+/var/lib/dkms/minisforum-n5-it5571/0.2.1/7.0.12-1-pve/x86_64/log/make.log:# command: make -j24 KERNELRELEASE=7.0.12-1-pve -C /lib/modules/7.0.12-1-pve/build M=/var/lib/dkms/minisforum-n5-it5571/0.2.1/build modules
+/var/lib/dkms/minisforum-n5-it5571/0.2.1/7.0.12-1-pve/x86_64/log/make.log:  CC [M]  minisforum_n5_it5571.o
+/var/lib/dkms/minisforum-n5-it5571/0.2.1/7.0.12-1-pve/x86_64/log/make.log:  CC [M]  minisforum_n5_it5571.mod.o
+/var/lib/dkms/minisforum-n5-it5571/0.2.1/7.0.12-1-pve/x86_64/log/make.log:  CC [M]  .module-common.o
+/var/lib/dkms/minisforum-n5-it5571/0.2.1/7.0.12-1-pve/x86_64/log/make.log:# exit code: 0
+
+################################################################################
+### RUN A (buildhost-ct, p3.sh)
+
+################################################################################
+### S0 container
+
+$ date -u; cat /etc/debian_version; uname -m; nproc
+Fri Oct  9 15:03:42 UTC 2026
+13.7
+x86_64
+4
+[exit 0]
+
+$ apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git build-essential bc bison flex libelf-dev libssl-dev kmod dkms sparse perl python3 libsqlite3-dev sqlite3 libdbd-sqlite3-perl libtry-tiny-perl pkg-config xz-utils zstd binutils >/dev/null && echo tools ok
+tools ok
+[exit 0]
+
+$ dpkg-query -W gcc-14 binutils sparse dkms perl
+binutils	2.44-3
+dkms	3.2.2-1~deb13u1
+gcc-14	14.2.0-19
+perl	5.40.1-6+deb13u1
+sparse	0.6.4-5
+[exit 0]
+
+################################################################################
+### S1 Proxmox repo (setup as P2, befunde/raw/p2-gegenprobe-20261008.txt A0) + headers
+
+$ curl -fsSL -o /usr/share/keyrings/proxmox-archive-keyring.gpg https://enterprise.proxmox.com/debian/proxmox-archive-keyring-trixie.gpg && sha256sum /usr/share/keyrings/proxmox-archive-keyring.gpg
+136673be77aba35dcce385b28737689ad64fd785a797e57897589aed08db6e45  /usr/share/keyrings/proxmox-archive-keyring.gpg
+[exit 0]
+
+$ [ "$(sha256sum </usr/share/keyrings/proxmox-archive-keyring.gpg | cut -d" " -f1)" = 136673be77aba35dcce385b28737689ad64fd785a797e57897589aed08db6e45 ] && echo "keyring = n5host keyring (sha256 as in P2)"
+keyring = n5host keyring (sha256 as in P2)
+[exit 0]
+
+$ cat /etc/apt/sources.list.d/proxmox.sources
+Types: deb
+URIs: http://download.proxmox.com/debian/pve
+Suites: trixie
+Components: pve-no-subscription
+Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
+[exit 0]
+
+$ apt-get update -qq && apt-cache policy proxmox-headers-7.0.14-20-pve proxmox-headers-7.0.12-1-pve
+proxmox-headers-7.0.14-20-pve:
+  Installed: (none)
+  Candidate: 7.0.14-20
+  Version table:
+     7.0.14-20 500
+        500 http://download.proxmox.com/debian/pve trixie/pve-no-subscription amd64 Packages
+proxmox-headers-7.0.12-1-pve:
+  Installed: (none)
+  Candidate: 7.0.12-1
+  Version table:
+     7.0.12-1 500
+        500 http://download.proxmox.com/debian/pve trixie/pve-no-subscription amd64 Packages
+[exit 0]
+
+$ apt-get install -y -qq --no-install-recommends proxmox-headers-7.0.14-20-pve proxmox-headers-7.0.12-1-pve >/dev/null && echo headers ok
+headers ok
+[exit 0]
+
+$ dpkg-query -W proxmox-headers-7.0.14-20-pve proxmox-headers-7.0.12-1-pve; for k in $KS; do ls -ld /lib/modules/$k/build; done
+proxmox-headers-7.0.12-1-pve	7.0.12-1
+proxmox-headers-7.0.14-20-pve	7.0.14-20
+lrwxrwxrwx 1 root root 36 Sep 24 10:43 /lib/modules/7.0.14-20-pve/build -> /usr/src/linux-headers-7.0.14-20-pve
+lrwxrwxrwx 1 root root 35 Jun  9 21:07 /lib/modules/7.0.12-1-pve/build -> /usr/src/linux-headers-7.0.12-1-pve
+[exit 0]
+
+$ for k in $KS; do echo "$k: $(sed -n "s/^\(VERSION\|PATCHLEVEL\|SUBLEVEL\|EXTRAVERSION\) = *//p" /lib/modules/$k/build/Makefile | tr "\n" " ")"; grep -E "^CONFIG_(CC_VERSION_TEXT|MODVERSIONS|RETPOLINE|MITIGATION_RETPOLINE)=" /lib/modules/$k/build/.config; done
+7.0.14-20-pve: 7 0 14 
+CONFIG_CC_VERSION_TEXT="gcc (Debian 14.2.0-19) 14.2.0"
+CONFIG_MITIGATION_RETPOLINE=y
+CONFIG_MODVERSIONS=y
+7.0.12-1-pve: 7 0 12 
+CONFIG_CC_VERSION_TEXT="gcc (Debian 14.2.0-19) 14.2.0"
+CONFIG_MITIGATION_RETPOLINE=y
+CONFIG_MODVERSIONS=y
+[exit 0]
+
+################################################################################
+### S2 reviewed source
+
+$ ls -l /src; sha256sum /src/*
+total 28
+-rw-rw-r-- 1 1000 1000   204 Oct  9 15:03 Makefile
+-rw-rw-r-- 1 1000 1000   364 Oct  9 15:03 dkms.conf
+-rw-rw-r-- 1 1000 1000 17496 Oct  9 15:03 minisforum_n5_it5571.c
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  /src/Makefile
+7f8c1efd6bd1d5b03b092ceb0942301da77dd15ba3ab7d3a5ab7f014987e77c9  /src/dkms.conf
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  /src/minisforum_n5_it5571.c
+[exit 0]
+
+$ [ "$(sha256sum </src/$MOD.c | cut -d" " -f1)" = e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74 ] && [ "$(sha256sum </src/Makefile | cut -d" " -f1)" = edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9 ] && echo "source = upstream feb6d9a (driver/upstream/SHA256SUMS)"
+source = upstream feb6d9a (driver/upstream/SHA256SUMS)
+[exit 0]
+
+################################################################################
+### F1 checkpatch
+
+$ for k in $KS; do ls -l /lib/modules/$k/build/scripts/checkpatch.pl /lib/modules/$k/build/scripts/spelling.txt /lib/modules/$k/build/scripts/const_structs.checkpatch 2>&1; done
+-rwxr-xr-x 1 root root 243745 Aug  6 23:34 /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl
+-rw-r--r-- 1 root root   1646 Aug  6 23:34 /lib/modules/7.0.14-20-pve/build/scripts/const_structs.checkpatch
+-rw-r--r-- 1 root root  36560 Aug  6 23:34 /lib/modules/7.0.14-20-pve/build/scripts/spelling.txt
+-rwxr-xr-x 1 root root 243745 May 15 07:37 /lib/modules/7.0.12-1-pve/build/scripts/checkpatch.pl
+-rw-r--r-- 1 root root   1646 Oct  4  2025 /lib/modules/7.0.12-1-pve/build/scripts/const_structs.checkpatch
+-rw-r--r-- 1 root root  36560 Oct  4  2025 /lib/modules/7.0.12-1-pve/build/scripts/spelling.txt
+[exit 0]
+
+$ cd /work/cp/scripts && for f in checkpatch.pl spelling.txt const_structs.checkpatch; do curl -fsSL -o $f "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain/scripts/$f?h=v$UPV" || exit 1; done; echo "source: git.kernel.org stable/linux.git tag v$UPV"; sha256sum checkpatch.pl spelling.txt const_structs.checkpatch; grep -m1 -n "^my \$V = " checkpatch.pl
+source: git.kernel.org stable/linux.git tag v7.0.14
+6e7abb5d613b8916f162db09d4442fbd444f31d2402022b641e9ecfcc3279323  checkpatch.pl
+3c1526d0cc6365d6b637b35e4705e24add3c4a1d4e73bc261cab7f6ee4079264  spelling.txt
+ea064f6916a74763468037494aeb270aae34b7c97617e84d424ca5b8733539b2  const_structs.checkpatch
+21:my $V = '0.32';
+[exit 0]
+
+$ cd /work/cpsrc && perl /work/cp/scripts/checkpatch.pl --no-tree -f $MOD.c
+total: 0 errors, 0 warnings, 681 lines checked
+
+minisforum_n5_it5571.c has no obvious style problems and is ready for submission.
+[exit 0]
+
+$ cd /work/cpsrc && perl /work/cp/scripts/checkpatch.pl --no-tree --strict -f $MOD.c   # informational only, not the checklist criterion
+CHECK: struct mutex definition without comment
+#67: FILE: minisforum_n5_it5571.c:67:
++	struct mutex lock;
+
+CHECK: Alignment should match open parenthesis
+#464: FILE: minisforum_n5_it5571.c:464:
++	HWMON_CHANNEL_INFO(temp,
++		HWMON_T_INPUT | HWMON_T_LABEL,
+
+CHECK: Alignment should match open parenthesis
+#469: FILE: minisforum_n5_it5571.c:469:
++	HWMON_CHANNEL_INFO(fan,
++		HWMON_F_INPUT | HWMON_F_MIN | HWMON_F_LABEL,
+
+CHECK: Alignment should match open parenthesis
+#474: FILE: minisforum_n5_it5571.c:474:
++	HWMON_CHANNEL_INFO(pwm,
++		HWMON_PWM_INPUT | HWMON_PWM_ENABLE,
+
+CHECK: Alignment should match open parenthesis
+#595: FILE: minisforum_n5_it5571.c:595:
++	data->hwmon_dev = devm_hwmon_device_register_with_info(&pdev->dev,
++			N5_DRIVER_NAME, data, &n5_chip_info, NULL);
+
+CHECK: Alignment should match open parenthesis
+#660: FILE: minisforum_n5_it5571.c:660:
++	n5_pdev = platform_device_register_simple(N5_DRIVER_NAME,
++						    PLATFORM_DEVID_NONE, NULL, 0);
+
+total: 0 errors, 0 warnings, 6 checks, 681 lines checked
+
+NOTE: For some of the reported defects, checkpatch may be able to
+      mechanically convert to the typical style using --fix or --fix-inplace.
+
+minisforum_n5_it5571.c has style problems, please review.
+
+NOTE: If any of the errors are false positives, please report
+      them to the maintainer, see CHECKPATCH in MAINTAINERS.
+[exit 1]
+
+################################################################################
+### F4/F5 plain + W=1 build, kernel 7.0.14-20-pve
+
+$ cd /work/$K && make -C /lib/modules/$K/build M=$PWD modules
+make: Entering directory '/usr/src/linux-headers-7.0.14-20-pve'
+make[1]: Entering directory '/work/7.0.14-20-pve'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+  BTF [M] minisforum_n5_it5571.ko
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+make[1]: Leaving directory '/work/7.0.14-20-pve'
+make: Leaving directory '/usr/src/linux-headers-7.0.14-20-pve'
+[exit 0]
+
+$ cd /work/$K && make -C /lib/modules/$K/build M=$PWD clean >/dev/null && make -C /lib/modules/$K/build M=$PWD W=1 modules
+make: Entering directory '/usr/src/linux-headers-7.0.14-20-pve'
+make[1]: Entering directory '/work/7.0.14-20-pve'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+  BTF [M] minisforum_n5_it5571.ko
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+make[1]: Leaving directory '/work/7.0.14-20-pve'
+make: Leaving directory '/usr/src/linux-headers-7.0.14-20-pve'
+[exit 0]
+
+$ cd /work/$K && /usr/sbin/modinfo ./$MOD.ko | grep -vE "^(sig|signature|\s)"; sha256sum $MOD.ko
+filename:       /work/7.0.14-20-pve/./minisforum_n5_it5571.ko
+version:        0.2.0
+license:        GPL
+description:    Minisforum N5 family IT5571 fan/temp hwmon driver; N5 Pro/Air support is experimental; not affiliated with Minisforum; use at your own risk
+author:         ltdstudio, community exploration for the Minisforum N5 family
+srcversion:     96E49785C432E4B85FAF416
+alias:          dmi*:pn*N5AIR*:rn*F8NAB*:
+alias:          dmi*:pn*N5A*:rn*F8NAB*:
+alias:          dmi*:pn*N5PRO*:rn*F8NAA*:
+alias:          dmi*:pn*N5*:rn*F8NAA*:
+depends:        
+name:           minisforum_n5_it5571
+retpoline:      Y
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+parm:           force:Load read-only without a known Minisforum DMI match (bool)
+parm:           experimental_write:Enable PWM writes on experimental or force-loaded systems (bool)
+e32bff382805171f7898ccc692989979e739f5951a7868aa2696e9993c092d4f  minisforum_n5_it5571.ko
+[exit 0]
+
+################################################################################
+### F2 sparse C=2, kernel 7.0.14-20-pve
+
+$ cd /work/$K && make -C /lib/modules/$K/build M=$PWD C=2 modules
+make: Entering directory '/usr/src/linux-headers-7.0.14-20-pve'
+make[1]: Entering directory '/work/7.0.14-20-pve'
+/usr/src/linux-headers-7.0.14-20-pve/Makefile:1241: C=2 specified, but sparse is not available or not up to date
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+  BTF [M] minisforum_n5_it5571.ko
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+make[1]: Leaving directory '/work/7.0.14-20-pve'
+make: Leaving directory '/usr/src/linux-headers-7.0.14-20-pve'
+[exit 0]
+
+################################################################################
+### F4/F5 plain + W=1 build, kernel 7.0.12-1-pve
+
+$ cd /work/$K && make -C /lib/modules/$K/build M=$PWD modules
+make: Entering directory '/usr/src/linux-headers-7.0.12-1-pve'
+make[1]: Entering directory '/work/7.0.12-1-pve'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+  BTF [M] minisforum_n5_it5571.ko
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+make[1]: Leaving directory '/work/7.0.12-1-pve'
+make: Leaving directory '/usr/src/linux-headers-7.0.12-1-pve'
+[exit 0]
+
+$ cd /work/$K && make -C /lib/modules/$K/build M=$PWD clean >/dev/null && make -C /lib/modules/$K/build M=$PWD W=1 modules
+make: Entering directory '/usr/src/linux-headers-7.0.12-1-pve'
+make[1]: Entering directory '/work/7.0.12-1-pve'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+  BTF [M] minisforum_n5_it5571.ko
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+make[1]: Leaving directory '/work/7.0.12-1-pve'
+make: Leaving directory '/usr/src/linux-headers-7.0.12-1-pve'
+[exit 0]
+
+$ cd /work/$K && /usr/sbin/modinfo ./$MOD.ko | grep -vE "^(sig|signature|\s)"; sha256sum $MOD.ko
+filename:       /work/7.0.12-1-pve/./minisforum_n5_it5571.ko
+version:        0.2.0
+license:        GPL
+description:    Minisforum N5 family IT5571 fan/temp hwmon driver; N5 Pro/Air support is experimental; not affiliated with Minisforum; use at your own risk
+author:         ltdstudio, community exploration for the Minisforum N5 family
+srcversion:     96E49785C432E4B85FAF416
+alias:          dmi*:pn*N5AIR*:rn*F8NAB*:
+alias:          dmi*:pn*N5A*:rn*F8NAB*:
+alias:          dmi*:pn*N5PRO*:rn*F8NAA*:
+alias:          dmi*:pn*N5*:rn*F8NAA*:
+depends:        
+name:           minisforum_n5_it5571
+retpoline:      Y
+vermagic:       7.0.12-1-pve SMP preempt mod_unload modversions 
+parm:           force:Load read-only without a known Minisforum DMI match (bool)
+parm:           experimental_write:Enable PWM writes on experimental or force-loaded systems (bool)
+7f3a1f512b57f9221cda02b5fe6661ec64ec9f59d0b46950f49508c71e9de1b5  minisforum_n5_it5571.ko
+[exit 0]
+
+################################################################################
+### F2 sparse C=2, kernel 7.0.12-1-pve
+
+$ cd /work/$K && make -C /lib/modules/$K/build M=$PWD C=2 modules
+make: Entering directory '/usr/src/linux-headers-7.0.12-1-pve'
+make[1]: Entering directory '/work/7.0.12-1-pve'
+/usr/src/linux-headers-7.0.12-1-pve/Makefile:1216: C=2 specified, but sparse is not available or not up to date
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+  BTF [M] minisforum_n5_it5571.ko
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+make[1]: Leaving directory '/work/7.0.12-1-pve'
+make: Leaving directory '/usr/src/linux-headers-7.0.12-1-pve'
+[exit 0]
+
+################################################################################
+### F3 smatch build
+
+$ git clone -q https://repo.or.cz/smatch.git /opt/smatch || git clone -q https://github.com/error27/smatch.git /opt/smatch; git -C /opt/smatch log -1 --format="%H %cd %s" --date=iso; git -C /opt/smatch remote get-url origin
+5189e3fb018b783a26dcb45c02c114c1d1aad290 2026-05-05 13:45:43 +0300 Merge ../hotfix
+https://repo.or.cz/smatch.git
+[exit 0]
+
+$ cd /opt/smatch && make -j$(nproc) >/tmp/smatch-build.log 2>&1; rc=$?; tail -n 5 /tmp/smatch-build.log; ls -l /opt/smatch/smatch; exit $rc
+  LD      test-linearize
+  LD      test-parsing
+  LD      test-show-type
+  LD      test-unssa
+  LD      semind
+-rwxr-xr-x 1 root root 7440368 Oct  9 15:04 /opt/smatch/smatch
+[exit 0]
+
+################################################################################
+### F3 smatch C=2 CHECK="smatch -p=kernel", kernel 7.0.14-20-pve
+
+$ cd /work/$K && make -C /lib/modules/$K/build M=$PWD C=2 CHECK="/opt/smatch/smatch -p=kernel" modules
+make: Entering directory '/usr/src/linux-headers-7.0.14-20-pve'
+make[1]: Entering directory '/work/7.0.14-20-pve'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+  CHECK   minisforum_n5_it5571.c
+make[1]: Leaving directory '/work/7.0.14-20-pve'
+make: Leaving directory '/usr/src/linux-headers-7.0.14-20-pve'
+[exit 0]
+
+################################################################################
+### F3 smatch C=2 CHECK="smatch -p=kernel", kernel 7.0.12-1-pve
+
+$ cd /work/$K && make -C /lib/modules/$K/build M=$PWD C=2 CHECK="/opt/smatch/smatch -p=kernel" modules
+make: Entering directory '/usr/src/linux-headers-7.0.12-1-pve'
+make[1]: Entering directory '/work/7.0.12-1-pve'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+  CHECK   minisforum_n5_it5571.c
+make[1]: Leaving directory '/work/7.0.12-1-pve'
+make: Leaving directory '/usr/src/linux-headers-7.0.12-1-pve'
+[exit 0]
+
+################################################################################
+### F5 API grep (source + headers)
+
+$ grep -nE "hwmon_device_register\b|hwmon_device_register\(|devm_hwmon_device_register_with_groups|hwmon_device_register_with_groups|\.probe_new|remove_new|platform_driver_probe|DEFINE_SEMAPHORE|init_MUTEX|strlcpy|simple_strto|__devinit|__devexit|ioremap_nocache|setup_timer" /src/$MOD.c || echo "no match for the deprecated/removed API patterns"
+no match for the deprecated/removed API patterns
+[exit 0]
+
+$ grep -nE "^static (int|void) n5_remove|\.remove = |devm_hwmon_device_register_with_info|dev_err_probe|platform_device_register_simple" /src/$MOD.c
+550:		return dev_err_probe(&pdev->dev, -ENODEV,
+554:		return dev_err_probe(&pdev->dev, -EBUSY,
+558:		return dev_err_probe(&pdev->dev, -EBUSY,
+564:		return dev_err_probe(&pdev->dev, -EBUSY,
+571:		return dev_err_probe(&pdev->dev, -EBUSY,
+594:	data->hwmon_dev = devm_hwmon_device_register_with_info(&pdev->dev,
+622:static void n5_remove(struct platform_device *pdev)
+648:	.remove = n5_remove,
+659:	n5_pdev = platform_device_register_simple(N5_DRIVER_NAME,
+[exit 0]
+
+$ for k in $KS; do echo "== $k"; grep -nE "void \(\*remove\)|int \(\*remove\)|remove_new" /lib/modules/$k/build/include/linux/platform_device.h; grep -nE "umode_t \(\*is_visible\)" /lib/modules/$k/build/include/linux/hwmon.h; done
+== 7.0.14-20-pve
+236:	void (*remove)(struct platform_device *);
+420:	umode_t (*is_visible)(const void *drvdata, enum hwmon_sensor_types type,
+== 7.0.12-1-pve
+236:	void (*remove)(struct platform_device *);
+419:	umode_t (*is_visible)(const void *drvdata, enum hwmon_sensor_types type,
+[exit 0]
+
+################################################################################
+### F7 DKMS build of the packaged tree (dkms.conf = deploy/dkms.conf, PACKAGE_VERSION 0.2.1 unchanged by build-deb.sh)
+
+$ sha256sum /usr/src/minisforum-n5-it5571-0.2.1/*; cat /usr/src/minisforum-n5-it5571-0.2.1/dkms.conf
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  /usr/src/minisforum-n5-it5571-0.2.1/Makefile
+25d1bb834db207191e1b2238db1231c15a15ed0920e1f9671fc08d669fa6bbd3  /usr/src/minisforum-n5-it5571-0.2.1/UPSTREAM_COMMIT
+7f8c1efd6bd1d5b03b092ceb0942301da77dd15ba3ab7d3a5ab7f014987e77c9  /usr/src/minisforum-n5-it5571-0.2.1/dkms.conf
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  /usr/src/minisforum-n5-it5571-0.2.1/minisforum_n5_it5571.c
+PACKAGE_NAME="minisforum-n5-it5571"
+PACKAGE_VERSION="0.2.1"
+BUILT_MODULE_NAME[0]="minisforum_n5_it5571"
+DEST_MODULE_LOCATION[0]="/updates/dkms"
+MAKE[0]="make -C ${kernel_source_dir} M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build modules"
+CLEAN="make -C ${kernel_source_dir} M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build clean"
+AUTOINSTALL="yes"
+[exit 0]
+
+$ grep -nE "^(PATCH|PATCH_MATCH|PRE_BUILD|POST_BUILD|PRE_INSTALL|POST_INSTALL|POST_ADD|POST_REMOVE|MAKE_MATCH|BUILD_EXCLUSIVE|REMAKE_INITRD|STRIP|OBSOLETE_BY)" /usr/src/minisforum-n5-it5571-0.2.1/dkms.conf || echo "no PATCH/PRE_/POST_ hooks in dkms.conf"
+no PATCH/PRE_/POST_ hooks in dkms.conf
+[exit 0]
+
+$ cat -n /usr/src/minisforum-n5-it5571-0.2.1/Makefile
+     1	obj-m += minisforum_n5_it5571.o
+     2	
+     3	KDIR ?= /lib/modules/$(shell uname -r)/build
+     4	PWD  := $(shell pwd)
+     5	
+     6	.PHONY: all clean
+     7	
+     8	all:
+     9		$(MAKE) -C $(KDIR) M=$(PWD) modules
+    10	
+    11	clean:
+    12		$(MAKE) -C $(KDIR) M=$(PWD) clean
+[exit 0]
+
+$ dkms add -m minisforum-n5-it5571 -v 0.2.1
+Creating symlink /var/lib/dkms/minisforum-n5-it5571/0.2.1/source -> /usr/src/minisforum-n5-it5571-0.2.1
+[exit 0]
+
+$ dkms build -m minisforum-n5-it5571 -v 0.2.1 -k $K
+Sign command: /lib/modules/7.0.14-20-pve/build/scripts/sign-file
+Signing key: /var/lib/dkms/mok.key
+Public certificate (MOK): /var/lib/dkms/mok.pub
+Certificate or key are missing, generating self signed certificate for MOK...
+
+Building module(s)... done.
+Signing module /var/lib/dkms/minisforum-n5-it5571/0.2.1/build/minisforum_n5_it5571.ko
+[exit 0]
+
+$ cat /var/lib/dkms/minisforum-n5-it5571/0.2.1/$K/x86_64/log/make.log
+DKMS (dkms-3.2.2) make.log for minisforum-n5-it5571/0.2.1 for kernel 7.0.14-20-pve (x86_64)
+Fri Oct  9 15:04:22 UTC 2026
+
+Building module(s)
+# command: make -j4 KERNELRELEASE=7.0.14-20-pve -C /lib/modules/7.0.14-20-pve/build M=/var/lib/dkms/minisforum-n5-it5571/0.2.1/build modules
+make: Entering directory '/usr/src/linux-headers-7.0.14-20-pve'
+make[1]: Entering directory '/var/lib/dkms/minisforum-n5-it5571/0.2.1/build'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+  BTF [M] minisforum_n5_it5571.ko
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+make[1]: Leaving directory '/var/lib/dkms/minisforum-n5-it5571/0.2.1/build'
+make: Leaving directory '/usr/src/linux-headers-7.0.14-20-pve'
+
+# exit code: 0
+# elapsed time: 00:00:01
+----------------------------------------------------------------
+[exit 0]
+
+$ ls -l /var/lib/dkms/minisforum-n5-it5571/0.2.1/build/; sha256sum /var/lib/dkms/minisforum-n5-it5571/0.2.1/build/$MOD.c /var/lib/dkms/minisforum-n5-it5571/0.2.1/build/Makefile
+ls: cannot access '/var/lib/dkms/minisforum-n5-it5571/0.2.1/build/': No such file or directory
+sha256sum: /var/lib/dkms/minisforum-n5-it5571/0.2.1/build/minisforum_n5_it5571.c: No such file or directory
+sha256sum: /var/lib/dkms/minisforum-n5-it5571/0.2.1/build/Makefile: No such file or directory
+[exit 1]
+
+$ ko=$(ls /var/lib/dkms/minisforum-n5-it5571/0.2.1/$K/x86_64/module/$MOD.ko*); /usr/sbin/modinfo $ko | grep -E "^(filename|version|srcversion|vermagic)"; s=$(/usr/sbin/modinfo -F srcversion $ko); [ "$s" = 96E49785C432E4B85FAF416 ] && echo "srcversion == n5host module ($K)"
+filename:       /var/lib/dkms/minisforum-n5-it5571/0.2.1/7.0.14-20-pve/x86_64/module/minisforum_n5_it5571.ko
+version:        0.2.0
+srcversion:     96E49785C432E4B85FAF416
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+srcversion == n5host module (7.0.14-20-pve)
+[exit 0]
+
+$ dkms build -m minisforum-n5-it5571 -v 0.2.1 -k $K
+Sign command: /lib/modules/7.0.12-1-pve/build/scripts/sign-file
+Signing key: /var/lib/dkms/mok.key
+Public certificate (MOK): /var/lib/dkms/mok.pub
+
+Building module(s)... done.
+Signing module /var/lib/dkms/minisforum-n5-it5571/0.2.1/build/minisforum_n5_it5571.ko
+[exit 0]
+
+$ cat /var/lib/dkms/minisforum-n5-it5571/0.2.1/$K/x86_64/log/make.log
+DKMS (dkms-3.2.2) make.log for minisforum-n5-it5571/0.2.1 for kernel 7.0.12-1-pve (x86_64)
+Fri Oct  9 15:04:23 UTC 2026
+
+Building module(s)
+# command: make -j4 KERNELRELEASE=7.0.12-1-pve -C /lib/modules/7.0.12-1-pve/build M=/var/lib/dkms/minisforum-n5-it5571/0.2.1/build modules
+make: Entering directory '/usr/src/linux-headers-7.0.12-1-pve'
+make[1]: Entering directory '/var/lib/dkms/minisforum-n5-it5571/0.2.1/build'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+  BTF [M] minisforum_n5_it5571.ko
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+make[1]: Leaving directory '/var/lib/dkms/minisforum-n5-it5571/0.2.1/build'
+make: Leaving directory '/usr/src/linux-headers-7.0.12-1-pve'
+
+# exit code: 0
+# elapsed time: 00:00:01
+----------------------------------------------------------------
+[exit 0]
+
+$ ls -l /var/lib/dkms/minisforum-n5-it5571/0.2.1/build/; sha256sum /var/lib/dkms/minisforum-n5-it5571/0.2.1/build/$MOD.c /var/lib/dkms/minisforum-n5-it5571/0.2.1/build/Makefile
+ls: cannot access '/var/lib/dkms/minisforum-n5-it5571/0.2.1/build/': No such file or directory
+sha256sum: /var/lib/dkms/minisforum-n5-it5571/0.2.1/build/minisforum_n5_it5571.c: No such file or directory
+sha256sum: /var/lib/dkms/minisforum-n5-it5571/0.2.1/build/Makefile: No such file or directory
+[exit 1]
+
+$ ko=$(ls /var/lib/dkms/minisforum-n5-it5571/0.2.1/$K/x86_64/module/$MOD.ko*); /usr/sbin/modinfo $ko | grep -E "^(filename|version|srcversion|vermagic)"; s=$(/usr/sbin/modinfo -F srcversion $ko); [ "$s" = 96E49785C432E4B85FAF416 ] && echo "srcversion == n5host module ($K)"
+filename:       /var/lib/dkms/minisforum-n5-it5571/0.2.1/7.0.12-1-pve/x86_64/module/minisforum_n5_it5571.ko
+version:        0.2.0
+srcversion:     96E49785C432E4B85FAF416
+vermagic:       7.0.12-1-pve SMP preempt mod_unload modversions 
+srcversion == n5host module (7.0.12-1-pve)
+[exit 0]
+
+$ dkms status -m minisforum-n5-it5571
+minisforum-n5-it5571/0.2.1, 7.0.12-1-pve, x86_64: built
+minisforum-n5-it5571/0.2.1, 7.0.14-20-pve, x86_64: built
+[exit 0]
+
+################################################################################
+### end
+
+$ date -u
+Fri Oct  9 15:04:24 UTC 2026
+[exit 0]
+
+
+################################################################################
+### RUN B (buildhost-ct, p3b.sh)
+
+################################################################################
+### T0 container + tools
+
+$ date -u; cat /etc/debian_version
+Fri Oct  9 15:04:58 UTC 2026
+13.7
+[exit 0]
+
+$ apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git build-essential bc bison flex libelf-dev libssl-dev kmod perl python3 libsqlite3-dev sqlite3 libdbd-sqlite3-perl libtry-tiny-perl pkg-config xz-utils zstd binutils >/dev/null && echo tools ok
+tools ok
+[exit 0]
+
+$ curl -fsSL -o /usr/share/keyrings/proxmox-archive-keyring.gpg https://enterprise.proxmox.com/debian/proxmox-archive-keyring-trixie.gpg && [ "$(sha256sum </usr/share/keyrings/proxmox-archive-keyring.gpg | cut -d" " -f1)" = 136673be77aba35dcce385b28737689ad64fd785a797e57897589aed08db6e45 ] && echo "keyring ok (sha256 as in P2)"
+keyring ok (sha256 as in P2)
+[exit 0]
+
+$ apt-get update -qq && apt-get install -y -qq --no-install-recommends proxmox-headers-7.0.14-20-pve proxmox-headers-7.0.12-1-pve >/dev/null && dpkg-query -W proxmox-headers-7.0.14-20-pve proxmox-headers-7.0.12-1-pve
+proxmox-headers-7.0.12-1-pve	7.0.12-1
+proxmox-headers-7.0.14-20-pve	7.0.14-20
+[exit 0]
+
+$ sha256sum /src/*
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  /src/Makefile
+7f8c1efd6bd1d5b03b092ceb0942301da77dd15ba3ab7d3a5ab7f014987e77c9  /src/dkms.conf
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  /src/minisforum_n5_it5571.c
+[exit 0]
+
+################################################################################
+### F1 checkpatch.pl from the headers packages vs. stable v7.0.14
+
+$ cd /work/cp && sha256sum checkpatch.pl spelling.txt const_structs.checkpatch; for k in $KS; do (cd /lib/modules/$k/build/scripts && sha256sum checkpatch.pl spelling.txt const_structs.checkpatch | sed "s|  |  $k/scripts/|"); done
+6e7abb5d613b8916f162db09d4442fbd444f31d2402022b641e9ecfcc3279323  checkpatch.pl
+3c1526d0cc6365d6b637b35e4705e24add3c4a1d4e73bc261cab7f6ee4079264  spelling.txt
+ea064f6916a74763468037494aeb270aae34b7c97617e84d424ca5b8733539b2  const_structs.checkpatch
+6e7abb5d613b8916f162db09d4442fbd444f31d2402022b641e9ecfcc3279323  7.0.14-20-pve/scripts/checkpatch.pl
+3c1526d0cc6365d6b637b35e4705e24add3c4a1d4e73bc261cab7f6ee4079264  7.0.14-20-pve/scripts/spelling.txt
+ea064f6916a74763468037494aeb270aae34b7c97617e84d424ca5b8733539b2  7.0.14-20-pve/scripts/const_structs.checkpatch
+6e7abb5d613b8916f162db09d4442fbd444f31d2402022b641e9ecfcc3279323  7.0.12-1-pve/scripts/checkpatch.pl
+3c1526d0cc6365d6b637b35e4705e24add3c4a1d4e73bc261cab7f6ee4079264  7.0.12-1-pve/scripts/spelling.txt
+ea064f6916a74763468037494aeb270aae34b7c97617e84d424ca5b8733539b2  7.0.12-1-pve/scripts/const_structs.checkpatch
+[exit 0]
+
+$ cd /work/cpsrc && perl /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl --no-tree -f $MOD.c
+total: 0 errors, 0 warnings, 681 lines checked
+
+minisforum_n5_it5571.c has no obvious style problems and is ready for submission.
+[exit 0]
+
+################################################################################
+### F2 sparse from git
+
+$ git clone -q https://git.kernel.org/pub/scm/devel/sparse/sparse.git /opt/sparse && git -C /opt/sparse log -1 --format="%H %cd %s" --date=iso && git -C /opt/sparse describe --tags --always
+37156835e3d725b6d750f000be33ba3814bb2310 2025-12-18 02:38:24 -0500 lift handling of ->immutable into dup_token()
+v0.6.5-rc1
+[exit 0]
+
+$ cd /opt/sparse && make -j$(nproc) PREFIX=/usr/local >/tmp/sparse-build.log 2>&1 && make PREFIX=/usr/local install >/dev/null 2>&1; rc=$?; tail -n 3 /tmp/sparse-build.log; command -v sparse; sparse --version; exit $rc
+  LD      test-unssa
+  LD      example
+  LD      semind
+/usr/local/bin/sparse
+v0.6.5-rc1
+[exit 0]
+
+$ cd /lib/modules/$K/build && sh scripts/checker-valid.sh sparse -D__x86_64__ && echo "checker-valid: sparse accepted ($K)"
+1
+checker-valid: sparse accepted (7.0.14-20-pve)
+[exit 0]
+
+$ cd /work/$K && make -C /lib/modules/$K/build M=$PWD C=2 modules
+make: Entering directory '/usr/src/linux-headers-7.0.14-20-pve'
+make[1]: Entering directory '/work/7.0.14-20-pve'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+  BTF [M] minisforum_n5_it5571.ko
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+make[1]: Leaving directory '/work/7.0.14-20-pve'
+make: Leaving directory '/usr/src/linux-headers-7.0.14-20-pve'
+[exit 0]
+
+$ cd /lib/modules/$K/build && sh scripts/checker-valid.sh sparse -D__x86_64__ && echo "checker-valid: sparse accepted ($K)"
+1
+checker-valid: sparse accepted (7.0.12-1-pve)
+[exit 0]
+
+$ cd /work/$K && make -C /lib/modules/$K/build M=$PWD C=2 modules
+make: Entering directory '/usr/src/linux-headers-7.0.12-1-pve'
+make[1]: Entering directory '/work/7.0.12-1-pve'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+  BTF [M] minisforum_n5_it5571.ko
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+make[1]: Leaving directory '/work/7.0.12-1-pve'
+make: Leaving directory '/usr/src/linux-headers-7.0.12-1-pve'
+[exit 0]
+
+################################################################################
+### F2/F3 negative control (not the driver): file with known defects
+
+$ cd /work/neg && make -C /lib/modules/7.0.14-20-pve/build M=$PWD C=2 modules 2>&1 | grep -E "negctl\.c|CHECK"
+  CHECK   negctl.c
+negctl.c:18:19: warning: cast removes address space '__iomem' of expression
+[exit 0]
+
+$ git clone -q https://repo.or.cz/smatch.git /opt/smatch && git -C /opt/smatch log -1 --format="%H %cd %s" --date=iso && cd /opt/smatch && make -j$(nproc) >/tmp/smatch-build.log 2>&1; rc=$?; ls -l /opt/smatch/smatch; exit $rc
+5189e3fb018b783a26dcb45c02c114c1d1aad290 2026-05-05 13:45:43 +0300 Merge ../hotfix
+-rwxr-xr-x 1 root root 7440368 Oct  9 15:05 /opt/smatch/smatch
+[exit 0]
+
+$ cd /work/neg && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null; make -C /lib/modules/7.0.14-20-pve/build M=$PWD C=2 CHECK="/opt/smatch/smatch -p=kernel" modules 2>&1 | grep -E "negctl\.c|CHECK"
+  CHECK   negctl.c
+negctl.c:10 negctl_a() warn: variable dereferenced before check 'p' (see line 8)
+[exit 0]
+
+$ cd /work/$K && make -C /lib/modules/$K/build M=$PWD clean >/dev/null; make -C /lib/modules/$K/build M=$PWD C=2 CHECK="/opt/smatch/smatch -p=kernel" modules 2>&1 | grep -vE "^make|pahole|kernel was built|You are using"
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+  BTF [M] minisforum_n5_it5571.ko
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+[exit 0]
+
+$ cd /work/$K && make -C /lib/modules/$K/build M=$PWD clean >/dev/null; make -C /lib/modules/$K/build M=$PWD C=2 CHECK="/opt/smatch/smatch -p=kernel" modules 2>&1 | grep -vE "^make|pahole|kernel was built|You are using"
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+  BTF [M] minisforum_n5_it5571.ko
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+[exit 0]
+
+################################################################################
+### end
+
+$ date -u
+Fri Oct  9 15:05:40 UTC 2026
+[exit 0]
+
+
+################################################################################
+### RUN C (buildhost-ct, p3c.sh)
+
+################################################################################
+### F4 W=1 flag check
+
+$ date -u; sha256sum </usr/share/keyrings/proxmox-archive-keyring.gpg; dpkg-query -W proxmox-headers-7.0.14-20-pve proxmox-headers-7.0.12-1-pve; sha256sum /src/$MOD.c
+Fri Oct  9 15:06:18 UTC 2026
+136673be77aba35dcce385b28737689ad64fd785a797e57897589aed08db6e45  -
+proxmox-headers-7.0.12-1-pve	7.0.12-1
+proxmox-headers-7.0.14-20-pve	7.0.14-20
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  /src/minisforum_n5_it5571.c
+[exit 0]
+
+$ cd /work/$K && make -C /lib/modules/$K/build M=$PWD W=1 modules 2>&1 | grep -E "warning|error|CC \[M\]  minisforum_n5_it5571.o" ; for f in -Wextra -Wmissing-prototypes -Wold-style-definition -Wmissing-declarations -Wunused-but-set-variable -Wunused-const-variable; do printf "%s in .o.cmd: %s\n" "$f" "$(grep -c -- "$f" .$MOD.o.cmd)"; done
+warning: pahole version differs from the one used to build the kernel
+  CC [M]  minisforum_n5_it5571.o
+-Wextra in .o.cmd: 1
+-Wmissing-prototypes in .o.cmd: 1
+-Wold-style-definition in .o.cmd: 0
+-Wmissing-declarations in .o.cmd: 1
+-Wunused-but-set-variable in .o.cmd: 0
+-Wunused-const-variable in .o.cmd: 1
+[exit 0]
+
+$ cd /work/$K && make -C /lib/modules/$K/build M=$PWD W=1 modules 2>&1 | grep -E "warning|error|CC \[M\]  minisforum_n5_it5571.o" ; for f in -Wextra -Wmissing-prototypes -Wold-style-definition -Wmissing-declarations -Wunused-but-set-variable -Wunused-const-variable; do printf "%s in .o.cmd: %s\n" "$f" "$(grep -c -- "$f" .$MOD.o.cmd)"; done
+warning: pahole version differs from the one used to build the kernel
+  CC [M]  minisforum_n5_it5571.o
+-Wextra in .o.cmd: 1
+-Wmissing-prototypes in .o.cmd: 1
+-Wold-style-definition in .o.cmd: 0
+-Wmissing-declarations in .o.cmd: 1
+-Wunused-but-set-variable in .o.cmd: 0
+-Wunused-const-variable in .o.cmd: 1
+[exit 0]
+
+$ date -u
+Fri Oct  9 15:06:20 UTC 2026
+[exit 0]

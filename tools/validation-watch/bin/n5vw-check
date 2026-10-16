@@ -1,0 +1,272 @@
+#!/bin/bash
+# n5vw-check - evaluate criteria K1..K8 every 5 minutes (F8b long-term watch).
+#
+# K1 kernel log patterns        K2 boot_id changed       K3 n5-fangov health
+# K4 fan/temperature/EC reads   K5 sampler gaps (freeze) K6 disk usage
+# K7 kernel taint changed       K8 watcher itself (journal unreadable,
+#                                  samples.csv shrank; coverage: see report)
+# Events go to events.log, alert mails are rate-limited per key.
+# State (journal cursors etc.) is saved after every section, so a run that
+# is killed by the timeout does not reprocess the same backlog forever.
+# READ-ONLY with respect to hardware (journalctl, systemctl show, procfs).
+set -euo pipefail
+
+BIN_DIR=$(dirname "$(readlink -f "$0")")
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=n5vw-lib.sh
+. "$BIN_DIR/n5vw-lib.sh"
+vw_load_config
+mkdir -p "$RUN_DIR"
+vw_lock
+NOW=$EPOCHSECONDS
+
+# Run already finished: (re)try to switch the timers off and stop.
+if [ -e "$RUN_DIR/final.done" ]; then
+    vw_log "run $RUN_ID finished ($RUN_DIR/final.done), disabling timers"
+    vw_disable_timers || true
+    exit 0
+fi
+
+printf '%s\n' "$NOW" >> "$CHECKS"
+vw_state_load
+vw_events_init
+
+# START mail written by install.sh: sent from inside this unit, so its
+# arrival proves the mail path under the same sandbox as the alerts.
+if [ -s "$RUN_DIR/startmail.pending" ]; then
+    {
+        cat "$RUN_DIR/startmail.pending"
+        printf '\nGesendet von n5vw-check (gleiche Sandbox wie die Alarme). Kommt diese Mail an,\n'
+        printf 'ist der Mailweg der Alarme bestaetigt.\n'
+    } | vw_mail "[n5-validation] START $RUN_ID"
+    rm -f "$RUN_DIR/startmail.pending"
+fi
+vw_flush_outbox
+
+# journal_since CURSOR_KEY JOURNALCTL_ARGS...
+# New lines (short-unix) in JS_OUT, cursor stored in VW_STATE. On a journalctl
+# error: K8 event (once per episode) and fallback to --since=@<last check>.
+# Must not run in a subshell (it updates VW_STATE).
+journal_since() {
+    local ckey=$1 out cur prev rc=0 errf=$RUN_DIR/.journalctl.err fail='' since
+    shift
+    prev=$(vw_state_get "$ckey")
+    if [ -n "$prev" ]; then
+        out=$(journalctl -q --no-pager -o short-unix --show-cursor --after-cursor="$prev" "$@" 2>"$errf") || rc=$?
+        if [ "$rc" -ne 0 ]; then
+            fail="journalctl --after-cursor rc=$rc: $(head -c 200 "$errf" | tr '\n' ' ')"
+            since=$(vw_state_get last_check "$START_EPOCH")
+            rc=0
+            out=$(journalctl -q --no-pager -o short-unix --show-cursor --since="@$since" "$@" 2>"$errf") || rc=$?
+        fi
+    else
+        out=$(journalctl -q --no-pager -o short-unix --show-cursor --since="@$START_EPOCH" "$@" 2>"$errf") || rc=$?
+    fi
+    if [ "$rc" -ne 0 ]; then
+        fail="${fail:+$fail; }journalctl --since rc=$rc: $(head -c 200 "$errf" | tr '\n' ' ')"
+        out=
+    fi
+    if [ -n "$fail" ]; then
+        if [ "$(vw_state_get "jfail_$ckey" 0)" = 0 ]; then
+            vw_event K8 "$NOW" "Journal nicht lesbar ($ckey), Kriterien blind oder per Fallback" "$fail"
+        fi
+        VW_STATE[jfail_$ckey]=1
+    else
+        VW_STATE[jfail_$ckey]=0
+    fi
+    cur=$(printf '%s\n' "$out" | sed -n 's/^-- cursor: //p' | tail -n 1)
+    if [ -z "$cur" ] && { [ -z "$prev" ] || [ -n "$fail" ]; }; then
+        cur=$(journalctl -q --no-pager -n 0 --show-cursor "$@" 2>/dev/null | sed -n 's/^-- cursor: //p' | tail -n 1 || true)
+    fi
+    if [ -n "$cur" ]; then VW_STATE[$ckey]=$cur; fi
+    JS_OUT=$(printf '%s\n' "$out" | grep -v -e '^-- cursor: ' -e '^$' || true)
+}
+
+# ---- K1: kernel log ---------------------------------------------------------
+journal_since cursor_kernel _TRANSPORT=kernel
+vw_state_save    # cursor persisted before the (possibly long) evaluation
+if [ -n "$JS_OUT" ]; then
+    up=; vw_rd /proc/uptime up; up=${up%%.*}
+    btime=$((NOW - ${up:-0}))
+    # one awk pass, capped; no per-line forks
+    k1=$(printf '%s\n' "$JS_OUT" | awk -v pat="$K1_PATTERN" -v ign="$K1_IGNORE" \
+        -v ignprev="$K1_IGNORE_PREVBOOT" -v btime="$btime" -v cap="$K1_MAX_PER_RUN" '
+        {
+            if ($1 ~ /^[0-9]+(\.[0-9]+)?$/) { ep = $1; sub(/\..*/, "", ep); msg = $0; sub(/^[^ ]+ [^ ]+ /, "", msg) }
+            else msg = $0                       # continuation line: keep last epoch
+            sub(/^kernel: /, "", msg)
+        }
+        msg !~ pat { next }
+        ign != "" && msg ~ ign { next }
+        ignprev != "" && msg ~ ignprev && ep + 0 < btime { next }
+        { n++; if (n <= cap) printf "%s\t%s\n", ep, msg }
+        END { if (n > cap) printf "DROP\t%d\n", n - cap }')
+    liso=''
+    while IFS=$'\t' read -r lep msg; do
+        [ -n "$lep" ] || continue
+        if [ "$lep" = DROP ]; then
+            vw_event K1 "$NOW" "K1-Flut: $msg weitere Treffer in diesem Lauf nicht einzeln erfasst (Deckel $K1_MAX_PER_RUN)"
+            continue
+        fi
+        vw_iso_v liso "$lep"
+        vw_event K1 "$lep" "${msg:0:200}" "$liso $msg"
+    done <<< "$k1"
+fi
+
+# ---- K2: boot_id --------------------------------------------------------------
+boot_id=
+vw_rd /proc/sys/kernel/random/boot_id boot_id
+last_boot=$(vw_state_get last_boot_id "$BOOT_ID_START")
+if [ -n "$last_boot" ] && [ "$last_boot" != "$boot_id" ]; then
+    mapfile -t ev < <(
+        echo "vorheriger Boot: $last_boot"
+        echo "aktueller Boot:  $boot_id"
+        journalctl --list-boots --no-pager 2>/dev/null | tail -n 3 || true
+        echo "letzte Zeilen des vorherigen Boots:"
+        journalctl -b -1 -n 15 -o short-iso --no-pager 2>/dev/null || true
+        echo "pstore (Panic-Reste, leer = keine):"
+        find /var/lib/systemd/pstore /sys/fs/pstore -mindepth 1 -maxdepth 2 -printf '%TY-%Tm-%Td %TH:%TM %s %p\n' 2>/dev/null | head -n 10 || true
+    )
+    vw_event K2 "$NOW" "boot_id gewechselt: ${last_boot:0:8} -> ${boot_id:0:8}" "${ev[@]}"
+    VW_STATE[last_nrestarts]=0
+fi
+VW_STATE[last_boot_id]=$boot_id
+vw_state_save
+
+# ---- K3: n5-fangov ------------------------------------------------------------
+fg_state=; fg_nr=
+while IFS='=' read -r k v; do
+    case "$k" in
+        ActiveState) fg_state=$v ;;
+        NRestarts) fg_nr=$v ;;
+    esac
+done < <(systemctl show "$FANGOV_UNIT" -p ActiveState -p NRestarts 2>/dev/null || true)
+if [ "$fg_state" != active ]; then
+    if [ "$(vw_state_get fangov_inactive 0)" = 0 ]; then
+        vw_event K3 "$NOW" "$FANGOV_UNIT ActiveState=${fg_state:-unbekannt}" \
+            "$(systemctl status "$FANGOV_UNIT" --no-pager -n 0 2>/dev/null | head -n 5 || true)"
+    fi
+    VW_STATE[fangov_inactive]=1
+else
+    VW_STATE[fangov_inactive]=0
+fi
+last_nr=$(vw_state_get last_nrestarts 0)
+if [ -n "$fg_nr" ] && [ "$fg_nr" -gt "$last_nr" ] 2>/dev/null; then
+    vw_event K3 "$NOW" "$FANGOV_UNIT NRestarts $last_nr -> $fg_nr"
+fi
+if [ -n "$fg_nr" ]; then VW_STATE[last_nrestarts]=$fg_nr; fi
+journal_since cursor_fangov -u "$FANGOV_UNIT" -p warning
+vw_state_save
+flines=$JS_OUT
+if [ -n "$flines" ]; then
+    mapfile -t ev < <(printf '%s\n' "$flines" | tail -n 40)
+    n=$(printf '%s\n' "$flines" | wc -l)
+    vw_event K3 "$NOW" "$n Journal-Zeile(n) >= warning von $FANGOV_UNIT" "${ev[@]}"
+fi
+
+# ---- K4 + K5: sample analysis -------------------------------------------------
+# Progress is tracked by line number (not by epoch): a backwards clock step
+# must neither hide new rows nor re-report old ones.
+last_line=$(vw_state_get last_sample_line 1)
+if [ -r "$SAMPLES" ]; then
+    awk_out=$(awk -F, -v lastline="$last_line" -v gapmax="$GAP_MAX" \
+        -v th_tctl="$TH_TCTL" -v th_nvme="$TH_NVME" -v th_hdd="$TH_HDD" -v th_ec="$TH_EC_CPU" '
+        function hot(name, val, th) {
+            if (val != "" && val + 0 >= th) {
+                if (rep && !(name in on)) printf "EV K4 %s %s %s=%s >= %s\n", ep, $1, name, val, th
+                on[name] = 1
+            } else if (val != "") delete on[name]
+        }
+        NR == 1 { nf = NF; for (i = 1; i <= NF; i++) c[$i] = i; next }
+        NF != nf || $2 !~ /^[0-9]+$/ { next }
+        {
+            # all rows rebuild streak/episode state; only rows after the
+            # last checked line (rep=1) produce events
+            ep = $2 + 0
+            rep = (NR > lastline)
+            if (prev != "") {
+                d = ep - prev
+                if (rep && d < 0)
+                    printf "EV K5 %s %s Uhrsprung rueckwaerts um %d s (Boot %s)\n", ep, $1, -d, substr($3, 1, 8)
+                else if (rep && d > gapmax)
+                    printf "EV K5 %s %s Luecke %d s zwischen Samples (Boot %s)\n", ep, $1, d, substr($3, 1, 8)
+            }
+            for (f = 1; f <= 3; f++) {
+                v = $(c["fan" f "_rpm"])
+                z[f] = (v != "" && v + 0 == 0) ? z[f] + 1 : 0
+                if (rep && z[f] == 2) printf "EV K4 %s %s fan%d 0 RPM in 2 aufeinanderfolgenden Samples\n", ep, $1, f
+            }
+            miss = ($(c["fan1_rpm"]) == "" && $(c["ec_temp1_cpu_c"]) == "") ? miss + 1 : 0
+            if (rep && miss == 2) printf "EV K4 %s %s EC-hwmon fehlt oder liefert nichts (2 Samples)\n", ep, $1
+            e = $(c["ec_read_errors"])
+            if (rep && e != "" && e + 0 > 0) printf "EV K4 %s %s %d EC-Lesefehler in einem Sample\n", ep, $1, e
+            hot("Tctl", $(c["k10_tctl_c"]), th_tctl)
+            hot("NVMe", $(c["nvme_max_c"]), th_nvme)
+            hot("HDD", $(c["hdd_max_c"]), th_hdd)
+            hot("EC_CPU", $(c["ec_temp1_cpu_c"]), th_ec)
+            prev = ep
+        }
+        END { printf "LAST %d %s\n", NR, (prev == "" ? 0 : prev) }' "$SAMPLES")
+    while read -r tag key ep _iso rest; do
+        case "$tag" in
+            EV) vw_event "$key" "$ep" "$rest" ;;
+            LAST)
+                # key = line count, ep = epoch of the newest row
+                if [ "$key" -lt "$last_line" ]; then
+                    vw_event K8 "$NOW" "samples.csv geschrumpft: $key Zeilen, zuletzt geprueft bis Zeile $last_line"
+                fi
+                VW_STATE[last_sample_line]=$key
+                VW_STATE[last_sample_epoch]=$ep
+                ;;
+        esac
+    done <<< "$awk_out"
+fi
+newest=$(vw_state_get last_sample_epoch 0)
+# before the first sample of a fresh run, measure from the run start
+if [ "$newest" -lt "$START_EPOCH" ]; then newest=$START_EPOCH; fi
+if [ $((NOW - newest)) -gt $((3 * SAMPLE_INTERVAL)) ]; then
+    if [ "$(vw_state_get stale 0)" = 0 ]; then
+        vw_event K5 "$NOW" "letztes Sample veraltet: $((NOW - newest)) s alt" \
+            "$(systemctl status n5vw-sample.timer n5vw-sample.service --no-pager -n 3 2>/dev/null | head -n 16 || true)"
+    fi
+    VW_STATE[stale]=1
+else
+    VW_STATE[stale]=0
+fi
+vw_state_save
+
+# ---- K6: disk usage -------------------------------------------------------------
+data_kb=$(du -sk "$RUN_DIR" 2>/dev/null | cut -f1 || echo 0)
+root_free_kb=$(df -Pk / 2>/dev/null | awk 'NR == 2 { print $4 }' || echo 0)
+k6=
+if [ "${data_kb:-0}" -gt $((DATA_MAX_MB * 1024)) ]; then k6="Datenverzeichnis $((data_kb / 1024)) MB > $DATA_MAX_MB MB"; fi
+if [ "${root_free_kb:-0}" -lt $((ROOT_MIN_FREE_GB * 1024 * 1024)) ]; then
+    k6="${k6:+$k6; }Root-FS frei $((root_free_kb / 1024)) MB < $ROOT_MIN_FREE_GB GB"
+fi
+if [ -n "$k6" ]; then
+    if [ "$(vw_state_get k6_on 0)" = 0 ]; then vw_event K6 "$NOW" "$k6"; fi
+    VW_STATE[k6_on]=1
+else
+    VW_STATE[k6_on]=0
+fi
+
+# ---- K7: kernel taint -----------------------------------------------------------
+taint=
+vw_rd /proc/sys/kernel/tainted taint
+if [ -z "$TAINT_START" ]; then TAINT_START=$(vw_state_get taint_start "$taint"); fi
+VW_STATE[taint_start]=$TAINT_START
+last_taint=$(vw_state_get last_taint "$TAINT_START")
+if [ "$taint" != "$last_taint" ]; then
+    vw_event K7 "$NOW" "Kernel-Taint $last_taint -> $taint (Start $TAINT_START)" \
+        "$(journalctl -q -k -b --no-pager -o short-iso 2>/dev/null | grep -i taint | tail -n 10 || true)"
+fi
+VW_STATE[last_taint]=$taint
+VW_STATE[last_check]=$NOW
+
+vw_state_save
+vw_process_alerts
+
+# ---- end of run -----------------------------------------------------------------
+if [ "$NOW" -ge "$END_EPOCH" ] && [ ! -e "$RUN_DIR/final.done" ]; then
+    "$BIN_DIR/n5vw-report" --final
+fi

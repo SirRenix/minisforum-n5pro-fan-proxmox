@@ -1,0 +1,99 @@
+P3 Review Gruppe A/H - Rohdaten 2026-10-09
+Quelle: n5host (ssh pve, nur lesend) + lokale Arbeitskopie
+
+### lokal: sha256 vendored
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  <repo>\driver\upstream\driver-prototype\minisforum_n5_it5571.c
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  <repo>\driver\upstream\driver-prototype\Makefile
+### lokal: driver/upstream/SHA256SUMS
+8780e78a1a737e127f25a65f6d95269bffd36158dc261114de7859b490bfc5aa  LICENSE
+8780e78a1a737e127f25a65f6d95269bffd36158dc261114de7859b490bfc5aa  LICENSES/GPL-2.0
+fb5a425bd3b3cd6071a3a9aff9909a859e7c1158d54d32e07658398cd67eb6a0  LICENSES/KERNEL-COPYING
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  driver-prototype/Makefile
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  driver-prototype/minisforum_n5_it5571.c
+### lokal: git hash-object (ORIGIN: .c 28484eba79bac7b5e65efa85cc48f27a87d5637e, Makefile e98644b049b5029e1b50fad39c92c6bbe2798a5c)
+28484eba79bac7b5e65efa85cc48f27a87d5637e
+e98644b049b5029e1b50fad39c92c6bbe2798a5c
+
+### HOST n5host
+### date
+2026-10-09T16:57:57+02:00
+7.0.14-20-pve
+### dpkg
+minisforum-n5-it5571-dkms 0.2.1-1 install ok installed
+### /usr/src listing
+total 40
+drwxr-xr-x  2 root root  4096 Sep 26 00:21 .
+drwxr-xr-x 10 root root  4096 Oct  4 22:22 ..
+-rw-r--r--  1 root root   364 Sep 26 00:20 dkms.conf
+-rw-r--r--  1 root root   204 Sep 26 00:20 Makefile
+-rw-r--r--  1 root root 17496 Sep 26 00:20 minisforum_n5_it5571.c
+-rw-r--r--  1 root root    41 Sep 26 00:20 UPSTREAM_COMMIT
+### sha256 /usr/src
+7f8c1efd6bd1d5b03b092ceb0942301da77dd15ba3ab7d3a5ab7f014987e77c9  /usr/src/minisforum-n5-it5571-0.2.1/dkms.conf
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  /usr/src/minisforum-n5-it5571-0.2.1/Makefile
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  /usr/src/minisforum-n5-it5571-0.2.1/minisforum_n5_it5571.c
+25d1bb834db207191e1b2238db1231c15a15ed0920e1f9671fc08d669fa6bbd3  /usr/src/minisforum-n5-it5571-0.2.1/UPSTREAM_COMMIT
+### UPSTREAM_COMMIT
+feb6d9a5fbf6662a52fa7496009537945d2b30b0
+### /proc/sys/kernel/tainted
+12289
+### per-module taint
+/sys/module/minisforum_n5_it5571/taint=OE
+/sys/module/spl/taint=O
+/sys/module/zfs/taint=PO
+### parameters
+total 0
+-r--r--r-- 1 root root 4096 Oct  8 21:21 experimental_write
+-r--r--r-- 1 root root 4096 Oct  8 21:21 force
+/sys/module/minisforum_n5_it5571/parameters/experimental_write=Y
+/sys/module/minisforum_n5_it5571/parameters/force=N
+### modinfo (ohne Signaturblock)
+filename:       /lib/modules/7.0.14-20-pve/updates/dkms/minisforum_n5_it5571.ko
+version:        0.2.0
+license:        GPL
+description:    Minisforum N5 family IT5571 fan/temp hwmon driver; N5 Pro/Air support is experimental; not affiliated with Minisforum; use at your own risk
+author:         ltdstudio, community exploration for the Minisforum N5 family
+srcversion:     96E49785C432E4B85FAF416
+alias:          dmi*:pn*N5AIR*:rn*F8NAB*:
+alias:          dmi*:pn*N5A*:rn*F8NAB*:
+alias:          dmi*:pn*N5PRO*:rn*F8NAA*:
+alias:          dmi*:pn*N5*:rn*F8NAA*:
+depends:        
+name:           minisforum_n5_it5571
+retpoline:      Y
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+sig_id:         PKCS#7
+signer:         DKMS module signing key
+sig_key:        <redacted>
+sig_hashalgo:   sha512
+parm:           force:Load read-only without a known Minisforum DMI match (bool)
+parm:           experimental_write:Enable PWM writes on experimental or force-loaded systems (bool)
+### modprobe.d
+/usr/lib/modprobe.d/minisforum-n5-it5571.conf:4:options minisforum_n5_it5571 experimental_write=1
+### modules-load.d
+/usr/lib/modules-load.d/minisforum-n5-it5571.conf:1:minisforum_n5_it5571
+### /proc/cmdline
+BOOT_IMAGE=/boot/vmlinuz-7.0.14-20-pve root=/dev/mapper/pve-root ro quiet amd_iommu=on iommu=pt nmi_watchdog=1 softlockup_panic=1 sysrq_always_enabled=1 panic=10
+### modules.alias
+38042:alias dmi*:pn*N5AIR*:rn*F8NAB*: minisforum_n5_it5571
+38043:alias dmi*:pn*N5A*:rn*F8NAB*: minisforum_n5_it5571
+38044:alias dmi*:pn*N5PRO*:rn*F8NAA*: minisforum_n5_it5571
+38045:alias dmi*:pn*N5*:rn*F8NAA*: minisforum_n5_it5571
+### dmi
+sys_vendor=Micro Computer (HK) Tech Limited
+product_name=N5 PRO
+board_vendor=Meigao Innovation Technology (Shen Zhen) Co., Ltd
+board_name=F8NAA
+modalias=dmi:bvnAmericanMegatrendsInternational,LLC.:bvr1.05:bd03/31/2026:br5.35:efr0.14:svnMicroComputer(HK)TechLimited:pnN5PRO:pvr1.0:rvnMeigaoInnovationTechnology(ShenZhen)Co.,Ltd:rnF8NAA:rvr1.0:cvnDefaultstring:ct3:cvrDefaultstring:skuMGF8NAA:pfaMINISFORUM:
+### kernel log (Modulzeilen, aktueller Boot)
+tail: invalid number of lines: ‘10\r’
+### kernel log, zweiter Abruf (journalctl -k -b | grep n5_it5571)
+Hint: You are currently not seeing messages from other users and the system.
+      Users in groups 'adm', 'systemd-journal' can see all messages.
+      Pass -q to turn off this notice.
+No journal files were opened due to insufficient permissions.
+### kernel log, dritter Abruf mit sudo
+Oct 04 22:17:18 n5host kernel: minisforum_n5_it5571: loading out-of-tree module taints kernel.
+Oct 04 22:17:18 n5host kernel: minisforum_n5_it5571: module verification failed: signature and/or required key missing - tainting kernel
+Oct 04 22:17:18 n5host kernel: minisforum_n5_it5571 minisforum_n5_it5571: Minisforum N5 Pro / F8NAA: EXPERIMENTAL PWM WRITES ENABLED; stop immediately if a fan stops, runs unexpectedly, a channel is mismatched, or temperatures become abnormal
+Oct 04 22:17:18 n5host kernel: minisforum_n5_it5571 minisforum_n5_it5571: registered 4 fan and 4 temperature channels plus 4 writable PWM channels
