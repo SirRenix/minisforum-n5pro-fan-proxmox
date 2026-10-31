@@ -7,8 +7,8 @@ Je Lauf ein Verzeichnis mit den Rohdaten und `SHA256SUMS` über alle Dateien des
 
 | Lauf | Zeitraum | Treiber | Verdict | Zusammenfassung |
 |---|---|---|---|---|
-| [`baseline-20261008/`](baseline-20261008/) | 08.–15.10.2026 | upstream 0.2.1 | PASS | [BEFUNDE.md §F8b](../BEFUNDE.md), [`raw/f8b-baseline-20261008-abschluss.txt`](../raw/f8b-baseline-20261008-abschluss.txt) |
-| [`patched-20261017/`](patched-20261017/) | 17.–24.10.2026 | `0.2.1+sr1~rc2` | PASS | [BEFUNDE.md §F8b-Lauf 2](../BEFUNDE.md), [`raw/f8b-patched-20261017-abschluss.txt`](../raw/f8b-patched-20261017-abschluss.txt) |
+| [`20261008-2225-F8NAA-1.05-f8b/`](20261008-2225-F8NAA-1.05-f8b/) (`baseline-20261008`) | 08.–15.10.2026 | upstream 0.2.1 | PASS | [BEFUNDE.md §F8b](../BEFUNDE.md), [`raw/f8b-baseline-20261008-abschluss.txt`](../raw/f8b-baseline-20261008-abschluss.txt) |
+| [`20261017-1541-F8NAA-1.05-f8b/`](20261017-1541-F8NAA-1.05-f8b/) (`patched-20261017`) | 17.–24.10.2026 | `0.2.1+sr1~rc2` | PASS | [BEFUNDE.md §F8b-Lauf 2](../BEFUNDE.md), [`raw/f8b-patched-20261017-abschluss.txt`](../raw/f8b-patched-20261017-abschluss.txt) |
 
 Inhalt je Lauf: `samples.csv` (ein Sample je 30 s), `checks.log` (Epoch je Check-Lauf, K8),
 `reports/day-N.txt` und `reports/final.txt`, `config.snapshot` (Watcher-Konfig bei Installation),

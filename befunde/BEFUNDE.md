@@ -352,8 +352,8 @@ Ausgewertet 31.10.2026, nur lesend. Zusammenfassung `raw/f8b-patched-20261017-ab
 (`.sha256`); Rückprüfung `WARNING:` `raw/k1-retro-warning-f8b-*-20261031T162822Z.txt` (je
 `.sha256`, gegen die Originale auf `n5host` geprüft). Volle Watcher-Rohdaten (`samples.csv`,
 20 061 Zeilen, Berichte, Konfig) anonymisiert mit `SHA256SUMS` unter
-[`runs/patched-20261017/`](runs/patched-20261017/), Lauf 1 unter
-[`runs/baseline-20261008/`](runs/baseline-20261008/).
+[`runs/20261017-1541-F8NAA-1.05-f8b/`](runs/20261017-1541-F8NAA-1.05-f8b/), Lauf 1 unter
+[`runs/20261008-2225-F8NAA-1.05-f8b/`](runs/20261008-2225-F8NAA-1.05-f8b/).
 
 **Ergebnis: PASS — kein Fehler beobachtet in 7 Tagen unter diesen Bedingungen.**
 Lauf 2 ist für sich PASS (K1–K8 je 0 Ereignisse, Lauf vollständig) und hat in keinem K mehr

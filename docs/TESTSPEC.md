@@ -723,5 +723,5 @@ than the frozen-0.3 variant; criteria unchanged (operator decision 2026-10-17).
 **#28 Regulator observation run.** Decided 2026-10-16: n5-fangov 0.5.0 gets its own run after
 run 2. 0.3 knew only driver runs.
 
-**Not changed:** §8 stores F8b raw data under `befunde/runs/`; the baseline CSV is still only on
-the host — execution gap, not a spec change.
+**Not changed:** §8 stores F8b raw data under `befunde/runs/`; both F8b runs are there since
+2026-10-31 (editorial, not a spec change).

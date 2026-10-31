@@ -18,7 +18,9 @@ are listed here until it has its own changelog.
 
 First downstream revision of upstream `v0.2.1` (`feb6d9a`). Current pre-release: `0.2.1+sr1~rc3`.
 Built and statically checked (W=1, sparse, smatch, checkpatch on Proxmox kernel headers
-7.0.14-20-pve and 7.0.12-1-pve); **not yet tested on hardware**. The hardware tests per
+7.0.14-20-pve and 7.0.12-1-pve). `~rc2` tested on the reference host in maintenance window 1
+(2026-10-17, `befunde/BEFUNDE.md`) and in F8b run 2 (7 days, PASS); `~rc3` differs from `~rc2`
+only in comments and `MODULE_VERSION`. T1–T3 on hardware are still open. The hardware tests per
 patch are listed in each DEP-3 header and in [`docs/TESTSPEC.md`](docs/TESTSPEC.md).
 
 ### Driver patches
