@@ -23,14 +23,21 @@ Treiberinterna (Quellcode-Stand 14.09.2026):
   (`pwm_touched[]`).
 - `pwm*`-Attribute sind bei `validated=false` **unsichtbar**, solange
   `experimental_write=1` nicht gesetzt ist (`n5_is_visible()` → 0).
-- Modulparameter: `force` (bool, lädt ohne DMI-Match, read-only),
-  `experimental_write` (bool, schaltet PWM auf experimentellen Profilen frei).
+- Modulparameter: `force` (bool, lädt ohne DMI-Match; read-only nur, solange
+  `experimental_write` nicht gesetzt ist — mit der Paketvorgabe
+  `experimental_write=1` schreibt ein force-geladenes Fremdsystem),
+  `experimental_write` (bool, schaltet PWM auf experimentellen und force-geladenen
+  Profilen frei). Risiko und Quellen der Option: README, *Write access and its risk*.
 - `pwmN_enable`: 0 = Vollgas, 1 = manuell (setzt beim Wechsel erst 255),
   2 = EC-Automatik (Default). `pwmN`-Write ohne `enable=1` → `-EBUSY`.
 - I2EC (`bin/n5_i2ec_read 0x1800 16`) zeigt die echten Register: 0x1801 CTR,
   0x1802–0x1809 DCR0–7. DCR1 CPU, DCR2 SSD, DCR3=DCR4 HDD, DCR5 PCIe.
-- **Befund N5 Pro / BIOS 1.05:** nach Automatik-Befehl 0x2b (HDD) und 0x31
-  (PCIe) bleibt der DCR stehen, keine Regelung mehr. CPU (0x21) regelt weiter.
+- **Befund N5 Pro / BIOS 1.05 (korrigiert 08.10.2026):** nach 0x2b (HDD)
+  verlässt der DCR den Schreibwert (→ 0x57; Ausgangswert 0x8c = letzter
+  Schreibwert, nicht per I2EC gemessen); ob danach die EC-Kurve oder
+  ein fester Default greift, ist offen, eine Reaktion auf Last wurde nicht
+  beobachtet. Nach 0x31 (PCIe) bleibt DCR5 auf dem Schreibwert. CPU (0x21)
+  regelt nachweislich weiter.
 
 Kanalzuordnung laut Treiber:
 
@@ -70,7 +77,12 @@ sie laufen ohne Kernelmodul und liefern den EC-Dump zum Abgleich.
 - Bei jedem unerwarteten Verhalten (Lüfter stoppt, falscher Header reagiert,
   Temperatur springt): sofort `scripts/99-restore.sh`.
 - Keine konkurrierenden Regler auf denselben `pwmN`. Im Dauerbetrieb läuft
-  `n5-fand` — vor jedem Test `systemctl stop n5-fand`, danach wieder starten.
+  `n5-fangov` — vor jedem Test `systemctl stop n5-fangov`, danach wieder starten.
+- Port-Tools (`n5_fan`, `ec_probe`, `n5_i2ec_read`, `sio_probe`) **nie bei geladenem
+  Modul**: sie greifen per `ioperm()` an der Treibersperre vorbei auf denselben EC zu,
+  Transaktionen verschränken sich. Vorher Regler stoppen und
+  `modprobe -r minisforum_n5_it5571`. `03-probe-readonly.sh` und der Ausgangsschritt
+  von `06-pwm-test.sh` prüfen das nicht.
 - Vor jedem Schreibtest I2EC-Snapshot (steht im 06-Skript) — ohne
   Vergleichswert ist „Automatik wiederhergestellt" nicht beweisbar.
 - Das Modul ist an `uname -r` gebunden. Nach jedem Kernel-Update neu bauen,
@@ -86,6 +98,6 @@ sie laufen ohne Kernelmodul und liefern den EC-Dump zum Abgleich.
 | 3 Read-only-Probe | `scripts/03-probe-readonly.sh` | nein |
 | 4 Modul bauen | `scripts/04-build-module.sh` | nein |
 | 5 Modul read-only laden | `scripts/05-load-readonly.sh` | nein (PWM gesperrt) |
-| 6 PWM-Test, ein Kanal | `scripts/06-pwm-test.sh` | **ja — Wartungsfenster, n5-fand vorher stoppen** |
+| 6 PWM-Test, ein Kanal | `legacy/06-pwm-test.sh` (abgelöst durch `n5-ectest map`, `ectest/`) | **ja — Wartungsfenster, n5-fangov vorher stoppen, Modul entladen** |
 | 7 Dauerbetrieb | Paket `minisforum-n5-it5571-dkms` + Regler [n5-fangov](https://github.com/SirRenix/n5-fangov) (bis 15.09.2026: `deploy/install.sh` mit n5-fand) | ja (DKMS, systemd) |
-| — Notfall | `scripts/99-restore.sh` | stellt BIOS-Automatik wieder her |
+| — Notfall | `scripts/99-restore.sh` | stoppt den Regler, gibt alle Kanäle an die EC-Automatik zurück, entlädt das Modul |

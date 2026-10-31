@@ -129,17 +129,21 @@ Alarmweg selbst testen: `/usr/local/sbin/n5-fand-alert test "Testalarm"`.
 | Reboot | Autoload → Dienst → Regler; ohne Regler bleibt der EC-Zustand | **noch nicht** (nächstes Wartungsfenster) |
 
 **Grenze, die man kennen muss:** Wenn der Regler *und* der Failsafe beide nicht laufen
-(z. B. Modul weg), steht der HDD-Kanal auf dem zuletzt geschriebenen Duty — der EC regelt
-ihn nach einem Write nicht mehr. Bei Modulverlust wird dieser Duty vom EC beibehalten;
-er ist nie kleiner als 105 (Kurvenminimum) bzw. 60 (CLI-Sperre).
+(z. B. Regler und Failsafe abgestürzt, Host hängt), steht der HDD-Kanal auf dem zuletzt
+geschriebenen Duty — der Treiber hat keinen Watchdog, der EC behält den manuellen Wert, bis
+jemand `pwm3_enable=2` setzt oder das Modul entladen wird (beide senden 0x2b). Dieser Duty
+ist nie kleiner als 105 (Kurvenminimum) bzw. 60 (CLI-Sperre).
 
 ## 7. Stoppverhalten — bewusst asymmetrisch
 
 `systemctl stop n5-fand` gibt **CPU und SSD an die EC-Automatik** zurück (dort
 nachweislich funktionsfähig) und setzt den **HDD-Kanal auf `HDD_STOP_PWM`** (Default
-140 ≈ 2250 RPM), weil die EC-Automatik diesen Kanal nach einem Schreibzugriff nicht mehr
-regelt (Messung: DCR3/4 blieben bei 0x57 trotz +5 °C). Erst ein Kaltstart stellt die
-BIOS-Kurve wieder her.
+140 ≈ 2250 RPM), weil nach der Rückgabe (0x2b) offen ist, ob der EC diesen Kanal
+temperaturabhängig regelt: der Kanal verlässt den Schreibwert (DCR3/4 → 0x57; der
+Ausgangswert 0x8c ist der letzte Schreibwert, nicht per I2EC gemessen), blieb
+dann aber bei System-Temp 33 → 38 °C konstant auf 0x57 — EC-Kurve oder fester Default,
+korrigiert 08.10.2026 (`befunde/BEFUNDE.md`). Ob ein Warm- oder Kaltstart den Boot-Zustand
+des Kanals wiederherstellt, ist nicht gemessen (TESTSPEC T6).
 
 ## 8. Kernel-Update
 
