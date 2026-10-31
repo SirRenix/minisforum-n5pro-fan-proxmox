@@ -1,0 +1,26 @@
+# Outside check of a log run: reads only state.json and the age of
+# samples.csv, mails K5 when no sample was written for more than 660 s.
+[Unit]
+Description=n5-ectest outside check of log run %i (K5)
+Documentation=file:///usr/local/share/doc/n5-ectest/README.md
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/n5-ectest/log.env
+ExecStart=/usr/local/bin/n5-ectest log check %i --out /var/lib/n5-ectest $N5ECTEST_CHECK_ARGS
+TimeoutStartSec=120
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=64M
+CPUQuota=10%
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/n5-ectest -/var/spool/postfix
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+CapabilityBoundingSet=~CAP_SYS_RAWIO CAP_SYS_MODULE CAP_SYS_BOOT CAP_SYS_TIME
+DevicePolicy=closed
+LogLevelMax=notice

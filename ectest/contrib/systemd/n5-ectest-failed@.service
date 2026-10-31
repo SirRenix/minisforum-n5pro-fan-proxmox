@@ -1,0 +1,19 @@
+# OnFailure= of n5-ectest-log@.service: one mail that the log unit failed
+# (systemd restarts it; the gap is recorded as K5).
+[Unit]
+Description=n5-ectest failure mail of log run %i
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/n5-ectest/log.env
+ExecStart=/usr/local/bin/n5-ectest log check %i --out /var/lib/n5-ectest --unit-failed n5-ectest-log@%i.service $N5ECTEST_CHECK_ARGS
+SuccessExitStatus=1
+TimeoutStartSec=120
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/n5-ectest -/var/spool/postfix
+PrivateTmp=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=~CAP_SYS_RAWIO CAP_SYS_MODULE
+DevicePolicy=closed
+LogLevelMax=notice
