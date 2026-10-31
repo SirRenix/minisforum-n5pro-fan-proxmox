@@ -19,7 +19,7 @@
 #   Manuell per CLI (n5fan set) -> Override-Datei, TCRIT/Stall gelten trotzdem
 #
 # Stoppverhalten: CPU/SSD -> EC-Automatik (nachweislich funktionsfaehig),
-# HDD -> HDD_STOP_PWM manuell (EC regelt den Kanal nach einem Write nicht mehr).
+# HDD -> HDD_STOP_PWM manuell (ob die EC-Regelung nach 0x2b der Plattentemperatur folgt, ist offen).
 set -u
 
 CONF="${N5_FAND_CONF:-/etc/n5-fand.conf}"

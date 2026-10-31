@@ -487,8 +487,10 @@ n5-fangov 0.5.0, 08.11.).
 - [x] `dmesg | grep -i minisforum`: Phase 5
 - [x] Kanal-für-Kanal-Verifikation: Phase 6, alle vier Kanäle
 - [x] Befund: `pwmN_enable=1` vor `pwmN`-Write nötig (Doku-Hinweis für Nutzer)
-- [x] Befund: Automatik-Befehle 0x2b (HDD) und 0x31 (PCIe) stellen auf dem
-  N5 Pro / BIOS 1.05 keine Regelung wieder her — DCR bleibt stehen
+- [x] Befund: Automatik-Befehl 0x31 (PCIe) stellt auf dem N5 Pro / BIOS 1.05
+  keine Regelung wieder her — DCR5 bleibt stehen. 0x2b (HDD): der EC regelt
+  wieder (Stufen gemessen Z2 17.10., Solldrehzahl aus EC 0x06 abgeleitet M5);
+  die frühere Aussage „DCR bleibt stehen“ galt auch für HDD und war falsch
 - [x] Befund: `research-tools/ec_probe.c`, `sio_probe.c` kollidieren unter
   glibc mit `inb_p`/`outb_p` aus `sys/io.h`
 - [x] Befund: `acpi_ec` reserviert 0x62/0x66 hier nicht (`PNP0C09:00 status=0`),

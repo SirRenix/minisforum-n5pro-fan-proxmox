@@ -32,12 +32,16 @@ Treiberinterna (Quellcode-Stand 14.09.2026):
   2 = EC-Automatik (Default). `pwmN`-Write ohne `enable=1` → `-EBUSY`.
 - I2EC (`bin/n5_i2ec_read 0x1800 16`) zeigt die echten Register: 0x1801 CTR,
   0x1802–0x1809 DCR0–7. DCR1 CPU, DCR2 SSD, DCR3=DCR4 HDD, DCR5 PCIe.
-- **Befund N5 Pro / BIOS 1.05 (korrigiert 08.10.2026):** nach 0x2b (HDD)
-  verlässt der DCR den Schreibwert (→ 0x57; Ausgangswert 0x8c = letzter
-  Schreibwert, nicht per I2EC gemessen); ob danach die EC-Kurve oder
-  ein fester Default greift, ist offen, eine Reaktion auf Last wurde nicht
-  beobachtet. Nach 0x31 (PCIe) bleibt DCR5 auf dem Schreibwert. CPU (0x21)
-  regelt nachweislich weiter.
+- **Befund N5 Pro / BIOS 1.05:** nach 0x2b (HDD) regelt der EC den Kanal wieder.
+  Gemessen (17.10.2026, Z2, `befunde/raw/z2-dcr34-hdd-20261017T133518Z.txt`): DCR3/DCR4
+  fallen abwechselnd in Stufen vom Schreibwert (0xb4 → 0x72/0x6a in 15 s, fan3
+  2736 → 2039 rpm), eingeschwungen nicht beobachtet; nach einem manuellen Write laufen
+  DCR3 und DCR4 nacheinander an (~1,5 bzw. 4,6 s). Abgeleitet (Firmware 0.14, M5): die
+  Automatik regelt auf Solldrehzahl ±100 rpm, Tabelle an EC 0x06 (< 34 °C 1200 rpm,
+  34–99 °C 1600 rpm); der Befund vom 14.09. (0x57 bei konstantem EC 0x06) passt dazu.
+  Offen: ob und wie die Regelung auf Temperatur reagiert. Nach 0x31 (PCIe) behält DCR5
+  den Schreibwert (gemessen 14.09., Z1); laut Firmware hat DCR5 keine EC-Automatik
+  (abgeleitet). CPU (0x21) regelt nachweislich weiter.
 
 Kanalzuordnung laut Treiber:
 

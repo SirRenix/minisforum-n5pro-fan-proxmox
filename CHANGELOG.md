@@ -104,11 +104,41 @@ sets `MODULE_VERSION` `0.2.1+sr1~rc3`. Code otherwise identical to `rc2`
   tach stays within ±50 rpm (§5.1, #24); the order of the verdict rules follows §5.1.
   `spec_deviations` no longer list #13 and G6; open: the rule-4 conditions #1/#4 and, for
   `handback`, T4/T5. `go/n5/n5driver`: `ECRAMPath`, `ParseECRAM`.
+- Bundle access through one directory handle (audit-20261016 #15): `bundle.OpenDir` opens
+  the bundle directory as an `os.Root` and refuses a symlinked directory; `WriteSums` and
+  the new `WriteSumsIn` list, hash and write `SHA256SUMS` through that handle, each file
+  checked against its `Lstat` (`os.SameFile`), `SHA256SUMS` written as a new temporary
+  file (`O_EXCL`) and renamed over the old one. The guardian's `appendEvents` uses the same
+  handle and appends only to the regular `events.log` it saw with `Lstat`.
+- The worker accepts exactly the guardian's state file path (`checkWorkerState`, #16), not
+  any path ending in `restore.json`, and no state file that still records an unrestored
+  run.
+- `report`: unused `chReg` removed.
+- `go/n5/hwstatus` (#45): the new `internal/tablesum` hashes only the table between the
+  `hwstatus` markers of `befunde/RESULTS.md`, not the whole file. Header field
+  `source-table-sha256` (was `source-sha256`); in the identity JSON
+  `source_table_sha256` (was `source_sha256`). Breaking for readers of the old field; no
+  reader is known (review 2026-10-31). n5-fangov uses the same definition.
+
+### Documentation
+
+- HDD after a boot corrected (README, `docs/BETRIEB.md`; TESTSPEC T6 values): after one cold and
+  one warm boot (2026-10-17) BIOS/EC set HDD to 100 (0x64), below n5-fangov's stop duty
+  140, until the regulator takes over; the 255 from `.shutdown` therefore does not carry
+  the HDD stop failsafe across a reboot. PCIe keeps its last value over a warm boot. The
+  state after a boot was described as not measured before.
+- HDD after the hand-back (0x2b) corrected (README, `docs/BETRIEB.md`,
+  `docs/VALIDIERUNG.md`, `befunde/BEFUNDE.md`): the EC regulates the channel again
+  (steps measured 2026-10-17), not "DCR stays".
+- `tools/f8a/README.md`: `f8a-snapshot.sh` states the index/address writes its reads need.
 
 ### Repository
 
 - `CHANGELOG.md`, `SECURITY.md`, `.gitleaks.toml` (infrastructure rules as in n5-fangov).
 - `/dist/` ignored; release packages come from CI only.
+- `scripts/02-build-tools.sh` builds the research tools from the pinned upstream commit
+  (`packaging/UPSTREAM`), verifies the checked-out commit and the driver files against
+  `driver/upstream/SHA256SUMS`; it fetched upstream `main` before.
 
 ## [0.2.1-1] — 2026-09-26
 

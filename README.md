@@ -128,17 +128,19 @@ With writes enabled:
   over the DMI modalias (spaces removed): udev loads the module on any system whose
   product name contains `N5` and whose board name contains `F8NAA` or `F8NAB`.
 - The package also loads it at every boot via `/usr/lib/modules-load.d/`, on every
-  host, matching or not.
+  host, matching or not. On an N5 / N5 Pro this is redundant to the alias load:
+  removing or emptying that file does **not** stop the module from loading.
 - The gate is the probe: exact match on product and board name. Without a match and
   without `force=1` the probe fails with `-ENODEV` ("unsupported system" in the kernel
   log); the module stays loaded, reserves no port, registers no hwmon device and does
   no port I/O. 0.2.1 does not check `sys_vendor`; sr1 (0002) checks it in the
   `N5 PRO` match and in the write gate.
-- Disable: `blacklist minisforum_n5_it5571` in `/etc/modprobe.d/` stops the alias load
-  and the boot load (`systemd-modules-load` honours the kmod blacklist, systemd 257:
-  "Module '…' is deny-listed (by kmod)"); only a manual `modprobe minisforum_n5_it5571`
-  still loads it. An empty `/etc/modules-load.d/minisforum-n5-it5571.conf` also
-  removes the boot load attempt and its log line.
+- Disable autoload: only `blacklist minisforum_n5_it5571` in `/etc/modprobe.d/` does
+  it. It stops the alias load and the boot load (`systemd-modules-load` honours the kmod
+  blacklist, systemd 257: "Module '…' is deny-listed (by kmod)"); only a manual
+  `modprobe minisforum_n5_it5571` still loads it. An empty
+  `/etc/modules-load.d/minisforum-n5-it5571.conf` on top of the blacklist only removes
+  the boot load attempt and its log line; on its own it disables nothing.
 
 ## hwmon attributes
 
@@ -275,8 +277,10 @@ A regulator interval of 2 s is therefore just met in the worst case.
   hangs or panics, nothing runs and the EC keeps the last values.
 - 0.2.1: **no `.shutdown`**. On reboot or power-off the driver does nothing; manual
   values stay until the BIOS/EC reinitialises them. Upstream reports all four channels
-  back in EC automatic after a reboot on the N5; on the N5 Pro the state after warm
-  and cold boot is not measured (TESTSPEC T6).
+  back in EC automatic after a reboot on the N5. On the N5 Pro (measured 2026-10-17,
+  one cold and one warm boot, `befunde/BEFUNDE.md` §Wartungsfenster 1): CPU and SSD
+  come up in EC automatic, HDD at a fixed boot duty of 100 (0x64), PCIe at 0 after a
+  cold boot but at its last value after a warm boot.
 - sr1 (0006): `.shutdown` handles every channel the module touched before reboot or
   power-off: CPU (`pwm1`) and SSD (`pwm2`) go back to EC automatic (0x21, 0x2e), HDD
   (`pwm3`) and PCIe (`pwm4`) are set to 255. PCIe: after 0x31 the EC keeps the last
@@ -288,10 +292,13 @@ A regulator interval of 2 s is therefore just met in the worst case.
   RPM chosen from EC RAM 0x06 (ambient), not from the disk temperatures. End value,
   target RPM and a reaction to temperature are not measured. A PCIe channel handed
   back with `pwm4_enable=2` counts as touched (0004), rc1 skipped it here. A failed
-  step is logged and leaves that channel as it is. After a warm reboot HDD and PCIe therefore
-  run at full speed until the regulator sets them, also if the module is missing for
-  the new kernel. This replaces n5-fangov's stop failsafe (HDD 140) across a reboot.
-  Whether BIOS or EC change these values during the reboot is not measured (T6).
+  step is logged and leaves that channel as it is. Across a warm reboot PCIe keeps its
+  last value until the regulator sets it, also if the module is missing for the new
+  kernel (measured 2026-10-17, one warm boot: 0xff). HDD does not: BIOS/EC set it to 100
+  (0x64) during the boot (same measurement, and after one cold boot), below n5-fangov's
+  stop duty 140, until the regulator takes over; the 255 does not carry n5-fangov's HDD
+  stop failsafe across a reboot. Whether `.shutdown` itself wrote 255 is not visible in
+  that data.
   On power-off HDD/PCIe spin up briefly before the power goes.
 - No PM callbacks in either version. The host is a server and does not suspend;
   suspend and resume are not supported (no resume handler, cache and EC can differ
@@ -341,8 +348,8 @@ applied; the driver cannot change them.
   `smartctl` do not either. If they climb, shut the host down.
 - Recovery: stop the regulator, unload the module, do not run port tools against the
   EC. Then a **full power-off**: shut down, disconnect power until the device is dark,
-  power on. Whether a warm reboot resets the EC is not measured (TESTSPEC T6); do not
-  rely on it.
+  power on. A warm reboot does not reset the EC completely (2026-10-17: PCIe kept its
+  last value; HDD was set to 100 by the boot); do not rely on it.
 
 ## Port tools and the loaded module
 
@@ -482,11 +489,12 @@ build/, build-tools/, bin/   lokale Bauprodukte der Phasenskripte
 Treiberdetail, das man wissen muss: `pwmN` ist nur beschreibbar, wenn
 `pwmN_enable=1` (manuell) gesetzt ist — sonst `-EBUSY`. Der Wechsel auf 1
 setzt intern zuerst 255. `pwmN_enable=2` gibt an die EC-Automatik zurück.
-Auf dem N5 Pro (BIOS 1.05) verlässt der **HDD-Kanal** danach den Schreibwert
-(DCR3/4 → 0x57, Befund Phase 6, korrigiert 08.10.2026; der Ausgangswert 0x8c ist
-der letzte Schreibwert, nicht per I2EC gemessen); ob dann eine
-EC-Kurve oder ein fester Default greift, ist offen, eine Reaktion auf Last
-wurde nicht beobachtet. Der PCIe-Kanal bleibt nach 0x31 auf dem Schreibwert
+Auf dem N5 Pro (BIOS 1.05) regelt der EC den **HDD-Kanal** danach wieder: gemessen
+(17.10.2026, Z2) fährt er DCR3/DCR4 abwechselnd in Stufen vom Schreibwert herunter
+(0xb4 → 0x72/0x6a in 15 s, fan3 2736 → 2039 rpm, nicht eingeschwungen); laut
+Firmware 0.14 (abgeleitet, M5) auf eine Solldrehzahl ±100 rpm aus einer Tabelle an
+EC 0x06 (< 34 °C 1200 rpm, 34–99 °C 1600 rpm). Offen ist, ob und wie das auf die
+Plattentemperatur reagiert. Der PCIe-Kanal bleibt nach 0x31 auf dem Schreibwert
 (keine EC-Automatik für DCR5); sr1 schreibt bei `pwm4_enable=2` und beim Entladen
 deshalb 255 statt 0x31 (0004). Der CPU-Kanal regelt nach 0x21 nachweislich weiter. Ein Regler setzt den
 HDD-Kanal beim Stoppen deshalb auf einen festen sicheren Wert.

@@ -6,7 +6,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT/upstream"
 BIN="$ROOT/bin"
-REPO="https://github.com/ltdstudio/minisforum-n5-it5571.git"
+# Fester Upstream-Stand: derselbe Commit wie das Paket (packaging/UPSTREAM).
+# Die Research-Tools liegen nicht in driver/upstream/ (dort nur Treiber und
+# Lizenzen), deshalb der Klon; nie ein beweglicher Branch.
+# shellcheck source=../packaging/UPSTREAM
+. "$ROOT/packaging/UPSTREAM"
+REPO="$UPSTREAM_REPO"
+COMMIT="$UPSTREAM_COMMIT"
+[[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "UPSTREAM_COMMIT in packaging/UPSTREAM ist kein voller Commit-Hash"; exit 1; }
 
 mkdir -p "$BIN"
 
@@ -16,19 +23,26 @@ if ! command -v gcc >/dev/null || ! command -v git >/dev/null; then
     exit 1
 fi
 
-if [[ -d "$SRC/.git" ]]; then
-    echo "--- Repo aktualisieren ---"
-    git -C "$SRC" fetch --tags --depth 1 origin main
-    git -C "$SRC" reset --hard origin/main
-else
+if [[ ! -d "$SRC/.git" ]]; then
     echo "--- Repo klonen ---"
-    git clone "$REPO" "$SRC"
+    git clone --no-checkout "$REPO" "$SRC"
+fi
+echo "--- Upstream-Commit $COMMIT holen ---"
+git -C "$SRC" fetch --depth 1 origin "$COMMIT"
+git -C "$SRC" -c advice.detachedHead=false checkout --quiet --force --detach "$COMMIT"
+HEAD_COMMIT=$(git -C "$SRC" rev-parse HEAD)
+if [[ "$HEAD_COMMIT" != "$COMMIT" ]]; then
+    echo "Upstream steht auf $HEAD_COMMIT, erwartet $COMMIT - Abbruch"
+    exit 1
+fi
+# Treiber und Lizenzen muessen byte-gleich mit driver/upstream/ sein
+if ! (cd "$SRC" && sha256sum --quiet -c "$ROOT/driver/upstream/SHA256SUMS"); then
+    echo "Upstream-Dateien weichen von driver/upstream/SHA256SUMS ab - Abbruch"
+    exit 1
 fi
 
 echo
-echo "Aktueller Stand:"
-git -C "$SRC" log --oneline -3
-git -C "$SRC" describe --tags 2>/dev/null || true
+echo "Stand: $HEAD_COMMIT ($UPSTREAM_TAG), geprueft gegen driver/upstream/SHA256SUMS"
 
 echo
 echo "--- Research-Tools bauen ---"

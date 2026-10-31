@@ -14,7 +14,7 @@ Vollständige Liste — es gibt nichts Verstecktes:
 | Datei | Aufgabe | Schreibt auf die Hardware? |
 |---|---|---|
 | `/lib/modules/<kernel>/updates/dkms/minisforum_n5_it5571.ko` | Treiber (DKMS, Quelle `/usr/src/minisforum-n5-it5571-0.2.0/`) | beim Laden **nein**; nur wenn jemand `pwmN`/`pwmN_enable` beschreibt |
-| `/etc/modules-load.d/minisforum-n5-it5571.conf` | lädt das Modul beim Boot | nein |
+| `/etc/modules-load.d/minisforum-n5-it5571.conf` | lädt das Modul beim Boot. Redundant: udev lädt es auf N5/N5 Pro ohnehin über den DMI-Alias. Autoload abschalten nur per `blacklist minisforum_n5_it5571` in `/etc/modprobe.d/` (README „Autoload“); Löschen dieser Datei reicht nicht | nein |
 | `/etc/modprobe.d/minisforum-n5-it5571.conf` | `experimental_write=1` — macht `pwm*` sichtbar | nein |
 | `/usr/local/sbin/n5-fand` | der Regler | **ja** — `pwm1..3` und `pwm1..3_enable`, alle 10 s |
 | `/etc/n5-fand.conf` | Kurven und Grenzen | nein |
@@ -139,11 +139,13 @@ ist nie kleiner als 105 (Kurvenminimum) bzw. 60 (CLI-Sperre).
 `systemctl stop n5-fand` gibt **CPU und SSD an die EC-Automatik** zurück (dort
 nachweislich funktionsfähig) und setzt den **HDD-Kanal auf `HDD_STOP_PWM`** (Default
 140 ≈ 2250 RPM), weil nach der Rückgabe (0x2b) offen ist, ob der EC diesen Kanal
-temperaturabhängig regelt: der Kanal verlässt den Schreibwert (DCR3/4 → 0x57; der
-Ausgangswert 0x8c ist der letzte Schreibwert, nicht per I2EC gemessen), blieb
-dann aber bei System-Temp 33 → 38 °C konstant auf 0x57 — EC-Kurve oder fester Default,
-korrigiert 08.10.2026 (`befunde/BEFUNDE.md`). Ob ein Warm- oder Kaltstart den Boot-Zustand
-des Kanals wiederherstellt, ist nicht gemessen (TESTSPEC T6).
+temperaturabhängig regelt. Gemessen (17.10.2026, Z2): nach 0x2b fährt der EC DCR3/DCR4
+abwechselnd in Stufen vom Schreibwert herunter (0xb4 → 0x72/0x6a in 15 s, fan3
+2736 → 2039 rpm), eingeschwungen nicht beobachtet. Abgeleitet (Firmware 0.14, M5): die
+Automatik regelt auf eine Solldrehzahl ±100 rpm aus einer Tabelle an EC 0x06 (< 34 °C
+1200 rpm, 34–99 °C 1600 rpm); dazu passt der Befund vom 14.09. (0x57 bei konstantem
+EC 0x06). Offen: ob und wie die Regelung auf die Plattentemperatur reagiert
+(`befunde/BEFUNDE.md`). Nach je einem Kalt- und Warmstart (17.10.2026) stand HDD auf 0x64 (TESTSPEC T6).
 
 ## 8. Kernel-Update
 

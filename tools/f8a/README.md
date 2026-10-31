@@ -101,8 +101,10 @@ about the EC between two snapshots; mode B shows no EC RAM at all.
 ## Snapshot on another N5 board
 
 For owners of another N5-family box who want to send us a register snapshot.
-`f8a-snapshot.sh` is read-only: it writes nothing to `/sys` and sends only read
-commands to the EC. It runs on these DMI product/board pairs (exact strings,
+`f8a-snapshot.sh` is read-only: it writes nothing to `/sys` and sends the EC only
+read commands plus the index/address writes those reads need (Super-I/O index, I2EC
+address, PMC2 read subcommand 0xd5, EC read command 0x80); it writes no EC RAM and no
+EC register. It runs on these DMI product/board pairs (exact strings,
 `/sys/class/dmi/id/product_name` and `board_name`): N5 PRO/F8NAA, N5 PRO/F8NAB,
 N5/F8NAA, N5A/F8NAB, N5 AIR/F8NAB. Any other board refuses before anything is
 read and prints its DMI strings — send those instead. There is no override:

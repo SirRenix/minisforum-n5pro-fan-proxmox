@@ -111,10 +111,12 @@ fi
 cat <<'EOF'
 
 Der Treiber gibt beim Entladen jeden Kanal, den er angefasst hat, mit dem
-Automatik-Befehl zurueck. CPU (0x21) regelt danach nachweislich; der HDD-Kanal
-(0x2b) verlaesst den Schreibwert, ob eine EC-Kurve oder ein fester Default folgt,
-ist offen; PCIe (0x31) bleibt auf dem letzten Schreibwert.
+Automatik-Befehl zurueck. CPU (0x21) regelt danach nachweislich; den HDD-Kanal
+(0x2b) faehrt der EC in Stufen vom Schreibwert auf seine Solldrehzahl (aus EC 0x06),
+ob das auf die Plattentemperatur reagiert, ist offen; PCIe (0x31) bleibt auf dem
+letzten Schreibwert (Treiber ab 0.2.1+sr1~rc2: 255 statt 0x31).
 Laeuft ein Luefter danach falsch oder antwortet der EC nicht: vollstaendig
-ausschalten (Strom trennen, bis das Geraet dunkel ist), dann einschalten. Ob ein
-warmer Reboot den EC zuruecksetzt, ist nicht gemessen (TESTSPEC T6).
+ausschalten (Strom trennen, bis das Geraet dunkel ist), dann einschalten. Ein
+warmer Reboot setzt den EC nicht vollstaendig zurueck (17.10.2026: PCIe behielt
+seinen Wert, HDD setzt der Boot auf 100).
 EOF
