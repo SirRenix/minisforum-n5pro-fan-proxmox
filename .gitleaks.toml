@@ -1,0 +1,104 @@
+# gitleaks configuration for minisforum-n5pro-fan-proxmox.
+#
+# Extends the built-in rules (API keys, private keys, tokens) with rules for
+# what must never reach this repository: anything that identifies the
+# operator's infrastructure — IP addresses, host and domain names, hardware
+# serial numbers, MAC addresses. The same rules as in n5-fangov
+# (https://github.com/SirRenix/n5-fangov/blob/main/.gitleaks.toml), without
+# its regulator-specific credential rules.
+# Documentation values (RFC 5737 / RFC 3849 / locally administered MACs /
+# the generic names n5host, builder, example.test) are allowlisted.
+# Regular expressions are RE2 (Go): no lookaround — exclusions go through
+# the allowlists instead.
+#
+# Local check:   gitleaks git --config .gitleaks.toml .     (history)
+#                gitleaks dir --config .gitleaks.toml .     (working tree)
+
+title = "minisforum-n5pro-fan-proxmox"
+
+[extend]
+useDefault = true
+
+# --- infrastructure identifiers ---------------------------------------------
+
+[[rules]]
+id = "ipv4-address"
+description = "IPv4 address — only loopback and the documentation ranges 192.0.2.x / 198.51.100.x / 203.0.113.x may appear"
+regex = '''\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'''
+keywords = ["."]
+[[rules.allowlists]]
+regexes = [
+  '''^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$''',
+  '''^0\.0\.0\.0$''',
+  '''^255\.255\.255\.(0|255)$''',
+  '''^192\.0\.2\.[0-9]{1,3}$''',
+  '''^198\.51\.100\.[0-9]{1,3}$''',
+  '''^203\.0\.113\.[0-9]{1,3}$''',
+]
+[[rules.allowlists]]
+description = "Redaction test: a private address that the redactor must replace"
+condition = "AND"
+paths = ['''go/n5/identity/identity_test\.go$''']
+regexes = ['''^10\.0\.0\.1$''']
+
+[[rules]]
+id = "ipv6-global"
+description = "Global IPv6 address — use 2001:db8::/32 or fd00::/8 in examples"
+regex = '''\b(?:2a0[0-9a-f]|2001):[0-9a-f]{1,4}:[0-9a-f:]{2,}'''
+keywords = ["2a0", "2001:"]
+[[rules.allowlists]]
+regexes = ['''^2001:db8:''']
+
+[[rules]]
+id = "mac-address"
+description = "MAC address — use locally administered 02:00:00:00:00:xx in examples"
+regex = '''\b[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}\b'''
+keywords = [":"]
+[[rules.allowlists]]
+regexTarget = "line"
+regexes = [
+  '''02:00:00:00:00:[0-9A-Fa-f]{2}''',
+  '''00:00:00:00:00:00''',
+  '''(?:[0-9A-Fa-f]{2}:){7,}''',   # certificate fingerprints are longer than a MAC
+]
+
+[[rules]]
+id = "operator-names"
+description = "Operator host and ssh alias names — use n5host / builder in examples (personal names and domains belong in a git-ignored .gitleaks.local.toml)"
+regex = '''(?i)\b(pve0[0-9]|pve-root|pve-me|debdock[e]r|hassio|glkvm)\b'''
+keywords = ["pve0", "pve-", "debdock", "hassio", "glkvm"]
+[[rules.allowlists]]
+description = "pve-root is also the default Proxmox LVM root volume in a kernel command line"
+regexTarget = "line"
+regexes = ['''root=/dev/mapper/pve-root''']
+
+[[rules]]
+id = "disk-serial"
+description = "Storage device serial number (WD / Seagate / Samsung patterns)"
+regex = '''\b(?:WD-[A-Z0-9]{12,14}|Z[A-Z][0-9A-Z]{6}|S[0-9A-Z]{3}N[A-Z0-9]{7})\b'''
+keywords = ["WD-", "Z", "S"]
+
+[[rules]]
+id = "dmi-identity"
+description = "System UUID / serial from DMI (product_uuid, product_serial, board_serial, chassis_serial)"
+regex = '''(?i)(?:product_uuid|product_serial|board_serial|chassis_serial)\s*[:=]\s*[A-Za-z0-9-]{6,}'''
+keywords = ["product_uuid", "product_serial", "board_serial", "chassis_serial"]
+
+# --- global allowlist ----------------------------------------------------------
+
+[allowlist]
+description = "Documentation values and generated fixtures"
+paths = [
+  '''go\.sum$''',
+  '''\.png$''',
+  '''\.jpg$''',
+]
+regexes = [
+  '''n5host''',
+  '''example\.(test|com|net|org)''',
+  '''fd00::[0-9a-f:]*''',
+]
+stopwords = ["version", "golang", "sha256"]
+# Already public before this config existed; its five findings are build-host
+# names only (no secrets), fixed in the tree since. History is not rewritten.
+commits = ["5381b97ae007afe0c3e14beef275ec062c8adbd0"]

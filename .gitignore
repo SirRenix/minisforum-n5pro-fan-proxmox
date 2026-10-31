@@ -19,3 +19,9 @@ CLAUDE.md
 # n5-ectest: Go module files (*.mod above is for kernel build output), local build output (releases come from CI)
 !go.mod
 /ectest/dist/
+
+# Package build output (packaging/build-deb.sh); release packages come from CI
+/dist/
+
+# Lokale gitleaks-Regeln des Betreibers (Domain, Namen, Adressen), nie committen
+.gitleaks.local.toml
