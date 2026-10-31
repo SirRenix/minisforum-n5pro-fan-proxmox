@@ -8,13 +8,18 @@
 #
 # Safety rules enforced here:
 # - DMI product, board and sys_vendor must match exactly, otherwise refuse.
+#   Exception: f8a-snapshot.sh (read-only) also runs on the other N5-family
+#   boards of F8A_SNAPSHOT_BOARDS (f8a_guard_dmi_snapshot); the writing
+#   scripts use f8a_guard_dmi (N5 PRO / F8NAA and the vendor only).
 # - n5-fangov must be "inactive" or "failed" (no second pwm writer, G1); any
 #   other answer, including an unreadable state, refuses.
 # - Research tools (userspace port I/O via ioperm, bypassing the driver lock)
 #   only while the driver module is NOT loaded, no driver hwmon device exists
 #   and none of the ports 0x2e/0x2f/0x62/0x66/0x68/0x6c is reserved in
-#   /proc/ioports (checklist C2), and only with an allowlist of read-only
-#   argument sets. "ec_probe write" cannot be run through this library.
+#   /proc/ioports (checklist C2), no Super-I/O driver (it87, nct6775, ...)
+#   is loaded and kernel lockdown is "none", and only with an allowlist of
+#   read-only argument sets. "ec_probe write" cannot be run through this
+#   library.
 # - Duty values below 100 are never written.
 # - Limits from sources independent of the EC driver: k10temp Tctl >= 85 C,
 #   NVMe >= 70 C, drivetemp >= 50 C abort; a tach of 0 rpm on fan1..fan3
@@ -29,13 +34,27 @@
 #   F8A_T_*       shortened waits; honoured only when F8A_ROOT is set.
 
 # shellcheck disable=SC2034  # globals are used by the sourcing scripts
-F8A_VERSION=0.2.3
+F8A_VERSION=0.2.4
 F8A_MODULE=minisforum_n5_it5571
 F8A_HWMON_NAME=minisforum_n5_it5571
 F8A_FANGOV_UNIT=n5-fangov.service
 F8A_DMI_PRODUCT='N5 PRO'
 F8A_DMI_BOARD='F8NAA'
 F8A_DMI_VENDOR='Micro Computer (HK) Tech Limited'
+# Boards the read-only snapshot accepts ("product/board", one per line): the
+# DMI table of the driver (upstream 0.2.1 and driver/patches: N5 PRO/F8NAA,
+# N5/F8NAA, N5A and N5 AIR/F8NAB) plus N5 PRO/F8NAB (seen in upstream issues
+# #6 and #8, not in the driver table; same list as n5-ectest boards.ReadOnly).
+F8A_SNAPSHOT_BOARDS='N5 PRO/F8NAA
+N5 PRO/F8NAB
+N5/F8NAA
+N5A/F8NAB
+N5 AIR/F8NAB'
+# Super-I/O drivers that use 0x2e/0x2f with request_muxed_region (not visible
+# in /proc/ioports) while they run; none may be loaded during port I/O
+# (TESTKIT-DESIGN 4, raw guard; parport_pc only probes at load and is not
+# listed)
+F8A_SIO_MODULES_RE='^(it87|it87_wdt|gpio_it87|nct6775|nct6775_core|nct6775_platform|nct6683|w83627hf|w83627ehf|w83627hf_wdt|f71882fg|f71808e_wdt|sch5627|sch5636|sch56xx_common|smsc47m1|smsc47b397|smsc47m192) '
 # limits in millidegrees Celsius
 F8A_LIM_TCTL=85000
 F8A_LIM_NVME=70000
@@ -139,6 +158,34 @@ f8a_guard_dmi() {
     f8a_rd "$F8A_SYS/class/dmi/id/sys_vendor" v
     if [ "$p" != "$F8A_DMI_PRODUCT" ] || [ "$b" != "$F8A_DMI_BOARD" ] || [ "$v" != "$F8A_DMI_VENDOR" ]; then
         f8a_die "DMI mismatch: product='$p' board='$b' sys_vendor='$v' (expected '$F8A_DMI_PRODUCT'/'$F8A_DMI_BOARD'/'$F8A_DMI_VENDOR')"
+    fi
+}
+
+f8a_is_reference_board() {
+    # 0 on the reference profile (N5 PRO / F8NAA with the measured vendor),
+    # the only one the writing scripts accept
+    local p b v
+    f8a_rd "$F8A_SYS/class/dmi/id/product_name" p
+    f8a_rd "$F8A_SYS/class/dmi/id/board_name" b
+    f8a_rd "$F8A_SYS/class/dmi/id/sys_vendor" v
+    [ "$p" = "$F8A_DMI_PRODUCT" ] && [ "$b" = "$F8A_DMI_BOARD" ] && [ "$v" = "$F8A_DMI_VENDOR" ]
+}
+
+f8a_guard_dmi_snapshot() {
+    # Read-only snapshot: product/board must be one of F8A_SNAPSHOT_BOARDS
+    # (exact strings). The sys_vendor is not part of the driver's DMI table
+    # (upstream) and not of n5-ectest's read-only table; a different vendor
+    # only warns. There is no override: on an unknown board the research
+    # tools would send N5-specific PMC2/I2EC commands to unknown firmware.
+    local p b v
+    f8a_rd "$F8A_SYS/class/dmi/id/product_name" p
+    f8a_rd "$F8A_SYS/class/dmi/id/board_name" b
+    f8a_rd "$F8A_SYS/class/dmi/id/sys_vendor" v
+    if ! grep -qxF -- "$p/$b" <<< "$F8A_SNAPSHOT_BOARDS"; then
+        f8a_die "DMI product='$p' board='$b' sys_vendor='$v' is not a known N5-family board (snapshot runs on: $(printf '%s' "$F8A_SNAPSHOT_BOARDS" | tr '\n' ',' | sed 's/,/, /g')); nothing was read. Send these three values to have the board added"
+    fi
+    if [ "$v" != "$F8A_DMI_VENDOR" ]; then
+        f8a_warn "DMI sys_vendor='$v' differs from the measured '$F8A_DMI_VENDOR' (product/board '$p/$b' is known; continuing, read-only)"
     fi
 }
 
@@ -603,28 +650,102 @@ f8a_ports_reserved() {
     grep -E "$F8A_PORTS_RE" "$F8A_PROC/ioports" 2>/dev/null
 }
 
+f8a_sio_drivers_loaded() {
+    # print the names of loaded Super-I/O drivers; returns 1 if none
+    local m
+    m=$(grep -E "$F8A_SIO_MODULES_RE" "$F8A_PROC/modules" 2>/dev/null | cut -d' ' -f1 | tr '\n' ' ')
+    [ -n "$m" ] || return 1
+    printf '%s\n' "${m% }"
+}
+
+f8a_lockdown_blocks() {
+    # print the lockdown state if kernel lockdown blocks ioperm(); returns 1
+    # if not (file absent = no lockdown LSM, or "[none]" selected)
+    local l
+    [ -e "$F8A_SYS/kernel/security/lockdown" ] || return 1
+    f8a_rd "$F8A_SYS/kernel/security/lockdown" l
+    case "$l" in *'[none]'*) return 1 ;; esac
+    printf '%s\n' "${l:-unreadable}"
+}
+
+f8a_research_blockers() {
+    # f8a_research_blockers VAR - every reason why no research tool may run
+    # now ("; "-separated), empty if none; returns 1 if there is a reason.
+    # n5-fangov and the tool binaries are checked separately.
+    local __r='' __p
+    if f8a_module_loaded || f8a_hwmon_dir >/dev/null; then
+        __r="$F8A_MODULE is loaded (checklist C2: no userspace port I/O beside the driver)"
+    fi
+    if __p=$(f8a_ports_reserved); then
+        __r="${__r:+$__r; }EC/PMC2/SIO ports are reserved in /proc/ioports (checklist C2; 0062/0066 owned by 'EC data'/'EC cmd' means the kernel ACPI EC driver is active and the research tools cannot run beside it): ${__p//$'\n'/; }"
+    fi
+    if __p=$(f8a_sio_drivers_loaded); then
+        __r="${__r:+$__r; }Super-I/O driver(s) loaded ($__p): they use 0x2e/0x2f; unload them first (modprobe -r $__p)"
+    fi
+    if __p=$(f8a_lockdown_blocks); then
+        __r="${__r:+$__r; }kernel lockdown is '$__p' (usually Secure Boot): ioperm() is blocked; the research tools need Secure Boot off / lockdown none"
+    fi
+    printf -v "$1" '%s' "$__r"
+    [ -z "$__r" ]
+}
+
 f8a_research() {
     # f8a_research TOOL ARGS... - run one allowlisted, read-only research
     # tool call. Refuses while the driver is loaded, its hwmon device exists
-    # or one of its ports is reserved by anybody (C2), or n5-fangov is not
+    # or one of its ports is reserved by anybody (C2), a Super-I/O driver is
+    # loaded, kernel lockdown blocks ioperm, or n5-fangov is not
     # inactive/failed. Returns the tool's exit code (0 = ok).
-    local tool=$1 rc=0 p
+    local tool=$1 rc=0 why
     shift
     case "$tool $*" in
         'ec_probe dump'|'n5_i2ec_read 0x1800 48'|'n5_fan rpm') ;;
         *) f8a_die "refusing research tool call '$tool $*' (not on the read-only allowlist)" ;;
     esac
-    if f8a_module_loaded || f8a_hwmon_dir >/dev/null; then
-        f8a_die "refusing '$tool $*': $F8A_MODULE is loaded (checklist C2: no userspace port I/O beside the driver)"
-    fi
-    if p=$(f8a_ports_reserved); then
-        f8a_die "refusing '$tool $*': EC/PMC2/SIO ports are reserved in /proc/ioports (checklist C2): ${p//$'\n'/; }"
-    fi
+    f8a_research_blockers why || f8a_die "refusing '$tool $*': $why"
     f8a_guard_fangov
-    [ -x "$F8A_BIN_DIR/$tool" ] || f8a_die "research tool $F8A_BIN_DIR/$tool not found"
+    [ -x "$F8A_BIN_DIR/$tool" ] || f8a_die "research tool $F8A_BIN_DIR/$tool not found (build: bash scripts/02-build-tools.sh in the repository, then --bin-dir <repo>/bin)"
     timeout -k 5 120 "$F8A_BIN_DIR/$tool" "$@" || rc=$?
     [ "$rc" -eq 0 ] || printf '(%s %s exited with %s)\n' "$tool" "$*" "$rc"
     return "$rc"
+}
+
+f8a_resolve_bin_dir() {
+    # f8a_resolve_bin_dir SCRIPT_DIR [CLI_DIR] - research-tool directory for
+    # f8a-snapshot.sh: CLI_DIR (--bin-dir) if given; in test mode
+    # F8A_BIN_DIR as set; else /root/n5pro-ec/bin (reference host) if it
+    # exists, else <repo>/bin next to tools/f8a (where
+    # scripts/02-build-tools.sh builds them). Never from the environment
+    # outside test mode.
+    local d
+    if [ -n "${2:-}" ]; then
+        d=$(readlink -f -- "$2" 2>/dev/null) || d=$2
+        printf '%s' "${d:-$2}"
+    elif f8a_test_mode; then
+        printf '%s' "$F8A_BIN_DIR"
+    elif [ -d /root/n5pro-ec/bin ]; then
+        printf '%s' /root/n5pro-ec/bin
+    else
+        d=$(readlink -f -- "$1/../../bin" 2>/dev/null) || d=
+        printf '%s' "${d:-/root/n5pro-ec/bin}"
+    fi
+}
+
+f8a_board_header() {
+    # one-line summary of board, firmware and profile for the top of a file
+    local p b v bv bd ec
+    f8a_rd "$F8A_SYS/class/dmi/id/product_name" p
+    f8a_rd "$F8A_SYS/class/dmi/id/board_name" b
+    f8a_rd "$F8A_SYS/class/dmi/id/sys_vendor" v
+    f8a_rd "$F8A_SYS/class/dmi/id/bios_version" bv
+    f8a_rd "$F8A_SYS/class/dmi/id/bios_date" bd
+    f8a_rd "$F8A_SYS/class/dmi/id/ec_firmware_release" ec
+    printf 'board: %s / %s (sys_vendor %s)\n' "${p:-?}" "${b:-?}" "${v:-?}"
+    printf 'firmware: BIOS %s (%s), EC %s\n' "${bv:-?}" "${bd:-?}" "${ec:-?}"
+    if f8a_is_reference_board; then
+        echo "profile: reference (N5 PRO / F8NAA)"
+    else
+        echo "profile: other N5-family board (read-only snapshot only)"
+    fi
 }
 
 f8a_research_busy() {
@@ -747,6 +868,9 @@ f8a_identity() {
     grep -E '^(minisforum_n5_it5571|k10temp|drivetemp|nvme|it87|nct6775) ' "$F8A_PROC/modules" 2>/dev/null || echo "(none)"
     f8a_section "/proc/ioports 002e-002f/0062/0066/0068/006c"
     grep -E '^[[:space:]]*(002e|002f|0062|0066|0068|006c)-' "$F8A_PROC/ioports" 2>/dev/null || echo "(no entries: ports not reserved)"
+    printf 'super-io drivers loaded: %s\n' "$(f8a_sio_drivers_loaded || echo none)"
+    f8a_rd "$F8A_SYS/kernel/security/lockdown" v
+    printf 'lockdown: %s\n' "${v:-no lockdown file}"
     f8a_section "module parameters"
     if [ -d "$F8A_SYS/module/$F8A_MODULE/parameters" ]; then
         for f in "$F8A_SYS/module/$F8A_MODULE/parameters"/*; do
@@ -766,5 +890,7 @@ f8a_identity() {
     f8a_temps_line; echo
     f8a_section "n5-fangov"
     printf 'is-active: %s\n' "$(f8a_fangov_state)"
-    printf 'is-enabled: %s\n' "$(systemctl is-enabled "$F8A_FANGOV_UNIT" 2>/dev/null || true)"
+    local en
+    en=$(systemctl is-enabled "$F8A_FANGOV_UNIT" 2>/dev/null || true)
+    printf 'is-enabled: %s\n' "${en:-not installed}"
 }

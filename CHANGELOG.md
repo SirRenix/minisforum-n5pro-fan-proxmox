@@ -79,6 +79,15 @@ sets `MODULE_VERSION` `0.2.1+sr1~rc3`. Code otherwise identical to `rc2`
   [`befunde/BEFUNDE.md`](befunde/BEFUNDE.md).
 - `tools/f8a/`: maintenance-window scripts (snapshot, stress, PCIe hand-back check) with
   a fake-kernel test suite.
+- f8a 0.2.4: `f8a-snapshot.sh` (read-only) also runs on N5 PRO/F8NAB, N5/F8NAA, N5A and
+  N5 AIR/F8NAB (driver DMI table plus F8NAB from upstream issues #6/#8); an unknown board
+  refuses before anything is read, without override; a different `sys_vendor` only warns.
+  `f8a-stress.sh` and `f8a-pcie.sh` stay on N5 PRO/F8NAA with the measured vendor. Mode A
+  checks all preconditions before the first read and names each: research tools missing
+  (build hint), ACPI EC owning 0x62/0x66, Super-I/O driver loaded (new, also per research
+  call), kernel lockdown (new, also per call). `--bin-dir`, fallback `<repo>/bin`; header
+  with board, BIOS, EC firmware and profile; tool sha256 logged. README section "Snapshot on
+  another N5 board"; 274 container tests.
 
 ### n5-ectest (`ectest/`, 0.1.0, not yet released)
 

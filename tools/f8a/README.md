@@ -2,7 +2,9 @@
 
 Three scripts for the driver validation window on an N5 Pro (`N5 PRO` / `F8NAA`,
 driver `minisforum_n5_it5571` 0.2.1+sr1~rc2). Run as root, with `n5-fangov`
-stopped. They refuse on any other DMI product/board/vendor and unless
+stopped. The writing scripts refuse on any other DMI product/board/vendor; the
+read-only snapshot also runs on the other N5-family boards
+([Snapshot on another N5 board](#snapshot-on-another-n5-board)). All refuse unless
 `systemctl is-active n5-fangov` answers `inactive` or `failed` (an unreadable
 state refuses too).
 
@@ -58,17 +60,23 @@ bash /root/n5-mw1/f8a/f8a-snapshot.sh warm --yes    # without a terminal (read-o
 ```
 
 - **Mode A** (module not loaded): `ec_probe dump` twice (EC RAM 0x00–0xFF),
-  `n5_i2ec_read 0x1800 48`, `n5_fan rpm` from `/root/n5pro-ec/bin`. Only these
-  argument sets are allowed; `ec_probe write` cannot be called. Each call
-  re-checks that the module is not loaded, no driver hwmon device exists, none
-  of 0x2e/0x2f/0x62/0x66/0x68/0x6c is reserved in `/proc/ioports`, and
-  `n5-fangov` is inactive (checklist C2).
+  `n5_i2ec_read 0x1800 48`, `n5_fan rpm` from `/root/n5pro-ec/bin` (if it
+  exists, else `<repo>/bin`; `--bin-dir DIR` overrides). Only these
+  argument sets are allowed; `ec_probe write` cannot be called. Before the
+  first read and again before each call: the module is not loaded, no driver
+  hwmon device exists, none of 0x2e/0x2f/0x62/0x66/0x68/0x6c is reserved in
+  `/proc/ioports`, no Super-I/O driver (`it87`, `nct6775`, `nct6683`,
+  `w83627*`, `f71882fg`, …) is loaded, kernel lockdown is `none`, and
+  `n5-fangov` is inactive (checklist C2). The tool directory and the sha256 of
+  each tool are logged.
 - **Mode B** (module loaded): no research tool. hwmon `fan*`, `temp*`, `pwm*`,
   `pwm*_enable` (the pwm values are the driver's cache, not the EC state) and
   `/sys/kernel/debug/minisforum_n5_it5571/dcr` if the module was loaded with
   `debug_regs=1`, otherwise "dcr unavailable".
-- Both: date, uptime, boot_id, kernel, DMI incl. `bios_*` and
-  `ec_firmware_release`, lsmod, `/proc/ioports` (2e/2f/62/66/68/6c), module
+- Both: a header with board, BIOS and EC firmware and the profile
+  (`reference` or `other N5-family board`); date, uptime, boot_id, kernel, DMI incl. `bios_*` and
+  `ec_firmware_release`, lsmod, `/proc/ioports` (2e/2f/62/66/68/6c), loaded
+  Super-I/O drivers, lockdown state, module
   parameters, modprobe.d lines and the effective options (`modprobe -c`),
   Tctl/NVMe/HDD, `n5-fangov` state.
 
@@ -89,6 +97,51 @@ identical, 1 = changed, 2 = input error (e.g. a mode-B file).
 
 Proves: the state at that moment, as read by the tools. Does not prove: anything
 about the EC between two snapshots; mode B shows no EC RAM at all.
+
+## Snapshot on another N5 board
+
+For owners of another N5-family box who want to send us a register snapshot.
+`f8a-snapshot.sh` is read-only: it writes nothing to `/sys` and sends only read
+commands to the EC. It runs on these DMI product/board pairs (exact strings,
+`/sys/class/dmi/id/product_name` and `board_name`): N5 PRO/F8NAA, N5 PRO/F8NAB,
+N5/F8NAA, N5A/F8NAB, N5 AIR/F8NAB. Any other board refuses before anything is
+read and prints its DMI strings — send those instead. There is no override:
+on an unknown board the tools would send N5-specific commands to unknown
+firmware. `f8a-stress.sh` and `f8a-pcie.sh` refuse on every board except
+N5 PRO/F8NAA.
+
+Requirements (mode A, the useful one; any Linux with bash, systemd and coreutils, e.g. Ubuntu):
+
+- root; `gcc` and `git` to build the research tools;
+- Secure Boot off, or `/sys/kernel/security/lockdown` shows `[none]` (lockdown
+  blocks `ioperm()`);
+- none of 0x62/0x66/0x68/0x6c/0x2e/0x2f in `/proc/ioports`. `EC data`/`EC cmd`
+  on 0x62/0x66 means the kernel ACPI EC driver owns the EC; the snapshot then
+  refuses mode A — send us the refusal line;
+- no Super-I/O driver loaded (`lsmod | grep -E 'it87|nct67|w83627|f71882'`;
+  `modprobe -r` it) and no fan daemon running (`fancontrol`, `n5-fangov`);
+- the driver `minisforum_n5_it5571` not loaded (`modprobe -r`); if it is
+  loaded, the snapshot runs mode B (hwmon values only, no EC RAM).
+
+`n5-fangov`, Proxmox and `/root/n5pro-ec` are not needed. If systemd does not
+know `n5-fangov`, it counts as inactive.
+
+```bash
+git clone https://github.com/SirRenix/minisforum-n5pro-fan-proxmox.git n5pro-ec
+cd n5pro-ec && git checkout release-sr1
+bash scripts/02-build-tools.sh       # clones ltdstudio/minisforum-n5-it5571, builds ./bin
+sudo bash tools/f8a/f8a-snapshot.sh myboard --bin-dir "$PWD/bin"
+```
+
+Reads (mode A): EC RAM 0x00–0xFF twice, I2EC 0x1800–0x182F, TACH1–3, plus DMI
+(board, BIOS, EC firmware), kernel, lsmod, `/proc/ioports`, lockdown,
+temperatures. It takes a few seconds. Exit 0 = complete, 3 = incomplete (the
+file is still written), 1 = refused (the line says why).
+
+Output: `/root/n5-mw1/raw/f8a-snapshot-myboard-<UTC>.txt` and `.sha256`. The
+host name is replaced by `n5host`; no serial numbers, MAC or IP addresses
+are read. Send both files (e.g. attached to the GitHub issue). Look through
+them before you send them.
 
 ## f8a-stress.sh (E1/E2)
 
@@ -215,6 +268,11 @@ docker run --rm -v "$PWD:/mnt:ro" -w /mnt koalaman/shellcheck:stable -x -P SCRIP
 
 Covered: guard refusals (DMI, n5-fangov active/activating/unknown, no tty,
 module loaded or ports reserved for research tools, allowlist, duty < 100,
+unknown board for the snapshot, N5 PRO/F8NAB and a foreign sys_vendor
+refused by stress and pcie, ACPI EC on 0x62/0x66, Super-I/O driver loaded,
+lockdown, research tools missing, `--bin-dir` outside the test root),
+snapshot on N5 PRO/F8NAB (modes A and B, header, tool hashes), N5/F8NAA,
+N5A/F8NAB, N5 AIR/F8NAB, `--bin-dir` and the `<repo>/bin` fallback,
 missing temperature source, fan at 0 rpm, modprobe.d override, pcie with a
 manual channel, `F8A_BIN_DIR` outside test mode); kernel-log pattern and
 driver attribution; snapshot A/B, incomplete snapshot; diff; stress load/unbind

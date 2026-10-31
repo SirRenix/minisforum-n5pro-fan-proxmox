@@ -149,14 +149,109 @@ echo "# f8a container tests on $(. /etc/os-release; echo "$PRETTY_NAME"), bash $
 # ---------------------------------------------------------------- guards
 echo "## guards"
 fresh
-echo "N5" > "$F8A_ROOT/sys/class/dmi/id/product_name"
+echo "N5 MAX" > "$F8A_ROOT/sys/class/dmi/id/product_name"
 run "$F/f8a-snapshot.sh" g1 --yes
-check "snapshot refuses wrong DMI product" [ "$RC" -ne 0 ]
-check "  ... names the DMI mismatch" has "DMI mismatch"
+check "snapshot refuses an unknown DMI product" [ "$RC" -eq 1 ]
+check "  ... names the board and the known list" has "product='N5 MAX' board='F8NAA' sys_vendor='Micro Computer (HK) Tech Limited' is not a known N5-family board (snapshot runs on: N5 PRO/F8NAA, N5 PRO/F8NAB, N5/F8NAA, N5A/F8NAB, N5 AIR/F8NAB)"
+check "  ... nothing was read (no research call, no file)" [ ! -s "$F8A_ROOT/calls.log" ] && [ -z "$(latest f8a-snapshot-g1)" ]
+fresh
+echo "F8NAC" > "$F8A_ROOT/sys/class/dmi/id/board_name"
+run "$F/f8a-snapshot.sh" g1c --yes
+check "snapshot refuses an unknown board name (N5 PRO/F8NAC)" has "board='F8NAC'"
+check "  ... no research call" [ ! -s "$F8A_ROOT/calls.log" ]
 fresh
 echo "Other Vendor" > "$F8A_ROOT/sys/class/dmi/id/sys_vendor"
 run "$F/f8a-snapshot.sh" g1b --yes
-check "snapshot refuses wrong sys_vendor" has "DMI mismatch"
+check "snapshot on a known board with another sys_vendor runs (read-only)" [ "$RC" -eq 0 ]
+check "  ... with a warning" has "sys_vendor='Other Vendor' differs from the measured"
+check "  ... profile is not the reference" file_has "$(latest f8a-snapshot-g1b)" "profile: other N5-family board (read-only snapshot only)"
+fk_load debug_regs=1
+: > "$F8A_ROOT/calls.log"
+run_tty f8a-stress.sh "$F/f8a-stress.sh" load --cycles 1
+check "stress refuses wrong sys_vendor" has "DMI mismatch"
+run_tty f8a-pcie.sh "$F/f8a-pcie.sh"
+check "pcie refuses wrong sys_vendor" has "DMI mismatch"
+check "  ... no module operation, no write" [ ! -s "$F8A_ROOT/calls.log" ] && [ ! -s "$F8A_ROOT/writes.log" ]
+
+echo "## other N5-family boards (snapshot only)"
+fresh
+echo "F8NAB" > "$F8A_ROOT/sys/class/dmi/id/board_name"
+echo "1.04" > "$F8A_ROOT/sys/class/dmi/id/bios_version"
+echo "0.15" > "$F8A_ROOT/sys/class/dmi/id/ec_firmware_release"
+run "$F/f8a-snapshot.sh" nab --yes
+f=$(latest f8a-snapshot-nab)
+check "N5 PRO/F8NAB: snapshot A exit 0" [ "$RC" -eq 0 ]
+check "  ... RESULT complete" file_has "$f" "RESULT: complete"
+check "  ... header board" file_has "$f" "board: N5 PRO / F8NAB (sys_vendor Micro Computer (HK) Tech Limited)"
+check "  ... header BIOS and EC firmware" file_has "$f" "firmware: BIOS 1.04 (03/31/2026), EC 0.15"
+check "  ... header profile" file_has "$f" "profile: other N5-family board (read-only snapshot only)"
+check "  ... research tools and hashes named" file_has "$f" "research tools: $F8A_BIN_DIR"
+check "  ... ec_probe hash" grep -Eq '^  ec_probe sha256 [0-9a-f]{64}$' "$f"
+check "  ... host name redacted" file_hasnot "$f" "$HOST"
+check "  ... lockdown and super-io lines" file_has "$f" "super-io drivers loaded: none"
+check "  ... 4 research calls, all unloaded" [ "$(grep -c 'state=UNLOADED' "$F8A_ROOT/calls.log")" = 4 ]
+check "  ... nothing written to sysfs" [ ! -s "$F8A_ROOT/writes.log" ]
+: > "$F8A_ROOT/calls.log"
+run_tty f8a-pcie.sh "$F/f8a-pcie.sh"
+check "N5 PRO/F8NAB: pcie refused" [ "$RC" -ne 0 ]
+check "  ... DMI mismatch" has "DMI mismatch: product='N5 PRO' board='F8NAB'"
+check "  ... no module operation, no research call, no write" [ ! -s "$F8A_ROOT/calls.log" ] && [ ! -s "$F8A_ROOT/writes.log" ]
+fk_load debug_regs=1
+: > "$F8A_ROOT/calls.log"
+run_tty f8a-stress.sh "$F/f8a-stress.sh" load --cycles 1
+check "N5 PRO/F8NAB: stress refused" has "DMI mismatch: product='N5 PRO' board='F8NAB'"
+check "  ... no module operation, no write" [ ! -s "$F8A_ROOT/calls.log" ] && [ ! -s "$F8A_ROOT/writes.log" ]
+run "$F/f8a-snapshot.sh" nabB --yes
+check "N5 PRO/F8NAB: snapshot B (module loaded) exit 0, no research call" [ "$RC" -eq 0 ] && [ ! -s "$F8A_ROOT/calls.log" ]
+for pb in "N5/F8NAA" "N5A/F8NAB" "N5 AIR/F8NAB"; do
+    fresh
+    echo "${pb%/*}" > "$F8A_ROOT/sys/class/dmi/id/product_name"
+    echo "${pb#*/}" > "$F8A_ROOT/sys/class/dmi/id/board_name"
+    run "$F/f8a-snapshot.sh" fam --yes
+    check "$pb: snapshot allowed (driver DMI table)" [ "$RC" -eq 0 ]
+done
+
+echo "## mode-A preconditions on another system"
+fresh
+echo "F8NAB" > "$F8A_ROOT/sys/class/dmi/id/board_name"
+mkdir -p "$F8A_ROOT/opt/empty"
+OUT=$(F8A_BIN_DIR=$F8A_ROOT/opt/empty "$F/f8a-snapshot.sh" nt --yes 2>&1 < /dev/null); RC=$?
+check "missing research tools: refused" [ "$RC" -eq 1 ]
+check "  ... names all three and the build script" has "research tool(s) ec_probe n5_i2ec_read n5_fan not found in $F8A_ROOT/opt/empty (build them with 'bash scripts/02-build-tools.sh'"
+check "  ... no file" [ -z "$(latest f8a-snapshot-nt)" ]
+mkdir -p "$F8A_ROOT/opt/other"
+mv "$F8A_ROOT"/opt/n5bin/* "$F8A_ROOT/opt/other/"
+run "$F/f8a-snapshot.sh" bd --yes --bin-dir "$F8A_ROOT/opt/other"
+check "--bin-dir: snapshot A exit 0" [ "$RC" -eq 0 ]
+check "  ... tools taken from --bin-dir" file_has "$(latest f8a-snapshot-bd)" "research tools: $F8A_ROOT/opt/other"
+OUT=$(F8A_BIN_DIR=$F8A_ROOT/opt/other "$F/f8a-snapshot.sh" bd2 --yes --bin-dir /usr/bin 2>&1 < /dev/null); RC=$?
+check "--bin-dir outside F8A_ROOT refused in test mode" has "F8A_BIN_DIR is outside F8A_ROOT"
+fresh
+printf '  0062-0062 : EC data\n  0066-0066 : EC cmd\n' >> "$F8A_ROOT/proc/ioports"
+run "$F/f8a-snapshot.sh" acpi --yes
+check "ACPI EC owns 0x62/0x66: mode A refused up front" [ "$RC" -eq 1 ]
+check "  ... explains the ACPI EC driver" has "the kernel ACPI EC driver is active and the research tools cannot run beside it"
+check "  ... no research call, no file" [ ! -s "$F8A_ROOT/calls.log" ] && [ -z "$(latest f8a-snapshot-acpi)" ]
+fresh
+echo "it87 61440 0 - Live 0x0" >> "$F8A_ROOT/proc/modules"
+run "$F/f8a-snapshot.sh" sio --yes
+check "Super-I/O driver loaded: mode A refused" has "Super-I/O driver(s) loaded (it87)"
+check "  ... no research call" [ ! -s "$F8A_ROOT/calls.log" ]
+run bash -c ". '$F/f8a-lib.sh'; f8a_research ec_probe dump"
+check "  ... also refused per research call" has "Super-I/O driver(s) loaded (it87)"
+fresh
+mkdir -p "$F8A_ROOT/sys/kernel/security"
+echo "none [integrity] confidentiality" > "$F8A_ROOT/sys/kernel/security/lockdown"
+run "$F/f8a-snapshot.sh" lock --yes
+check "lockdown integrity: mode A refused" has "kernel lockdown is 'none [integrity] confidentiality'"
+check "  ... no research call" [ ! -s "$F8A_ROOT/calls.log" ]
+echo "[none] integrity confidentiality" > "$F8A_ROOT/sys/kernel/security/lockdown"
+run "$F/f8a-snapshot.sh" lock2 --yes
+check "lockdown none: snapshot A exit 0" [ "$RC" -eq 0 ]
+mkdir -p /tmp/f8a-repo/tools/f8a /tmp/f8a-repo/bin
+OUT=$(env -u F8A_ROOT bash -c ". '$F/f8a-lib.sh'; f8a_resolve_bin_dir /tmp/f8a-repo/tools/f8a; echo; f8a_resolve_bin_dir /tmp/f8a-repo/tools/f8a /tmp/f8a-repo/tools/../bin" 2>&1)
+check "outside test mode without /root/n5pro-ec/bin: <repo>/bin, --bin-dir resolved" [ "$OUT" = "/tmp/f8a-repo/bin
+/tmp/f8a-repo/bin" ]
 
 fresh
 echo active > "$F8A_ROOT/fake/fangov"
@@ -292,6 +387,7 @@ check "snapshot A dumps compared: curve regions identical" bash -c "[ \"\$(sed -
 check "snapshot A reports no non-temperature change" bash -c "sed -n '/dump 1 vs dump 2/,/curve-table/p' '$f' | grep -q '(none)'"
 check "snapshot A RESULT complete" file_has "$f" "RESULT: complete"
 check "snapshot A identity: ec_firmware_release" file_has "$f" "dmi.ec_firmware_release: 0.14"
+check "snapshot A header: reference profile, BIOS and EC" file_has "$f" "profile: reference (N5 PRO / F8NAA)" && file_has "$f" "firmware: BIOS 1.05 (03/31/2026), EC 0.14"
 check "snapshot A identity: effective modprobe options" file_has "$f" "options minisforum_n5_it5571 experimental_write=1"
 check "snapshot A temps independent" file_has "$f" "Tctl=45.0 NVMe_max=41.0 HDD_max=37.0"
 check "snapshot A host name redacted" file_hasnot "$f" "$HOST"

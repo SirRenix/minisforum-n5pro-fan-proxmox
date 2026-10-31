@@ -3,8 +3,15 @@
 # (run card blocks A/F, M1/T6).
 #
 # Usage:
-#   f8a-snapshot.sh LABEL [--yes] [--require-mode A|B] [--raw-path-file FILE]
+#   f8a-snapshot.sh LABEL [--yes] [--require-mode A|B] [--bin-dir DIR] [--raw-path-file FILE]
 #   f8a-snapshot.sh --diff FILE_A FILE_B
+#
+# Boards (DMI product/board, exact): N5 PRO/F8NAA (reference), N5 PRO/F8NAB,
+#   N5/F8NAA, N5A/F8NAB, N5 AIR/F8NAB (F8A_SNAPSHOT_BOARDS in f8a-lib.sh).
+#   Any other board refuses before anything is read; there is no override.
+#   The writing scripts f8a-stress.sh and f8a-pcie.sh stay on the reference.
+# --bin-dir DIR: research tools (default /root/n5pro-ec/bin if it exists,
+#   else <repo>/bin, where scripts/02-build-tools.sh builds them).
 #
 # Mode A (driver module NOT loaded): EC RAM 0x00-0xFF twice (ec_probe dump),
 #   I2EC 0x1800-0x182F (n5_i2ec_read 0x1800 48), TACH1-3 (n5_fan rpm).
@@ -151,7 +158,7 @@ do_diff() {
 
 # ---- argument parsing -----------------------------------------------------
 
-LABEL='' YES=0 REQ_MODE='' PATH_FILE=''
+LABEL='' YES=0 REQ_MODE='' PATH_FILE='' BIN_ARG=''
 [ $# -ge 1 ] || usage
 if [ "$1" = --diff ]; then
     [ $# -eq 3 ] || usage
@@ -162,6 +169,7 @@ while [ $# -gt 0 ]; do
         --yes) YES=1 ;;
         --require-mode) shift; REQ_MODE=${1:-} ;;
         --raw-path-file) shift; PATH_FILE=${1:-} ;;
+        --bin-dir) shift; BIN_ARG=${1:-}; [ -n "$BIN_ARG" ] || usage ;;
         -*) usage ;;
         *) [ -z "$LABEL" ] || usage; LABEL=$1 ;;
     esac
@@ -170,12 +178,32 @@ done
 case "$LABEL" in ''|*[!A-Za-z0-9._-]*) echo "label must be [A-Za-z0-9._-]+" >&2; exit 2 ;; esac
 case "$REQ_MODE" in ''|A|B) ;; *) usage ;; esac
 
-f8a_guard_common
+F8A_BIN_DIR=$(f8a_resolve_bin_dir "$F8A_DIR" "$BIN_ARG")
+# read-only: the N5-family board list instead of f8a_guard_common's
+# reference-only DMI check; everything else as in f8a_guard_common
+f8a_guard_test_mode
+f8a_require_root
+f8a_guard_dmi_snapshot
+f8a_guard_fangov
 if [ "$YES" != 1 ]; then f8a_guard_tty; fi
 
 if f8a_module_loaded || f8a_hwmon_dir >/dev/null; then MODE=B; else MODE=A; fi
 if [ -n "$REQ_MODE" ] && [ "$REQ_MODE" != "$MODE" ]; then
     f8a_die "mode $REQ_MODE required, but the module state gives mode $MODE (module loaded: $(f8a_module_loaded && echo yes || echo no))"
+fi
+if [ "$MODE" = A ]; then
+    # all mode-A preconditions up front, before anything is read (each
+    # research call checks them again)
+    why=''
+    f8a_research_blockers why || true
+    missing=''
+    for t in ec_probe n5_i2ec_read n5_fan; do
+        [ -x "$F8A_BIN_DIR/$t" ] || missing="$missing $t"
+    done
+    if [ -n "$missing" ]; then
+        why="${why:+$why; }research tool(s)${missing} not found in $F8A_BIN_DIR (build them with 'bash scripts/02-build-tools.sh' in the repository; it clones ltdstudio/minisforum-n5-it5571 and needs gcc and git; then pass --bin-dir <repo>/bin)"
+    fi
+    [ -z "$why" ] || f8a_die "mode A (driver module not loaded) cannot run; nothing was read: $why"
 fi
 
 WORK=''
@@ -204,8 +232,13 @@ trap 'exit 143' TERM
 trap 'exit 129' HUP
 f8a_log_start f8a-snapshot "$LABEL"
 f8a_say "f8a-snapshot $F8A_VERSION label=$LABEL mode=$MODE"
+f8a_board_header
 if [ "$MODE" = A ]; then
     echo "mode A: driver module not loaded; research tools (userspace port I/O) are used"
+    echo "research tools: $F8A_BIN_DIR"
+    for t in ec_probe n5_i2ec_read n5_fan; do
+        printf '  %s sha256 %s\n' "$t" "$(sha256sum < "$F8A_BIN_DIR/$t" | cut -d' ' -f1)"
+    done
 else
     echo "mode B: driver module loaded; research tools are NOT used (checklist C2)"
 fi
