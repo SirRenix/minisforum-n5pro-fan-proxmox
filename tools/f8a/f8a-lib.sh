@@ -3,7 +3,7 @@
 #
 # Sourced by f8a-snapshot.sh, f8a-stress.sh and f8a-pcie.sh; not meant to be
 # executed. Target: Minisforum N5 Pro (DMI "N5 PRO" / F8NAA), driver
-# minisforum_n5_it5571 0.2.1+sr1~rc1, run as root by an operator who is at
+# minisforum_n5_it5571 0.2.1+sr1~rc2, run as root by an operator who is at
 # the device (TESTSPEC G5).
 #
 # Safety rules enforced here:
@@ -29,7 +29,7 @@
 #   F8A_T_*       shortened waits; honoured only when F8A_ROOT is set.
 
 # shellcheck disable=SC2034  # globals are used by the sourcing scripts
-F8A_VERSION=0.2.0
+F8A_VERSION=0.2.3
 F8A_MODULE=minisforum_n5_it5571
 F8A_HWMON_NAME=minisforum_n5_it5571
 F8A_FANGOV_UNIT=n5-fangov.service
@@ -574,7 +574,14 @@ f8a_sysfs_write() {
     # test hook, inert unless F8A_ROOT is set: record every write attempt
     if f8a_test_mode; then printf '%s %s\n' "${1#"$F8A_ROOT"}" "$2" >> "$F8A_ROOT/writes.log" 2>/dev/null || true; fi
     if f8a__inject "$1"; then return 1; fi
-    if __o=$( { printf '%s\n' "$2" > "$1"; } 2>&1 ); then return 0; fi
+    if __o=$( { printf '%s\n' "$2" > "$1"; } 2>&1 ); then
+        # test hook, inert unless F8A_ROOT is set: the fake driver model
+        # (test/stubs/fk-sysfs) updates cache and dcr like the driver would
+        if f8a_test_mode && [ -x "$F8A_ROOT/stub-bin/fk-sysfs" ]; then
+            "$F8A_ROOT/stub-bin/fk-sysfs" "${1#"$F8A_ROOT"}" "$2" || true
+        fi
+        return 0
+    fi
     F8A_ERRNO=$(f8a_errno_name "$__o")
     return 1
 }

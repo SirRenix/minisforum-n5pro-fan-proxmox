@@ -167,7 +167,13 @@ systemctl start n5vw-check.service || rc=$?
 systemctl enable --now n5vw-check.timer n5vw-report.timer
 
 result=$(systemctl show n5vw-check.service -p Result --value 2>/dev/null || echo '?')
-queued=$(find "$run_dir/outbox" -name '*.eml' 2>/dev/null | wc -l)
+# outbox exists only once a mail was queued; find on a missing directory
+# fails, and under pipefail that would end the script with exit 1 after a
+# successful start
+queued=0
+if [ -d "$run_dir/outbox" ]; then
+    queued=$(find "$run_dir/outbox" -name '*.eml' 2>/dev/null | wc -l || true)
+fi
 echo "installed: run $run_id ($note), start $(date -d "@$start_epoch" -Iseconds), data $run_dir"
 if [ "$rc" -ne 0 ] || [ "$result" != success ]; then
     echo "WARNING: first n5vw-check run failed (rc=$rc, Result=$result):" >&2

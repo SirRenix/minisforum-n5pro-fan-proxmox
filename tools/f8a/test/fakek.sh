@@ -14,8 +14,13 @@
 #                        block for 3 s (a slow modprobe -r)
 #   F8A_TEST_STALL_AT=N  on the N-th bring-up fan2_input reads 0 rpm
 #   F8A_TEST_FANGOV_AT=N on the N-th bring-up n5-fangov becomes active
-#   F8A_TEST_CURVE_CHANGE=1  ec_probe dump shows EC[0x34]=0xa7 once pwm4 was
-#                        167 at an unload (simulated curve-table change)
+#   F8A_TEST_CURVE_CHANGE=1  ec_probe dump shows EC[0x34]=0xa7 once 167 was
+#                        written to pwm4 (simulated curve-table change)
+#   F8A_TEST_HANDBACK_0X31=1  pwm4_enable=2 behaves like driver 0.2.1/rc1
+#                        (0x31: cache and DCR5 keep the last value) instead
+#                        of rc2 (255, DCR5 ff)
+#   F8A_TEST_DCR5_LAG=S  a pwm4 write reaches DCR5 only S seconds later (the
+#                        EC takes it over within ~0.2 s, MW1 Z1 2026-10-17)
 #   F8A_TEST_TOOLFAIL=TOOL  that research tool stub fails (exit 1)
 #   F8A_TEST_SLOWTOOL=S  research tool stubs take S seconds
 #   FAKE_TEARDOWN=S      length of the fake ENODEV teardown window (s)
@@ -78,7 +83,7 @@ fk_count() {
 
 fk_probe() {
     # bind: hwmon device, debugfs file, device link
-    local i n
+    local i n d5
     mkdir -p "$FK_HW"
     echo "$FK_MOD" > "$FK_HW/name"
     for i in 1 2 3 4; do
@@ -95,7 +100,10 @@ fk_probe() {
     echo 22000 > "$FK_HW/temp4_input"; echo "Ambient Temp" > "$FK_HW/temp4_label"
     if [ "$(cat "$R/sys/module/$FK_MOD/parameters/debug_regs" 2>/dev/null)" = Y ]; then
         mkdir -p "$FK_DBG"
-        echo "1800: 00 ff 00 55 4a 57 57 8c 00 00 00 06 00 00 00 00" > "$FK_DBG/dcr"
+        # DCR5 keeps what the last binding left (PCIe has no EC automatic)
+        d5=8c
+        if [ -r "$R/fake/last_pwm4" ]; then d5=$(printf '%02x' "$(cat "$R/fake/last_pwm4")"); fi
+        echo "1800: 00 ff 00 55 4a 57 57 $d5 00 00 00 06 00 00 00 00" > "$FK_DBG/dcr"
     fi
     ln -sfn "../../../../devices/platform/$FK_MOD" "$FK_DRV/$FK_MOD"
     n=$(fk_count up)
@@ -119,6 +127,58 @@ fk_probe() {
     if [ "${F8A_TEST_FANGOV_AT:-0}" = "$n" ]; then
         echo active > "$R/fake/fangov"
     fi
+}
+
+fk_dcr_set() {
+    # fk_dcr_set CHANNEL HEX - DCR byte(s) of a channel in the debugfs file
+    # (pwm3 drives DCR3 and DCR4); nothing without debug_regs=1
+    local -a f
+    [ -f "$FK_DBG/dcr" ] || return 0
+    read -r -a f < "$FK_DBG/dcr"
+    case "$1" in
+        1) f[4]=$2 ;;
+        2) f[5]=$2 ;;
+        3) f[6]=$2; f[7]=$2 ;;
+        4) f[8]=$2 ;;
+    esac
+    printf '%s\n' "${f[*]}" > "$FK_DBG/dcr"
+}
+
+fk_dcr_set_ec() {
+    # fk_dcr_set_ec CHANNEL HEX - like fk_dcr_set, but DCR5 (pwm4) follows
+    # only after F8A_TEST_DCR5_LAG seconds when that is set
+    if [ "$1" = 4 ] && [ -n "${F8A_TEST_DCR5_LAG:-}" ]; then
+        ( sleep "$F8A_TEST_DCR5_LAG"; fk_dcr_set 4 "$2" ) > /dev/null 2>&1 < /dev/null &
+        return 0
+    fi
+    fk_dcr_set "$1" "$2"
+}
+
+fk_sysfs_write() {
+    # fk_sysfs_write PATH VALUE - driver model after a successful sysfs write
+    # (PATH below F8A_ROOT): manual mode and full speed write 255, a duty
+    # goes to the DCR, pwm4_enable=2 hands PCIe back at 255 (driver rc2,
+    # operator decision 2 of 2026-10-16); pwm1..3_enable=2 leave the DCR to
+    # the EC (unchanged here)
+    local p=$1 v=$2 ch
+    case "$p" in
+        /sys/class/hwmon/hwmon9/pwm[1-4]_enable)
+            ch=${p#/sys/class/hwmon/hwmon9/pwm}; ch=${ch%_enable}
+            case "$v" in
+                0|1) echo 255 > "$FK_HW/pwm$ch"; fk_dcr_set_ec "$ch" ff ;;
+                2)
+                    if [ "$ch" = 4 ] && [ "${F8A_TEST_HANDBACK_0X31:-0}" != 1 ]; then
+                        echo 255 > "$FK_HW/pwm4"; fk_dcr_set_ec 4 ff
+                    fi
+                    ;;
+            esac
+            ;;
+        /sys/class/hwmon/hwmon9/pwm[1-4])
+            ch=${p#/sys/class/hwmon/hwmon9/pwm}
+            fk_dcr_set_ec "$ch" "$(printf '%02x' "$v")"
+            [ "$ch" != 4 ] || echo "$v" >> "$R/fake/pwm4_writes"
+            ;;
+    esac
 }
 
 fk_remove() {
@@ -215,7 +275,7 @@ fk_setup() {
     : > "$R/calls.log"
     : > "$R/writes.log"
     mkdir -p "$R/stub-bin" "$R/opt/n5bin"
-    for i in modprobe journalctl systemctl; do cp "$FK_TEST_DIR/stubs/$i" "$R/stub-bin/$i"; done
+    for i in modprobe journalctl systemctl fk-sysfs; do cp "$FK_TEST_DIR/stubs/$i" "$R/stub-bin/$i"; done
     for i in ec_probe n5_fan n5_i2ec_read; do cp "$FK_TEST_DIR/stubs/$i" "$R/opt/n5bin/$i"; done
     chmod +x "$R"/stub-bin/* "$R"/opt/n5bin/*
 }

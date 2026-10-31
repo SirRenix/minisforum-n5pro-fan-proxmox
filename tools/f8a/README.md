@@ -1,7 +1,7 @@
 # f8a — maintenance-window helpers (TESTSPEC 0.3 F8a, M1, M2, T6)
 
 Three scripts for the driver validation window on an N5 Pro (`N5 PRO` / `F8NAA`,
-driver `minisforum_n5_it5571` 0.2.1+sr1~rc1). Run as root, with `n5-fangov`
+driver `minisforum_n5_it5571` 0.2.1+sr1~rc2). Run as root, with `n5-fangov`
 stopped. They refuse on any other DMI product/board/vendor and unless
 `systemctl is-active n5-fangov` answers `inactive` or `failed` (an unreadable
 state refuses too).
@@ -14,15 +14,15 @@ state refuses too).
 | `f8a-pcie.sh` | pwm4, module reload | F1 (M2) | operator at the console |
 
 The writing scripts need an interactive terminal and the typed script name.
-**Start them inside `tmux`** (glkvm/tty1, or SSH into a tmux session): a lost
+**Start them inside `tmux`** (KVM console on tty1, or SSH into a tmux session): a lost
 SSH session sends SIGHUP; the scripts then still restore and write their log,
 but you lose the live output, and a second session could start a second writer.
 
 Install on the host (run card V5):
 
 ```bash
-scp -r tools/f8a pve:/tmp/ && ssh pve sudo cp -r /tmp/f8a /root/n5-mw1/f8a
-ssh pve sudo bash -n /root/n5-mw1/f8a/f8a-*.sh
+scp -r tools/f8a n5host:/tmp/ && ssh n5host sudo cp -r /tmp/f8a /root/n5-mw1/f8a
+ssh n5host sudo bash -n /root/n5-mw1/f8a/f8a-*.sh
 ```
 
 Every run writes `/root/n5-mw1/raw/<script>-<label>-<UTC>.txt` plus `.sha256`;
@@ -143,7 +143,7 @@ judging it is up to the operator); `kill -9` of n5-fangov (E3), fan unplugging
 
 ```bash
 systemctl is-active n5-fangov                 # inactive
-modprobe -r minisforum_n5_it5571              # all channels to EC automatic
+modprobe -r minisforum_n5_it5571              # touched channels back (EC automatic; PCIe 255)
 tmux new -s f8a
 bash /root/n5-mw1/f8a/f8a-pcie.sh
 ```
@@ -154,8 +154,9 @@ default for the rest of the window).
 
 Sequence: (a) unload the module if loaded → `f8a-snapshot.sh pcie-before`
 (mode A); (b) `modprobe ... debug_regs=1`, `pwm4_enable=1` (driver sets 255),
-`pwm4=167` (0xA7), dcr at 0 and 10 s; (c) `pwm4_enable=2` (0x31), dcr after 0,
-60, 300 s; (d) unload → `f8a-snapshot.sh pcie-after`; (e) `--diff` and the DCR5
+`pwm4=167` (0xA7), dcr raw, settled and at 10 s (logged); (c) `pwm4_enable=2` (driver
+0.2.1+sr1~rc2 and later: hand-back at 255, no 0x31; operator decision 2 of 2026-10-16),
+dcr at +0 s (raw, logged) and at +1, +60, +300 s (judged); (d) unload → `f8a-snapshot.sh pcie-after`; (e) `--diff` and the DCR5
 (I2EC 0x1807) series in the summary. Duration about 6 min. Kernel log, limits,
 `n5-fangov` and (while loaded) fan1..3 are checked after every step and every
 2 s of waiting. The script holds `/run/n5-fangov/writer.lock` while it runs and
@@ -166,17 +167,33 @@ in the restore the script waits until no research tool process runs and
 block it. On exit pwm4 is never left manual; the module is
 reloaded normally (no `debug_regs`) only if it was loaded at the start.
 
-Expected output: the DCR5 series (`b1 write +0s  a7` …),
+Settle (TESTSPEC 0.4 §2.1 and §5.3 F1, #21/#22; f8a 0.2.3): the EC takes a pwm4
+write and the hand-back over within about 0.2 s (MW1 Z1, 2026-10-17); f8a 0.2.1
+judged a read taken at the moment of the write and reported F1 FAIL
+(`c hand-back +0s=a7`) for a correct driver. The `+0s raw` reading is logged,
+not judged. Judged are the hand-back points +1 s (the settle time of pwm4), +60 s
+and +300 s, each read once at or after its time: DCR5 must be `ff`. f8a 0.2.2
+judged instead a point polled every 0.2 s from 1 s until it showed `ff` (up to
+5 s); 0.2.3 judges +1 s as written in 0.4. The `settled` point of (b) is logged
+only.
+
+Expected output: the DCR5 series (`b1 write settled +1.0s  a7` …,
+`c hand-back +0s raw  ..`, `c hand-back +1s  ff`, `c hand-back +60s  ff`,
+`c hand-back +300s  ff`),
+`hand-back check (decision 2: pwm4_enable=2 -> DCR5 ff): ok at 3 points`,
 `C1 curve tables ...: identical` or `CHANGED at 0x..`, and
 `F1 run result: COMPLETE` (exit 0). `INCONCLUSIVE` with exit 3 if a snapshot
 is incomplete, `FAIL` on any kernel-log hit (driver hit or unexplained foreign
-hit, as above), a fan at 0 rpm or a failed driver operation.
+hit, as above), a fan at 0 rpm, a failed driver operation, or a DCR5 other than
+`ff` at a hand-back point (exit 1; a driver before `0.2.1+sr1~rc2` sends 0x31 and
+leaves `a7`).
 
 Proves (M2, PCIe): whether the curve tables differ between before the write and
-after hand-back + unload, and whether DCR5 holds 0xA7 after 0x31. Does not
-prove M3: DCR5 = 0xA7 after 0x31 fits both "0x31 has no effect" and "the
-internal curve now outputs the written value"; separating them needs a
-temperature step across a curve threshold or a reboot (run card F2–F4). Also
+after hand-back + unload, and whether the driver hand-back sets DCR5 to 0xff and
+keeps it there for 300 s. Does not prove M3 (what DCR5 does after 0x31): the
+driver no longer sends 0x31 on pwm4, so M3 needs the research tools with the
+module unloaded and a temperature step across a curve threshold or a reboot
+(run card F2–F4). Also
 not visible: the EC RAM state directly after the write — that dump would need
 the research tools beside the loaded driver (forbidden, C2) — and a curve
 change that the EC reverts on the hand-back.
@@ -206,7 +223,7 @@ hit (FAIL, not INCONCLUSIVE; also in pcie), temperature (also seen by the watche
 stalled fan, `n5-fangov` starting, an unreadable journal; Ctrl-C (SIGINT to the
 process group), hangup (pty closed), SIGTERM and SIGKILL of stress; pcie call
 order (no research tool while the module is loaded, never `ec_probe write`,
-only pwm4 written), Ctrl-C in step (b), SIGTERM during a research tool (the
+only pwm4 written), pcie hand-back check (a fake driver model sets DCR5 like rc2; an rc1-style 0x31 hand-back that leaves a7 is FAIL, exit 1; a DCR5 that follows the write within 0.3 s is not judged at +0 s and is ff at +1 s; one that follows after 1.5 s is FAIL at +1 s), Ctrl-C in step (b), SIGTERM during a research tool (the
 module is reloaded only after the tool ended), research-tool failure.
 Not covered: the real driver, real EC timing; the fake unbind runs
 asynchronously, the real one synchronously.

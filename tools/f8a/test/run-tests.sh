@@ -20,7 +20,8 @@ export FK_TEST_DIR=$T
 export F8A_ROOT=/tmp/f8a-root
 export F8A_BIN_DIR=$F8A_ROOT/opt/n5bin
 export PATH=$F8A_ROOT/stub-bin:$PATH
-export F8A_T_CYCLE=0.3 F8A_T_HOLD=1 F8A_T_SERIES="0 1 2" F8A_T_UP=5 FAKE_TEARDOWN=0.4
+export F8A_T_CYCLE=0.3 F8A_T_HOLD=1 F8A_T_SERIES="1 2" F8A_T_UP=5 FAKE_TEARDOWN=0.4
+export F8A_T_SETTLE_TIMEOUT=3
 export F8A_T_TACH_RETRY=0.1 F8A_T_WATCH=0.3
 # shellcheck source=fakek.sh
 . "$T/fakek.sh"
@@ -550,14 +551,19 @@ check "pcie call sequence exact" [ "$(cat "$F8A_ROOT/calls.log")" = "$expected" 
 [ "$(cat "$F8A_ROOT/calls.log")" = "$expected" ] || { echo "--- calls.log:"; cat "$F8A_ROOT/calls.log"; }
 check "pcie: no research tool while loaded" bash -c "! grep -Eq '^(ec_probe|n5_fan|n5_i2ec_read).*state=LOADED' '$F8A_ROOT/calls.log'"
 check "pcie: ec_probe never with write" bash -c "! grep -q '^ec_probe write' '$F8A_ROOT/calls.log'"
-check "pcie: pwm4 was 167 at unload" [ "$(cat "$F8A_ROOT/fake/last_pwm4")" = 167 ]
+check "pcie: pwm4 was 255 at unload (rc2 hand-back)" [ "$(cat "$F8A_ROOT/fake/last_pwm4")" = 255 ]
 check "pcie: final module loaded normally" [ "$(cat "$F8A_ROOT/sys/module/minisforum_n5_it5571/parameters/debug_regs")" = N ]
 check "pcie: final pwm4_enable=2" [ "$(hw pwm4_enable)" = 2 ]
 check "pcie: diff shows curve change" file_has "$f" "0x30-0x38: CHANGED at 0x34"
-check "pcie: diff shows DCR5" file_has "$f" "0x1807: ff -> a7"
+check "pcie: DCR5 a7 while manual" grep -Eq "b1 write settled [+][0-9.]+s +a7$" "$f"
+check "pcie: DCR5 ff at the judged +1 s point (TESTSPEC 0.4 F1)" grep -Eq "c hand-back [+]1s +ff$" "$f"
+check "pcie: raw reading at +0s logged" grep -Eq "c hand-back [+]0s raw +ff$" "$f"
+check "pcie: no polled settled point after the hand-back" bash -c "! grep -q 'c hand-back settled' '$f'"
+check "pcie: hand-back check ok at the judged points" file_has "$f" "hand-back check (decision 2: pwm4_enable=2 -> DCR5 ff): ok at 2 points"
+check "pcie: judged points named" file_has "$f" "judged (TESTSPEC 0.4 F1): DCR5 = ff at c hand-back +1, +2 s"
 check "pcie: series printed" grep -q "c hand-back +2s" "$f"
 check "pcie: impossibility note" file_has "$f" "research tools beside the loaded driver (forbidden"
-check "pcie: M3 not decided note" file_has "$f" "this run decides M2 (curve tables, DCR5 after 0x31), not M3"
+check "pcie: M3 not decided note" file_has "$f" "this run decides M2 (curve tables) and the driver hand-back (DCR5 ff), not M3"
 check "pcie: signature warning ignored" file_has "$f" "kernel-log hits since start: 0"
 check "pcie: run result COMPLETE" file_has "$f" "F1 run result: COMPLETE"
 check "pcie: only pwm4 written (exact)" [ "$(cat "$F8A_ROOT/writes.log")" = "/sys/class/hwmon/hwmon9/pwm4_enable 1
@@ -573,6 +579,38 @@ run_tty f8a-pcie.sh "$F/f8a-pcie.sh"
 check "pcie unloaded-start exit 0" [ "$RC" -eq 0 ]
 check "pcie unloaded-start: final module unloaded" bash -c "! grep -q '^minisforum_n5_it5571 ' '$F8A_ROOT/proc/modules'"
 check "pcie unloaded-start: identical curve tables without injection" has "C1 curve tables 0x10-0x27, 0x30-0x38, 0x70-0x81: identical"
+
+echo "## pcie: hand-back as in driver 0.2.1/rc1 (0x31, DCR5 keeps a7) is FAIL"
+fresh
+F8A_TEST_HANDBACK_0X31=1 run_tty f8a-pcie.sh "$F/f8a-pcie.sh"
+check "pcie 0x31 hand-back: exit 1" [ "$RC" -eq 1 ]
+check "pcie 0x31 hand-back: check line" grep -Eq "hand-back check \(decision 2: pwm4_enable=2 -> DCR5 ff\): FAIL \(c hand-back [+]1s=a7, c hand-back [+]2s=a7\)" <<< "$OUT"
+check "pcie 0x31 hand-back: run result FAIL" grep -Eq "F1 run result: FAIL \(hand-back: DCR5 not ff after pwm4_enable=2: c hand-back [+]1s=a7" <<< "$OUT"
+check "pcie 0x31 hand-back: raw point not judged" hasnot "+0s raw=a7"
+check "pcie 0x31 hand-back: never COMPLETE" hasnot "F1 run result: COMPLETE"
+
+echo "## pcie: EC takes the write over late (MW1 F1/Z1: +0s still a7)"
+fresh
+fk_load
+F8A_TEST_DCR5_LAG=0.3 run_tty f8a-pcie.sh "$F/f8a-pcie.sh"
+f=$(latest f8a-pcie-m2)
+check "pcie lag 0.3 s: exit 0" [ "$RC" -eq 0 ]
+check "pcie lag 0.3 s: raw +0s reading shows the old value a7, not judged" grep -Eq "c hand-back [+]0s raw +a7$" "$f"
+check "pcie lag 0.3 s: +1 s point ff" grep -Eq "c hand-back [+]1s +ff$" "$f"
+check "pcie lag 0.3 s: b1 raw still the value from before the write (ff)" grep -Eq "b1 write [+]0s raw +ff$" "$f"
+check "  ... b1 settled (logged) a7" grep -Eq "b1 write settled [+]1\.[0-2]s +a7$" "$f"
+check "pcie lag 0.3 s: hand-back check ok (raw not judged)" file_has "$f" "hand-back check (decision 2: pwm4_enable=2 -> DCR5 ff): ok at 2 points"
+check "pcie lag 0.3 s: run result COMPLETE" file_has "$f" "F1 run result: COMPLETE"
+# a hand-back the EC takes over later than the settle time of 1 s is FAIL
+# at the +1 s point (TESTSPEC 0.4 section 2.1, F1)
+fresh
+fk_load
+F8A_TEST_DCR5_LAG=1.5 run_tty f8a-pcie.sh "$F/f8a-pcie.sh"
+f=$(latest f8a-pcie-m2)
+check "pcie lag 1.5 s: exit 1" [ "$RC" -eq 1 ]
+check "pcie lag 1.5 s: FAIL at +1 s only" file_has "$f" "F1 run result: FAIL (hand-back: DCR5 not ff after pwm4_enable=2: c hand-back +1s=a7)"
+check "pcie lag 1.5 s: +2 s point ff" grep -Eq "c hand-back [+]2s +ff$" "$f"
+show_on_fail 0
 
 echo "## pcie abort on temperature during (b)"
 fresh

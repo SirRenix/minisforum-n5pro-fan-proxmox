@@ -61,7 +61,7 @@ vw_load_config() {
     ANNOT_WINDOW=600
     ANNOT_EXPLICIT_ONLY='K1 K7'
     K1_MAX_PER_RUN=300
-    K1_PATTERN='Oops|BUG:|kernel BUG at|general protection|Call Trace|INFO: task .* blocked for more than|hung_task|soft lockup|hard LOCKUP|rcu.*stall|watchdog: |Hardware Error|mce:|Machine check|AER:|PCIe Bus Error|nvme.*(timeout|reset)|minisforum.*(timed? ?out|fail|error)'
+    K1_PATTERN='Oops|BUG:|WARNING:|kernel BUG at|general protection|Call Trace|INFO: task .* blocked for more than|hung_task|soft lockup|hard LOCKUP|rcu.*stall|watchdog: |Hardware Error|mce:|Machine check|AER:|PCIe Bus Error|nvme.*(timeout|reset)|minisforum.*(timed? ?out|fail|error)'
     # Known benign boot lines that the pattern above would hit.
     K1_IGNORE='NMI watchdog: Enabled|minisforum_n5_it5571: module verification failed|AER: enabled with IRQ'
     # Ignored only when the line belongs to an earlier boot (printed at
@@ -257,7 +257,7 @@ vw_process_alerts() {
 
 vw_key_desc() {
     case "$1" in
-        K1) echo "Kernel-Log: Oops/BUG/Call Trace/hung task/soft lockup/RCU stall/watchdog/MCE/AER/NVMe-Reset/EC-Fehler" ;;
+        K1) echo "Kernel-Log: Oops/BUG/WARNING/Call Trace/hung task/soft lockup/RCU stall/watchdog/MCE/AER/NVMe-Reset/EC-Fehler" ;;
         K2) echo "boot_id gewechselt (Neustart, geplant oder nicht)" ;;
         K3) echo "n5-fangov nicht aktiv, NRestarts gestiegen oder Journal >= warning" ;;
         K4) echo "Luefter 0 RPM (2 Samples), Temperaturgrenze, EC-Lesefehler oder EC-hwmon fehlt" ;;

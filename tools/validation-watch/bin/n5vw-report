@@ -41,10 +41,25 @@ vw_state_load
 if [ -z "$TAINT_START" ]; then TAINT_START=$(vw_state_get taint_start); fi
 
 NOW=$EPOCHSECONDS
+# Day counting - one rule for mail subject, head line, report file and hint:
+#   elapsed  = NOW - START_EPOCH (clamped at 0), printed everywhere as
+#              "x Tage y h" with x = completed days, y = completed hours
+#   Tag k/N  = k = x + 1, the day of the run in progress (first 24 h = Tag 1),
+#              clamped to 1..DURATION_DAYS (final report at N*24 h = Tag N/N)
+# Head line and hint both print elapsed_txt, so they cannot disagree.
 elapsed=$((NOW - START_EPOCH))
+if [ "$elapsed" -lt 0 ]; then elapsed=0; fi
+elapsed_txt="$((elapsed / 86400)) Tage $(((elapsed % 86400) / 3600)) h"
 day=$((elapsed / 86400 + 1))
 if [ "$day" -gt "$DURATION_DAYS" ]; then day=$DURATION_DAYS; fi
 if [ "$day" -lt 1 ]; then day=1; fi
+
+# samples.csv snapshot: count the complete lines once, every later pass reads
+# exactly these lines (head -n). Coverage (K8) and statistics then see the
+# same state even if the sampler appends a row while the report runs.
+snap_lines=0
+if [ -r "$SAMPLES" ]; then snap_lines=$(wc -l < "$SAMPLES"); fi
+samples_snap() { head -n "$snap_lines" "$SAMPLES"; }
 
 if [ "$MODE" = daily ]; then since=$((NOW - 86400)); else since=$START_EPOCH; fi
 if [ "$since" -lt "$START_EPOCH" ]; then since=$START_EPOCH; fi
@@ -58,7 +73,11 @@ while read -r k t _e _u; do PER[$k]=$t; done < <(vw_event_table count "$since")
 
 # K8 coverage over the whole run so far (planned downtime excluded)
 down=$(vw_down_intervals)
-read -r cov_s unc_s pts_s < <(vw_coverage "$SAMPLES" 2 "$SAMPLE_INTERVAL" "$GAP_MAX" "$START_EPOCH" "$cov_to" "$down")
+if [ -r "$SAMPLES" ]; then
+    read -r cov_s unc_s pts_s < <(vw_coverage <(samples_snap) 2 "$SAMPLE_INTERVAL" "$GAP_MAX" "$START_EPOCH" "$cov_to" "$down")
+else
+    read -r cov_s unc_s pts_s < <(vw_coverage "$SAMPLES" 2 "$SAMPLE_INTERVAL" "$GAP_MAX" "$START_EPOCH" "$cov_to" "$down")
+fi
 read -r cov_c unc_c pts_c < <(vw_coverage "$CHECKS" 1 "$CHECK_INTERVAL" "$CHECK_GAP_MAX" "$START_EPOCH" "$cov_to" "$down")
 cov_fail=$(awk -v a="$cov_s" -v b="$cov_c" -v m="$COVER_MIN" 'BEGIN { print ((a + 0 < m || b + 0 < m) ? 1 : 0) }')
 
@@ -76,12 +95,21 @@ data_kb=$(du -sk "$RUN_DIR" 2>/dev/null | cut -f1 || echo 0)
 up='' taint=''
 vw_rd /proc/uptime up; up=${up%% *}; up=${up%%.*}
 vw_rd /proc/sys/kernel/tainted taint
-expected=$(((NOW - since) / SAMPLE_INTERVAL))
 last_check=$(vw_state_get last_check 0)
 
 unit_health() {
-    local u
+    local u st
     for u in n5vw-sample.service n5vw-check.service n5vw-report.service; do
+        # A oneshot unit that is still running (above all our own
+        # n5vw-report.service) has no exit result yet; do not print the
+        # empty Result/ExecMainExitTimestamp as if it had finished.
+        st=$(systemctl show "$u" -p ActiveState --value 2>/dev/null || true)
+        case "$st" in
+            activating|active|deactivating|reloading)
+                printf '  %-22s %s\n' "$u" "(laeuft gerade)"
+                continue
+                ;;
+        esac
         printf '  %-22s %s\n' "$u" "$(systemctl show "$u" -p Result -p NRestarts -p ExecMainStatus -p ExecMainExitTimestamp 2>/dev/null | tr '\n' ' ' || echo '?')"
     done
     for u in n5vw-sample.timer n5vw-check.timer n5vw-report.timer; do
@@ -93,7 +121,7 @@ body() {
     printf 'Lauf:        %s auf %s\n' "$RUN_ID" "$HOST"
     printf 'Start:       %s\n' "$(vw_iso "$START_EPOCH")"
     printf 'Ende (Soll): %s (%s Tage)\n' "$(vw_iso "$END_EPOCH")" "$DURATION_DAYS"
-    printf 'Jetzt:       %s (Tag %s/%s, %s h seit Start)\n' "$(vw_iso "$NOW")" "$day" "$DURATION_DAYS" $((elapsed / 3600))
+    printf 'Jetzt:       %s (Tag %s/%s, Laufzeit %s)\n' "$(vw_iso "$NOW")" "$day" "$DURATION_DAYS" "$elapsed_txt"
     printf 'Kernel:      %s, Taint %s (Start %s)\n' "$(uname -r)" "$taint" "${TAINT_START:-?}"
     printf 'Uptime:      %s h\n' $((${up:-0} / 3600))
     printf 'Statistik-Zeitraum: %s .. %s\n\n' "$(vw_iso "$since")" "$(vw_iso "$NOW")"
@@ -117,13 +145,22 @@ body() {
     printf '\n'
 
     if [ -r "$SAMPLES" ]; then
-        awk -F, -v since="$since" -v expected="$expected" '
+        samples_snap | awk -F, -v since="$since" '
             NR == 1 { nf = NF; for (i = 1; i <= NF; i++) h[i] = $i; next }
             NF != nf || $2 !~ /^[0-9]+$/ || $2 + 0 < since { next }
             {
                 rows++
                 if (first == "") first = $1
                 last = $1
+                # spacing between consecutive rows; a negative step is a
+                # backward clock jump and counts neither as gap nor as interval
+                ep = $2 + 0
+                if (rows > 1) {
+                    d = ep - pep
+                    if (d < 0) back++
+                    else { dsum += d; dn++; if (d > dmax) dmax = d }
+                }
+                pep = ep
                 if (!($3 in bseen)) { bseen[$3] = 1; nb++; border[nb] = $3; bfirst[$3] = $1 }
                 blast[$3] = $1
                 for (i = 4; i <= NF; i++) {
@@ -139,7 +176,12 @@ body() {
             }
             END {
                 if (rows == 0) { print "Keine Samples im Zeitraum."; exit }
-                printf "Samples im Zeitraum: %d von erwartet %d (%.1f %%), %s .. %s\n\n", rows, expected, (expected > 0 ? 100 * rows / expected : 0), first, last
+                # no percentage here: coverage against the schedule is K8 above
+                if (dn > 0) { mean = sprintf("%.1f", dsum / dn); sub(/\./, ",", mean); gap = sprintf("%d", dmax) }
+                else { mean = "-"; gap = "-" }
+                printf "Samples %d, mittlerer Abstand %s s, groesste Luecke %s s", rows, mean, gap
+                if (back > 0) printf ", Uhrsprung rueckwaerts %dx", back
+                printf "\n  erstes .. letztes: %s .. %s\n\n", first, last
                 printf "%-20s %9s %9s %9s %7s %7s\n", "Wert", "min", "max", "mittel", "n", "leer"
                 for (i = 4; i < nf; i++) {
                     if (h[i] ~ /^(boot_id|fangov_state)$/) continue
@@ -154,7 +196,7 @@ body() {
                 printf "\nn5-fangov NRestarts (max im Zeitraum): %d\n", maxnr
                 printf "\nBoot-IDs im Zeitraum: %d\n", nb
                 for (j = 1; j <= nb; j++) printf "  %s  %s .. %s\n", border[j], bfirst[border[j]], blast[border[j]]
-            }' "$SAMPLES"
+            }'
     else
         printf 'Noch keine Samples (%s fehlt).\n' "$SAMPLES"
     fi
@@ -175,8 +217,9 @@ body() {
         if [ -s "$ANNOT" ]; then printf '\n'; tail -n 15 "$ANNOT"; else printf 'keine\n'; fi
     fi
 
-    printf '\nHinweis: "PASS" heisst "kein unerklaerter Fehler beobachtet in %s Tagen\n' "$((elapsed / 86400))"
-    printf 'unter diesen Bedingungen", nicht "fehlerfrei". Fehlt diese Tagesmail, laeuft der Watcher nicht.\n'
+    printf '\nHinweis: "PASS" heisst "kein unerklaerter Fehler beobachtet unter diesen Bedingungen",\n'
+    printf 'nicht "fehlerfrei". Beobachtet: %s (Tag %s/%s).\n' "$elapsed_txt" "$day" "$DURATION_DAYS"
+    printf 'Fehlt diese Tagesmail, laeuft der Watcher nicht.\n'
 }
 
 case "$MODE" in

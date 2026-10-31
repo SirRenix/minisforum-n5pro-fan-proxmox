@@ -73,7 +73,7 @@ f8a_module_loaded || f8a_die "$F8A_MODULE is not loaded; load it with: modprobe 
 f8a_modprobe_opt experimental_write EXPW
 f8a_modprobe_opt_true experimental_write || f8a_die "experimental_write is '${EXPW:-unset}' in the effective modprobe configuration (modprobe -c); a reload would come up read-only"
 HW=$(f8a_hwmon_dir) || f8a_die "hwmon device $F8A_HWMON_NAME not found"
-[ -e "$HW/pwm1" ] && [ -e "$HW/pwm2" ] || f8a_die "pwm1/pwm2 not visible (driver read-only?)"
+if [ ! -e "$HW/pwm1" ] || [ ! -e "$HW/pwm2" ]; then f8a_die "pwm1/pwm2 not visible (driver read-only?)"; fi
 DEV=$(f8a_platform_device) || f8a_die "cannot determine the platform device bound to $F8A_MODULE (expected exactly one in $F8A_DRIVER_DIR that also exists in /sys/bus/platform/devices)"
 f8a_read_dcr DCR0 || f8a_die "$DCR0"
 f8a_check_limits require || f8a_die "temperature precondition: $F8A_LIMIT_REASON"
@@ -350,7 +350,7 @@ for ((c = 1; c <= CYCLES; c++)); do
     f8a_read_temps
     DONE=$c
     f8a_say "cycle $c/$CYCLES: pwm1..4_enable=${en# } $F8A_TACH_LINE dcr=[$dcr] klog_hits=$KHITS $(f8a_temps_line) writer_err=$(count_by_errno "$WORK/writer.err")"
-    [ "$KHITS" = 0 ] || abort "kernel-log hit after cycle $c" "$( [ "$KDRV" -gt 0 ] && echo FAIL || true)"
+    [ "$KHITS" = 0 ] || abort "kernel-log hit after cycle $c" "$(if [ "$KDRV" -gt 0 ]; then echo FAIL; fi)"
     [ "$STATE_BAD" = 0 ] || abort "pwm_enable not 2 after reload in cycle $c" FAIL
     [ "$tach_ok" = 1 ] || abort "after reload in cycle $c: $F8A_TACH_REASON" FAIL
     check_watch "after cycle $c"

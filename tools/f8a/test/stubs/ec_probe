@@ -9,7 +9,7 @@ fk_log "ec_probe $* state=$(fk_state)"
 [ "${F8A_TEST_SLOWTOOL:-0}" = 0 ] || { sleep "$F8A_TEST_SLOWTOOL"; fk_log "ec_probe done state=$(fk_state)"; }
 [ "${1:-}" = dump ] || { echo "ec_probe stub: only dump is simulated" >&2; exit 1; }
 b34=64
-if [ "${F8A_TEST_CURVE_CHANGE:-0}" = 1 ] && [ "$(cat "$R/fake/last_pwm4" 2>/dev/null)" = 167 ]; then
+if [ "${F8A_TEST_CURVE_CHANGE:-0}" = 1 ] && grep -qx 167 "$R/fake/pwm4_writes" 2>/dev/null; then
     b34=A7
 fi
 n=$(fk_count dumps)

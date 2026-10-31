@@ -39,7 +39,7 @@ ANNOT_EXPLICIT_ONLY='K1 K7'
 # K1 kernel log pattern (awk/grep -E), lines to ignore (known benign boot
 # lines), lines ignored only when they belong to an earlier boot, and the
 # maximum number of K1 hits recorded individually per check run
-K1_PATTERN='Oops|BUG:|kernel BUG at|general protection|Call Trace|INFO: task .* blocked for more than|hung_task|soft lockup|hard LOCKUP|rcu.*stall|watchdog: |Hardware Error|mce:|Machine check|AER:|PCIe Bus Error|nvme.*(timeout|reset)|minisforum.*(timed? ?out|fail|error)'
+K1_PATTERN='Oops|BUG:|WARNING:|kernel BUG at|general protection|Call Trace|INFO: task .* blocked for more than|hung_task|soft lockup|hard LOCKUP|rcu.*stall|watchdog: |Hardware Error|mce:|Machine check|AER:|PCIe Bus Error|nvme.*(timeout|reset)|minisforum.*(timed? ?out|fail|error)'
 K1_IGNORE='NMI watchdog: Enabled|minisforum_n5_it5571: module verification failed|AER: enabled with IRQ'
 K1_IGNORE_PREVBOOT='watchdog: watchdog[0-9]+: watchdog did not stop'
 K1_MAX_PER_RUN=300

@@ -29,7 +29,7 @@ compare the two.
 
 | Key | Checked | Threshold |
 |---|---|---|
-| K1 | kernel journal (all boots, `_TRANSPORT=kernel`) since the last check | `Oops`, `BUG:`, `kernel BUG at`, `general protection`, `Call Trace`, `INFO: task … blocked for more than`, `hung_task`, `soft lockup`, `hard LOCKUP`, `rcu…stall`, `watchdog: `, `Hardware Error`, `mce:`, `Machine check`, `AER:`, `PCIe Bus Error`, `nvme…(timeout\|reset)`, `minisforum…(timeout\|timed out\|fail\|error)`; known benign boot lines are ignored (`K1_IGNORE`); `watchdog did not stop` only when it belongs to an earlier boot (printed at shutdown) |
+| K1 | kernel journal (all boots, `_TRANSPORT=kernel`) since the last check | `Oops`, `BUG:`, `WARNING:` (since TESTSPEC 0.4, see below), `kernel BUG at`, `general protection`, `Call Trace`, `INFO: task … blocked for more than`, `hung_task`, `soft lockup`, `hard LOCKUP`, `rcu…stall`, `watchdog: `, `Hardware Error`, `mce:`, `Machine check`, `AER:`, `PCIe Bus Error`, `nvme…(timeout\|reset)`, `minisforum…(timeout\|timed out\|fail\|error)`; known benign boot lines are ignored (`K1_IGNORE`); `watchdog did not stop` only when it belongs to an earlier boot (printed at shutdown) |
 | K2 | `boot_id` changed (baseline = boot at install) | any reboot, planned or not; evidence includes the last journal lines of the previous boot and the content of pstore |
 | K3 | fan regulator unit | not `active`, `NRestarts` increased, or journal lines with priority ≤ warning |
 | K4 | samples since the last check | fan1..fan3 = 0 RPM in two consecutive samples; Tctl ≥ 85 °C; NVMe ≥ 70 °C; HDD ≥ 50 °C; EC CPU ≥ 90 °C; any failed EC read; EC hwmon missing in two consecutive samples |
@@ -55,6 +55,16 @@ limited (suppressed lines appear as "callbacks suppressed"), so the K1 count is 
 lower bound; K4 stays the per-sample count.
 A kernel panic never reaches the journal; after the reboot it shows up as K2
 (with pstore content, if any) and K5.
+
+**`WARNING:` in K1 (TESTSPEC 0.4 #15, operator decision 2026-10-17):** a `WARN()`
+splat starts with `WARNING: CPU: …`. Runs 1 (`baseline-20261008`) and 2
+(`patched-20261017`) ran with a `K1_PATTERN` without `WARNING:`; such a splat was
+caught there only through its `Call Trace` line. The pattern in
+`n5-validation.conf.example` (and the default in `bin/n5vw-lib.sh`) contains
+`WARNING:` from the next run on: `install.sh` copies it into
+`/etc/n5-validation.conf` at the install of a new run id. A running run keeps the
+pattern it was installed with (its `/etc/n5-validation.conf` is not touched until the
+next install). Runs 1 and 2 get the retro-check below instead.
 
 Every event has a number (`#N`, its line in `events.log`). Alert mails:
 subject `[n5-validation] ALERT <key> <short>`, at most one per key per hour;
@@ -147,6 +157,39 @@ explained together with the annotation that covers it.
 Verdict per criterion: PASS only if there were no events or every event is
 explained; K8 additionally needs ≥ 99 % sample and check coverage.
 
+## Retro-check of runs 1 and 2 for `WARNING:` (TESTSPEC 0.4 #15)
+
+`retro-k1-warning.sh` lists every kernel journal line matching `WARNING:|cut here`
+in the window of a run and marks the ones the run's K1 pattern did not catch
+(`NEW`). Read-only (`journalctl`); it writes `k1-retro-warning-<label>-<UTC>.txt`
+and its `.sha256` to `--out`. Root (or the `adm` group) is needed to read the
+journal. Run it on the host of the runs, from this directory, after run 2 has
+ended (2026-10-24 15:41):
+
+    sudo ./retro-k1-warning.sh --label run1-baseline-20261008 --run-dir /var/lib/n5-validation/baseline-20261008 --out /root
+    sudo ./retro-k1-warning.sh --label run2-patched-20261017 --run-dir /var/lib/n5-validation/patched-20261017 --out /root
+
+With `--run-dir` the window is `START_EPOCH` … `START_EPOCH + DURATION_DAYS` from
+the run's `config.snapshot` and the K1 pattern is the one of that run. Without a run
+directory (other `--data-root`, snapshot lost) give the window by hand; the K1
+pattern is then the built-in one of runs 1/2:
+
+    sudo ./retro-k1-warning.sh --label run1-baseline-20261008 --since "2026-10-08 22:25:44" --until "2026-10-15 22:30:30" --out /root
+
+Last line of the output and exit code:
+
+| Exit | Meaning | Next step |
+|---|---|---|
+| 0 | `RESULT …: n line(s) …, 0 of them … (NEW); journal complete=yes` | record the line in the run-2 record; the run verdict stands |
+| 1 | at least one `NEW` line | a K1 hit the run did not record: explain it with evidence or count it as unexplained in the comparison table (TESTSPEC §5a) |
+| 3 | `complete=no`: the journal does not reach back to the window start | result incomplete; name it as such in the run-2 record |
+| 2 | usage or journal error | fix and repeat |
+
+Measured for run 1 on 2026-10-16 (by hand, `journalctl -k`): 84 kernel lines, 0
+matching `WARNING|cut here`. The script repeats that check over all boots of the
+window with the raw file as evidence. Copy the raw file and its `.sha256` to
+`befunde/raw/` (check it for addresses first) and link it from the run-2 record.
+
 ## Status, stop, remove
 
     sudo /usr/local/lib/n5-validation/status.sh       # counts, coverage, statistics, open events
@@ -175,5 +218,6 @@ Measured on the target host (N5 Pro, 2026-10-08): one sample takes about
 - If `/etc/n5-validation.conf` is removed, the units are skipped by their
   condition without a failure; only the missing daily report shows it.
 - Thresholds are fixed per run; change them only between runs, otherwise the
-  runs are not comparable.
+  runs are not comparable. Runs 1 and 2 ran without `WARNING:` in K1 (see
+  above).
 - No lockdep/KASAN/kmemleak coverage — that needs a debug kernel.

@@ -1,0 +1,7 @@
+#!/bin/bash
+# fk-sysfs stub: called by f8a_sysfs_write (test mode only) after a
+# successful write; applies the fake driver model (fakek.sh fk_sysfs_write)
+set -eu
+# shellcheck source=../fakek.sh
+. "$FK_TEST_DIR/fakek.sh"
+fk_sysfs_write "$1" "$2"
