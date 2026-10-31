@@ -1,12 +1,12 @@
 package hwstatus
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/SirRenix/minisforum-n5pro-fan-proxmox/go/n5/hwstatus/internal/tablesum"
 )
 
 // The embedded table must parse (init panics otherwise) and carry its
@@ -16,7 +16,7 @@ func TestEmbeddedTableParses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(m.Source, "RESULTS.md") || len(m.SourceSHA256) != 64 || len(m.Generated) != len("2026-10-09") {
+	if !strings.Contains(m.Source, "RESULTS.md") || len(m.SourceTableSHA256) != 64 || len(m.Generated) != len("2026-10-09") {
 		t.Fatalf("meta = %+v", m)
 	}
 	found := false
@@ -44,9 +44,12 @@ func TestEmbeddedTableInSyncWithResults(t *testing.T) {
 	if err != nil {
 		t.Skip("befunde/RESULTS.md not found above this module")
 	}
-	sum := sha256.Sum256(b)
-	if got := hex.EncodeToString(sum[:]); got != Source().SourceSHA256 {
-		t.Fatalf("results.tsv is stale: RESULTS.md sha256 %s, embedded from %s; run go generate ./...", got, Source().SourceSHA256)
+	got, err := tablesum.Sum(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != Source().SourceTableSHA256 {
+		t.Fatalf("results.tsv is stale: RESULTS.md table sha256 %s, embedded from %s; run go generate ./...", got, Source().SourceTableSHA256)
 	}
 }
 

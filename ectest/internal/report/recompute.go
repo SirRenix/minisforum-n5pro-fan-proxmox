@@ -18,7 +18,6 @@ import (
 	"github.com/SirRenix/minisforum-n5pro-fan-proxmox/ectest/internal/runner"
 	"github.com/SirRenix/minisforum-n5pro-fan-proxmox/ectest/internal/spec"
 	"github.com/SirRenix/minisforum-n5pro-fan-proxmox/go/n5/identity"
-	"github.com/SirRenix/minisforum-n5pro-fan-proxmox/go/n5/n5driver"
 )
 
 // Meta is the part of meta.json the report needs.
@@ -324,14 +323,6 @@ func checkGates(m Meta, smp []spec.Sample) []Mismatch {
 		}
 	}
 	return out
-}
-
-func chReg(ch int) int {
-	n, ok := n5driver.ChannelDCR(ch)
-	if !ok {
-		return 0
-	}
-	return n
 }
 
 func recomputeT1(m Meta, smp []spec.Sample, ev []Event) spec.Result {

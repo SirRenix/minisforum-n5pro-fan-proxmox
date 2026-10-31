@@ -112,3 +112,56 @@ func TestSumsSubdirsAndUTCName(t *testing.T) {
 		t.Fatalf("verify: %s", p)
 	}
 }
+
+// #15: WriteSums refuses a symlinked bundle directory, and an opened bundle
+// directory stays the one written to even if its path is swapped for a
+// symlink afterwards.
+func TestWriteSumsPinsTheDirectory(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	other := filepath.Join(base, "other")
+	for _, d := range []string{real, other} {
+		if err := os.Mkdir(d, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	os.WriteFile(filepath.Join(real, "a.txt"), []byte("a"), 0o640)
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteSums(link); err == nil {
+		t.Fatal("symlinked bundle directory accepted")
+	}
+	if _, err := os.Lstat(filepath.Join(real, Sums)); err == nil {
+		t.Fatal("SHA256SUMS written through the symlink")
+	}
+	r, err := OpenDir(real)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	moved := filepath.Join(base, "moved")
+	if err := os.Rename(real, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(other, real); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteSumsIn(r); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(other, Sums)); err == nil {
+		t.Fatal("SHA256SUMS followed the swapped path")
+	}
+	b, err := os.ReadFile(filepath.Join(moved, Sums))
+	if err != nil || !strings.Contains(string(b), "  a.txt\n") {
+		t.Fatalf("sums in the opened directory: %q, %v", b, err)
+	}
+	if p := VerifySums(moved); len(p) != 0 {
+		t.Fatalf("verify: %v", p)
+	}
+	if left, _ := filepath.Glob(filepath.Join(moved, ".*")); len(left) != 0 {
+		t.Fatalf("temporary files left: %v", left)
+	}
+}

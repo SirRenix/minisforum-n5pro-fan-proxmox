@@ -10,7 +10,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -287,6 +286,10 @@ func checkRestoreValue(v string) error {
 	return nil
 }
 
+// appendEventsSwap runs between Lstat and OpenFile in appendEvents; tests
+// swap events.log there.
+var appendEventsSwap = func() {}
+
 // appendEvents adds lines to a bundle's events.log and rewrites its
 // SHA256SUMS (the worker died before it could). Without a usable events.log
 // it says so on stderr: the restore lines are then only on the terminal.
@@ -295,12 +298,24 @@ func appendEvents(dir string, lines []string) {
 		return
 	}
 	// only an existing regular events.log, never through a symlink (a bundle
-	// from elsewhere must not make root append to another file)
+	// from elsewhere must not make root append to another file); every
+	// access, SHA256SUMS included, goes through one handle of the bundle
+	// directory (#15), so a writable parent cannot redirect it later
 	p := filepath.Join(dir, bundle.Events)
 	missing := func(why string) {
 		fmt.Fprintf(stderr, "note: %s %s: the restore lines are not recorded in the bundle\n", p, why)
 	}
-	lfi, err := os.Lstat(p)
+	root, err := bundle.OpenDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		missing("not found (" + err.Error() + ")")
+		return
+	}
+	if err != nil {
+		missing("not usable (" + err.Error() + ")")
+		return
+	}
+	defer root.Close()
+	lfi, err := root.Lstat(bundle.Events)
 	if err != nil {
 		missing("not found (" + err.Error() + ")")
 		return
@@ -309,11 +324,15 @@ func appendEvents(dir string, lines []string) {
 		missing("is not a regular file")
 		return
 	}
-	f, err := os.OpenFile(p, os.O_WRONLY|os.O_APPEND, 0)
+	appendEventsSwap()
+	f, err := root.OpenFile(bundle.Events, os.O_WRONLY|os.O_APPEND, 0)
 	if err != nil {
 		missing("not writable (" + err.Error() + ")")
 		return
 	}
+	// the opened file must be the regular file Lstat saw: an events.log
+	// swapped between Lstat and OpenFile (a new file, or a symlink to
+	// another file of the bundle, which os.Root follows) is not written
 	if fi, err := f.Stat(); err != nil || !os.SameFile(fi, lfi) {
 		f.Close()
 		missing("changed while opened")
@@ -324,7 +343,7 @@ func appendEvents(dir string, lines []string) {
 		_, _ = f.WriteString(red.String(l) + "\n")
 	}
 	f.Close()
-	_ = bundle.WriteSums(dir)
+	_ = bundle.WriteSumsIn(root)
 }
 
 func sortedIntKeys(v []int) []int {
@@ -357,9 +376,32 @@ func workerMain(args []string) int {
 		return runValidation(o, nil, "")
 	}
 	sp := os.Getenv(envState)
-	if sp == "" || !strings.HasSuffix(sp, "restore.json") {
-		fmt.Fprintf(stderr, "%s: worker without a state file path\n", o.test)
+	if err := checkWorkerState(sp); err != nil {
+		fmt.Fprintf(stderr, "%s: worker: %v\n", o.test, err)
 		return exitFail
 	}
 	return runValidation(o, lock, sp)
+}
+
+// checkWorkerState accepts only the state file the guardian hands down:
+// exactly statePath() (not any path ending in restore.json, #16), and no
+// state file there that still records an unrestored run (the guardian
+// removed a closed one before it started the worker).
+func checkWorkerState(sp string) error {
+	if sp == "" {
+		return errors.New("no state file path")
+	}
+	if want := statePath(); sp != want {
+		return fmt.Errorf("state file path %q is not %s", sp, want)
+	}
+	st, err := readState(sp)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
+		return fmt.Errorf("state file not readable: %w", err)
+	case stateOpen(st):
+		return fmt.Errorf("%s records an unrestored run (pid %d); run: n5-ectest restore", sp, st.PID)
+	}
+	return nil
 }

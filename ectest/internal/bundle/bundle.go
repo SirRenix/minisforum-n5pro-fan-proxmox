@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -188,30 +189,31 @@ func listFiles(dir string) ([]string, error) {
 	if _, err := os.ReadDir(dir); err != nil {
 		return nil, err
 	}
+	return listFS(os.DirFS(dir))
+}
+
+// listFS is listFiles on a file system rooted at the bundle directory.
+// Directory entries carry the Lstat type: symlinks are never listed.
+func listFS(fsys fs.FS) ([]string, error) {
 	var names []string
-	err := filepath.WalkDir(dir, func(p string, e os.DirEntry, err error) error {
+	err := fs.WalkDir(fsys, ".", func(p string, e fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if p == dir {
+		if p == "." {
 			return nil
 		}
 		if strings.HasPrefix(e.Name(), ".") {
 			if e.IsDir() {
-				return filepath.SkipDir
+				return fs.SkipDir
 			}
 			return nil
 		}
 		if !e.Type().IsRegular() {
 			return nil
 		}
-		rel, err := filepath.Rel(dir, p)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		if rel != Sums {
-			names = append(names, rel)
+		if p != Sums {
+			names = append(names, p)
 		}
 		return nil
 	})
@@ -232,22 +234,129 @@ func fileSum(p string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// OpenDir opens a bundle directory as an *os.Root: every later access is
+// relative to that one directory handle and cannot leave it through a
+// symlink or "..", even if the path or a parent is swapped afterwards
+// (BACKLOG #15). dir itself must be a real directory, not a symlink.
+func OpenDir(dir string) (*os.Root, error) {
+	lfi, err := os.Lstat(dir)
+	if err != nil {
+		return nil, err
+	}
+	if !lfi.IsDir() {
+		return nil, fmt.Errorf("bundle: %s is not a directory (symlinks are refused)", dir)
+	}
+	r, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	if fi, err := r.Stat("."); err != nil || !os.SameFile(fi, lfi) {
+		r.Close()
+		return nil, fmt.Errorf("bundle: %s changed while opened", dir)
+	}
+	return r, nil
+}
+
 // WriteSums (re)writes SHA256SUMS over every regular file below dir
-// (TESTSPEC §8: over all files).
+// (TESTSPEC §8: over all files). All file access goes through one
+// directory handle (OpenDir), so a writable parent cannot redirect the
+// reads or the write of SHA256SUMS through symlinks.
 func WriteSums(dir string) error {
-	names, err := listFiles(dir)
+	r, err := OpenDir(dir)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	return WriteSumsIn(r)
+}
+
+// WriteSumsIn is WriteSums on an open bundle directory.
+func WriteSumsIn(r *os.Root) error {
+	names, err := listFS(r.FS())
 	if err != nil {
 		return err
 	}
 	var b strings.Builder
 	for _, n := range names {
-		s, err := fileSum(filepath.Join(dir, filepath.FromSlash(n)))
+		s, err := rootFileSum(r, n)
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(&b, "%s  %s\n", s, n)
 	}
-	return WriteAtomic(filepath.Join(dir, Sums), []byte(b.String()), 0o640)
+	return writeAtomicIn(r, Sums, []byte(b.String()), 0o640)
+}
+
+// rootFileSum hashes name below r; the opened file must be the regular
+// file Lstat saw (no symlink swapped in after the listing).
+func rootFileSum(r *os.Root, name string) (string, error) {
+	lfi, err := r.Lstat(name)
+	if err != nil {
+		return "", err
+	}
+	if !lfi.Mode().IsRegular() {
+		return "", fmt.Errorf("bundle: %s is not a regular file", name)
+	}
+	f, err := r.Open(name)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !os.SameFile(fi, lfi) {
+		return "", fmt.Errorf("bundle: %s changed while opened", name)
+	}
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// writeAtomicIn is WriteAtomic relative to r: a new temporary file
+// (O_EXCL), fsync, rename over name (rename replaces a symlink, it does not
+// follow it), directory fsync.
+func writeAtomicIn(r *os.Root, name string, data []byte, mode os.FileMode) error {
+	var tmp string
+	var f *os.File
+	var err error
+	for i := 0; i < 100; i++ {
+		tmp = fmt.Sprintf(".%s.tmp%d-%d", name, os.Getpid(), time.Now().UnixNano()+int64(i))
+		f, err = r.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if !errors.Is(err, os.ErrExist) {
+			break
+		}
+	}
+	if err != nil {
+		return err
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			f.Close()
+			_ = r.Remove(tmp)
+		}
+	}()
+	if _, err := f.Write(data); err != nil {
+		return err
+	}
+	if err := f.Chmod(mode); err != nil {
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := r.Rename(tmp, name); err != nil {
+		return err
+	}
+	ok = true
+	if d, err := r.Open("."); err == nil {
+		_ = d.Sync()
+		d.Close()
+	}
+	return nil
 }
 
 // VerifySums checks SHA256SUMS; it returns one line per problem (missing

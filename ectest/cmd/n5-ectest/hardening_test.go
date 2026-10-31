@@ -165,3 +165,135 @@ func TestLogRunIDAndMailTo(t *testing.T) {
 		t.Fatalf("CommandMailer: %v", err)
 	}
 }
+
+// #15: appendEvents never follows a symlinked bundle directory (a parent
+// writable by others could swap the directory for a link elsewhere).
+func TestAppendEventsSymlinkedBundleDir(t *testing.T) {
+	e := newEnv(t, fake.Reference())
+	real := filepath.Join(e.out, "real")
+	if err := os.Mkdir(real, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(real, "events.log"), []byte("x\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(e.out, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	appendEvents(link, []string{"restore pwm3=auto ok"})
+	if b, _ := os.ReadFile(filepath.Join(real, "events.log")); string(b) != "x\n" {
+		t.Fatalf("appended through a symlinked directory: %q", b)
+	}
+	if _, err := os.Lstat(filepath.Join(real, "SHA256SUMS")); err == nil {
+		t.Fatal("SHA256SUMS written through a symlinked directory")
+	}
+	if !strings.Contains(e.stderr.String(), "not recorded in the bundle") {
+		t.Fatalf("stderr: %q", e.stderr)
+	}
+	// the real directory works
+	appendEvents(real, []string{"restore pwm3=auto ok"})
+	if b, _ := os.ReadFile(filepath.Join(real, "events.log")); !strings.Contains(string(b), "restore pwm3=auto ok") {
+		t.Fatalf("events.log: %q", b)
+	}
+	if _, err := os.Lstat(filepath.Join(real, "SHA256SUMS")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// #16: the worker takes only the state file path of the guardian, and no
+// state file that still records an unrestored run.
+func TestWorkerStatePathExact(t *testing.T) {
+	newEnv(t, fake.Reference())
+	sp := statePath()
+	for _, bad := range []string{
+		"",
+		filepath.Join(t.TempDir(), "restore.json"),
+		filepath.Dir(sp) + "/../n5-ectest/restore.json",
+		filepath.Dir(sp) + "//restore.json",
+		sp + "/",
+		"x" + sp,
+	} {
+		if err := checkWorkerState(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	if err := checkWorkerState(sp); err != nil {
+		t.Fatalf("no state file: %v", err)
+	}
+	st := &stateFile{Tool: toolName, PID: 4242, State: stateActive, Channels: map[string]string{"3": "140"}}
+	if err := st.write(sp); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkWorkerState(sp); err == nil || !strings.Contains(err.Error(), "unrestored") {
+		t.Fatalf("open state file: %v", err)
+	}
+	st.State = stateRestored
+	if err := st.write(sp); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkWorkerState(sp); err != nil {
+		t.Fatalf("restored state file: %v", err)
+	}
+	if err := os.WriteFile(sp, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkWorkerState(sp); err == nil {
+		t.Fatal("unreadable state file accepted")
+	}
+}
+
+// #15: an events.log swapped between Lstat and OpenFile (a new regular file,
+// or a symlink to another file of the bundle) is not written.
+func TestAppendEventsSwappedBetweenLstatAndOpen(t *testing.T) {
+	e := newEnv(t, fake.Reference())
+	old := appendEventsSwap
+	t.Cleanup(func() { appendEventsSwap = old })
+	for _, c := range []struct {
+		name string
+		swap func(dir string) error
+	}{
+		{"new file", func(dir string) error {
+			p := filepath.Join(dir, "events.log")
+			if err := os.Rename(p, p+".old"); err != nil {
+				return err
+			}
+			return os.WriteFile(p, []byte("x\n"), 0o640)
+		}},
+		{"symlink", func(dir string) error {
+			p := filepath.Join(dir, "events.log")
+			if err := os.Rename(p, p+".old"); err != nil {
+				return err
+			}
+			return os.Symlink("meta.json", p)
+		}},
+	} {
+		dir := filepath.Join(e.out, strings.ReplaceAll(c.name, " ", "-"))
+		if err := os.Mkdir(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range []string{"events.log", "meta.json"} {
+			if err := os.WriteFile(filepath.Join(dir, n), []byte("x\n"), 0o640); err != nil {
+				t.Fatal(err)
+			}
+		}
+		e.stderr.Reset()
+		appendEventsSwap = func() {
+			if err := c.swap(dir); err != nil {
+				t.Fatal(err)
+			}
+		}
+		appendEvents(dir, []string{"restore pwm3=auto ok"})
+		for _, n := range []string{"events.log", "events.log.old", "meta.json"} {
+			if b, _ := os.ReadFile(filepath.Join(dir, n)); string(b) != "x\n" {
+				t.Errorf("%s: %s written: %q", c.name, n, b)
+			}
+		}
+		if _, err := os.Lstat(filepath.Join(dir, "SHA256SUMS")); err == nil {
+			t.Errorf("%s: SHA256SUMS written", c.name)
+		}
+		if !strings.Contains(e.stderr.String(), "changed while opened") {
+			t.Errorf("%s: stderr %q", c.name, e.stderr)
+		}
+	}
+}
