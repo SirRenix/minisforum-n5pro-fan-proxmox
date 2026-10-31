@@ -96,9 +96,9 @@ cmd_check() {
 cmd_test() {
     need_root
     local c; c="$(chan "${1:-}")" || exit 1
-    [[ -x "$PROJECT/scripts/06-pwm-test.sh" ]] || { echo "Projekt nicht unter $PROJECT (N5_PROJECT setzen)" >&2; exit 1; }
+    [[ -x "$PROJECT/legacy/06-pwm-test.sh" ]] || { echo "Projekt nicht unter $PROJECT (N5_PROJECT setzen)" >&2; exit 1; }
     echo "Stoppe n5-fand fuer den Test ..."; systemctl stop n5-fand
-    ( cd "$PROJECT" && echo "TEST STARTEN" | ./scripts/06-pwm-test.sh "$c" ); rc=$?
+    ( cd "$PROJECT" && echo "TEST STARTEN" | ./legacy/06-pwm-test.sh "$c" ); rc=$?
     echo "Starte n5-fand ..."; systemctl start n5-fand
     exit $rc
 }

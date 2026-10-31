@@ -1,0 +1,494 @@
+Description: Bound every EC/PMC2 wait in time, resync after timeouts, log them
+ Upstream polled each IBF/OBF status 5000 times with usleep_range(20, 50):
+ 100-255 ms per wait, and one fanN_input read could hold the mutex for
+ about 12 s (48 waits), a pwm1/pwm4 write about 4.8 s (B1, C9; worst case
+ in befunde/raw/p3-b1-worstcase-20261009.txt). Timeouts were not logged,
+ so the long-term criterion K1/B11 could never trigger. After a timeout the
+ next transaction only drained without waiting; a late byte could pass as
+ a reading (B7 note).
+ .
+ Now:
+ - each status wait uses read_poll_timeout() with a ktime deadline of
+   100 ms (N5_WAIT_TIMEOUT_US). Rationale: the B1 limit per status wait
+   and the lower bound of upstream's loop; EC response times are not
+   measured, so the value is not made tighter. The status is read once
+   more after the deadline (no false timeout through preemption);
+ - all waits of one sysfs access share a budget of 1000 ms
+   (N5_ACCESS_BUDGET_MS), which also bounds the fan tearing retries
+   (still 4 attempts). Lock hold per access <= 1 s plus one resync sleep
+   (<= 20 ms) and scheduling delay, below the regulator's 2 s minimum
+   interval. The unbind/shutdown restore gives each touched channel its
+   own budget (<= 4 s for four channels);
+ - a timeout marks the interface (EC 0x62/0x66 or PMC2 0x68/0x6c); the
+   next transaction there first sleeps 10-20 ms (N5_RESYNC_US), drains
+   OBF and waits for IBF=0 before sending (B7);
+ - every timeout is logged with dev_warn_ratelimited: status port, status
+   byte, awaited flag, command and subcommand/address, and whether the
+   access budget was used up. Suppressed messages are counted by the
+   ratelimit ("callbacks suppressed"). The text contains "timeout", which
+   K1 of the F8b watcher matches (B11/K1 observable);
+ - a failed PWM write leaves the cached pwm/pwm_enable unchanged and
+   returns the error (E3, error reported; this was already the case for
+   pwmN and is kept for the new paths).
+ .
+ Decision, no automatic 255 write in the driver after a failed write:
+ after a timeout the EC is most likely not answering, so a second
+ multi-byte sequence would most likely fail as well and double the lock
+ hold; if it succeeded it would change the channel to a state nobody
+ requested, behind the regulator. The regulator already sets all channels
+ to 255 and alarms after two write errors (n5-fangov controller.go). E3's
+ "fan not left lower than before" is therefore not guaranteed by the
+ driver: a write that fails after some curve points were sent can leave
+ those points on the EC without the apply action; whether the EC uses
+ them before the action is unmeasured. E3 stays open for an operator
+ decision (accept the regulator mitigation, or a later patch).
+ .
+ Resolves B1, C9 (bounded and documented), B7, makes B11/K1 observable;
+ E3 partly (see above).
+ .
+ Tested: build/static analysis as 0001. Not tested on hardware: normal
+ operation without any timeout message (F8b run 2, 7 days), latency of
+ fanN_input/pwmN writes, behaviour with an EC that does not answer
+ (not injectable on the reference host without port I/O; F8c).
+Author: SirRenix <7069603+SirRenix@users.noreply.github.com>
+Origin: vendor
+Forwarded: no
+Last-Update: 2026-10-16
+---
+--- a/driver-prototype/minisforum_n5_it5571.c
++++ b/driver-prototype/minisforum_n5_it5571.c
+@@ -40,7 +40,10 @@
+ #include <linux/errno.h>
+ #include <linux/hwmon.h>
+ #include <linux/io.h>
++#include <linux/iopoll.h>
+ #include <linux/ioport.h>
++#include <linux/ktime.h>
++#include <linux/minmax.h>
+ #include <linux/module.h>
+ #include <linux/mutex.h>
+ #include <linux/platform_device.h>
+@@ -57,7 +60,30 @@
+ #define N5_PMC2_COMMAND         0xd5
+ #define N5_STATUS_OBF           BIT(0)
+ #define N5_STATUS_IBF           BIT(1)
+-#define N5_WAIT_LOOPS           5000
++
++/*
++ * Time bounds of the EC/PMC2 handshake (review items B1, C9).
++ *
++ * N5_WAIT_TIMEOUT_US: one IBF/OBF status wait. Upstream polled 5000 times
++ * with usleep_range(20, 50), i.e. 100-255 ms plus scheduling delay; 100 ms
++ * is the review limit per status wait and upstream's lower bound. EC
++ * response times are not measured; every timeout is logged, so the
++ * long-term run (B11) shows whether the value is too tight.
++ *
++ * N5_ACCESS_BUDGET_MS: all waits of one sysfs access together (fanN_input
++ * with its tearing retries: up to 12 transactions; pwm1/pwm4 write: 5).
++ * The mutex is held at most this long plus one resync sleep (at most
++ * 2 * N5_RESYNC_US) and scheduling delay, below the 2 s minimum interval
++ * of the regulator. The restore at unbind/shutdown gives each touched
++ * channel its own budget (at most 4 s for all four).
++ *
++ * N5_RESYNC_US: after a timeout the next transaction on that interface
++ * first gives a late EC byte this long to arrive and drains it.
++ */
++#define N5_WAIT_TIMEOUT_US      100000
++#define N5_ACCESS_BUDGET_MS     1000
++#define N5_RESYNC_US            10000
++#define N5_POLL_US              50
+ 
+ #define N5_PWM_CHANNELS         4
+ #define N5_FAN_CHANNELS         4
+@@ -124,6 +150,11 @@
+ 	/* Set under lock once teardown/shutdown started: no more port I/O. */
+ 	bool dead;
+ 	bool write_enabled;
++	/* End of the time budget of the current access (under lock). */
++	ktime_t deadline;
++	/* A wait on this interface timed out; resync before the next use. */
++	bool resync_ec;
++	bool resync_pmc2;
+ };
+ 
+ static struct platform_device *n5_pdev;
+@@ -147,17 +178,48 @@
+ 	"PCIe Fan (no tach)",
+ };
+ 
+-static int n5_wait_status(unsigned short status_port, u8 mask, bool set)
++/* Caller holds data->lock. Starts the time budget of one sysfs access. */
++static void n5_access_begin(struct n5_data *data)
+ {
+-	int i;
++	data->deadline = ktime_add_ms(ktime_get(), N5_ACCESS_BUDGET_MS);
++}
+ 
+-	for (i = 0; i < N5_WAIT_LOOPS; i++) {
+-		if (!!(inb(status_port) & mask) == set)
+-			return 0;
+-		usleep_range(20, 50);
+-	}
++/*
++ * Caller holds data->lock. Polls until (status & mask) is set/clear, for at
++ * most N5_WAIT_TIMEOUT_US and never past the access deadline. The status is
++ * read once more after the deadline, so preemption cannot cause a false
++ * timeout. A timeout marks the interface for resynchronisation.
++ */
++static int n5_wait_status(struct n5_data *data, unsigned short status_port,
++			  u8 mask, bool set, u8 cmd, u8 arg)
++{
++	s64 left_us = ktime_us_delta(data->deadline, ktime_get());
++	u64 timeout_us = N5_WAIT_TIMEOUT_US;
++	bool budget = false;
++	u8 status;
++	int ret;
+ 
+-	return -ETIMEDOUT;
++	if (left_us < (s64)timeout_us) {
++		/* read_poll_timeout() treats 0 as "no timeout". */
++		timeout_us = max_t(s64, left_us, 1);
++		budget = true;
++	}
++	ret = read_poll_timeout(inb, status, !!(status & mask) == set,
++				N5_POLL_US, timeout_us, false, status_port);
++	if (!ret)
++		return 0;
++
++	if (status_port == N5_PMC2_STATUS_COMMAND)
++		data->resync_pmc2 = true;
++	else
++		data->resync_ec = true;
++	dev_warn_ratelimited(data->dev,
++			     "EC timeout: port 0x%02x status 0x%02x waiting for %s=%d, command 0x%02x 0x%02x%s\n",
++			     status_port, status,
++			     mask == N5_STATUS_OBF ? "OBF" : "IBF", set,
++			     cmd, arg,
++			     budget ? " (access budget used up)" : "");
++	return ret;
+ }
+ 
+ static void n5_drain_output(unsigned short data_port,
+@@ -172,35 +234,58 @@
+ 	}
+ }
+ 
++/*
++ * Caller holds data->lock. Start of every transaction: discard stale output
++ * and wait until the EC accepts input. After a timeout on this interface the
++ * EC may still deliver a late byte; wait N5_RESYNC_US first so that byte is
++ * drained here and not taken as the answer to the next command (B7).
++ */
++static int n5_sync(struct n5_data *data, unsigned short data_port,
++		   unsigned short status_port, bool *resync, u8 cmd, u8 arg)
++{
++	int ret;
++
++	if (*resync)
++		usleep_range(N5_RESYNC_US, 2 * N5_RESYNC_US);
++	n5_drain_output(data_port, status_port);
++	ret = n5_wait_status(data, status_port, N5_STATUS_IBF, false, cmd, arg);
++	if (!ret)
++		*resync = false;
++	return ret;
++}
++
+ /* Caller holds data->lock. */
+-static int n5_pmc2_begin(u8 subcommand)
++static int n5_pmc2_begin(struct n5_data *data, u8 subcommand)
+ {
+ 	int ret;
+ 
+-	n5_drain_output(N5_PMC2_DATA, N5_PMC2_STATUS_COMMAND);
+-	ret = n5_wait_status(N5_PMC2_STATUS_COMMAND, N5_STATUS_IBF, false);
++	ret = n5_sync(data, N5_PMC2_DATA, N5_PMC2_STATUS_COMMAND,
++		      &data->resync_pmc2, N5_PMC2_COMMAND, subcommand);
+ 	if (ret)
+ 		return ret;
+ 
+ 	outb(N5_PMC2_COMMAND, N5_PMC2_STATUS_COMMAND);
+-	ret = n5_wait_status(N5_PMC2_STATUS_COMMAND, N5_STATUS_IBF, false);
++	ret = n5_wait_status(data, N5_PMC2_STATUS_COMMAND, N5_STATUS_IBF,
++			     false, N5_PMC2_COMMAND, subcommand);
+ 	if (ret)
+ 		return ret;
+ 
+ 	outb(subcommand, N5_PMC2_DATA);
+-	return n5_wait_status(N5_PMC2_STATUS_COMMAND, N5_STATUS_IBF, false);
++	return n5_wait_status(data, N5_PMC2_STATUS_COMMAND, N5_STATUS_IBF,
++			      false, N5_PMC2_COMMAND, subcommand);
+ }
+ 
+ /* Caller holds data->lock. */
+-static int n5_pmc2_read(u8 subcommand, u8 *value)
++static int n5_pmc2_read(struct n5_data *data, u8 subcommand, u8 *value)
+ {
+ 	int ret;
+ 
+-	ret = n5_pmc2_begin(subcommand);
++	ret = n5_pmc2_begin(data, subcommand);
+ 	if (ret)
+ 		return ret;
+ 
+-	ret = n5_wait_status(N5_PMC2_STATUS_COMMAND, N5_STATUS_OBF, true);
++	ret = n5_wait_status(data, N5_PMC2_STATUS_COMMAND, N5_STATUS_OBF,
++			     true, N5_PMC2_COMMAND, subcommand);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -209,41 +294,44 @@
+ }
+ 
+ /* Caller holds data->lock. */
+-static int n5_pmc2_write(u8 subcommand, u8 value)
++static int n5_pmc2_write(struct n5_data *data, u8 subcommand, u8 value)
+ {
+ 	int ret;
+ 
+-	ret = n5_pmc2_begin(subcommand);
++	ret = n5_pmc2_begin(data, subcommand);
+ 	if (ret)
+ 		return ret;
+ 
+ 	outb(value, N5_PMC2_DATA);
+-	return n5_wait_status(N5_PMC2_STATUS_COMMAND, N5_STATUS_IBF, false);
++	return n5_wait_status(data, N5_PMC2_STATUS_COMMAND, N5_STATUS_IBF,
++			      false, N5_PMC2_COMMAND, subcommand);
+ }
+ 
+ /* Caller holds data->lock. */
+-static int n5_pmc2_action(u8 subcommand)
++static int n5_pmc2_action(struct n5_data *data, u8 subcommand)
+ {
+-	return n5_pmc2_begin(subcommand);
++	return n5_pmc2_begin(data, subcommand);
+ }
+ 
+ /* Caller holds data->lock. */
+-static int n5_ec_read_locked(u8 address, u8 *value)
++static int n5_ec_read_locked(struct n5_data *data, u8 address, u8 *value)
+ {
+ 	int ret;
+ 
+-	n5_drain_output(N5_EC_DATA, N5_EC_STATUS_COMMAND);
+-	ret = n5_wait_status(N5_EC_STATUS_COMMAND, N5_STATUS_IBF, false);
++	ret = n5_sync(data, N5_EC_DATA, N5_EC_STATUS_COMMAND, &data->resync_ec,
++		      N5_EC_READ_COMMAND, address);
+ 	if (ret)
+ 		return ret;
+ 
+ 	outb(N5_EC_READ_COMMAND, N5_EC_STATUS_COMMAND);
+-	ret = n5_wait_status(N5_EC_STATUS_COMMAND, N5_STATUS_IBF, false);
++	ret = n5_wait_status(data, N5_EC_STATUS_COMMAND, N5_STATUS_IBF, false,
++			     N5_EC_READ_COMMAND, address);
+ 	if (ret)
+ 		return ret;
+ 
+ 	outb(address, N5_EC_DATA);
+-	ret = n5_wait_status(N5_EC_STATUS_COMMAND, N5_STATUS_OBF, true);
++	ret = n5_wait_status(data, N5_EC_STATUS_COMMAND, N5_STATUS_OBF, true,
++			     N5_EC_READ_COMMAND, address);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -251,7 +339,11 @@
+ 	return 0;
+ }
+ 
+-static int n5_read_fan_locked(int channel, long *rpm)
++/*
++ * Caller holds data->lock. Retries a torn 16-bit read (high byte changed)
++ * up to four times; all attempts together stay within the access budget.
++ */
++static int n5_read_fan_locked(struct n5_data *data, int channel, long *rpm)
+ {
+ 	static const u8 low_command[] = { 0x18, 0x16, 0x14 };
+ 	static const u8 high_command[] = { 0x19, 0x17, 0x15 };
+@@ -265,13 +357,13 @@
+ 	}
+ 
+ 	for (attempt = 0; attempt < 4; attempt++) {
+-		ret = n5_pmc2_read(high_command[channel], &high_before);
++		ret = n5_pmc2_read(data, high_command[channel], &high_before);
+ 		if (ret)
+ 			return ret;
+-		ret = n5_pmc2_read(low_command[channel], &low);
++		ret = n5_pmc2_read(data, low_command[channel], &low);
+ 		if (ret)
+ 			return ret;
+-		ret = n5_pmc2_read(high_command[channel], &high_after);
++		ret = n5_pmc2_read(data, high_command[channel], &high_after);
+ 		if (ret)
+ 			return ret;
+ 		if (high_before == high_after) {
+@@ -283,8 +375,11 @@
+ 	return -EAGAIN;
+ }
+ 
+-/* Caller holds data->lock. */
+-static int n5_set_pwm_locked(int channel, u8 pwm)
++/*
++ * Caller holds data->lock. Stops at the first failed step; the EC may then
++ * hold a partly written curve (CPU/PCIe) without the apply action.
++ */
++static int n5_set_pwm_locked(struct n5_data *data, int channel, u8 pwm)
+ {
+ 	static const u8 cpu_curve_pwm[] = { 0x23, 0x25, 0x27, 0x29 };
+ 	static const u8 pcie_curve_pwm[] = { 0x33, 0x35, 0x37, 0x39 };
+@@ -294,39 +389,39 @@
+ 	case 0:
+ 		/* Override all four CPU fan-curve output points. */
+ 		for (i = 0; i < ARRAY_SIZE(cpu_curve_pwm); i++) {
+-			ret = n5_pmc2_write(cpu_curve_pwm[i], pwm);
++			ret = n5_pmc2_write(data, cpu_curve_pwm[i], pwm);
+ 			if (ret)
+ 				return ret;
+ 		}
+-		return n5_pmc2_action(0x20);
++		return n5_pmc2_action(data, 0x20);
+ 	case 1:
+-		ret = n5_pmc2_write(0x2f, pwm);
+-		return ret ? ret : n5_pmc2_action(0x2d);
++		ret = n5_pmc2_write(data, 0x2f, pwm);
++		return ret ? ret : n5_pmc2_action(data, 0x2d);
+ 	case 2:
+ 		/* One logical HDD control drives DCR3 and DCR4 together. */
+-		ret = n5_pmc2_write(0x2c, pwm);
+-		return ret ? ret : n5_pmc2_action(0x2a);
++		ret = n5_pmc2_write(data, 0x2c, pwm);
++		return ret ? ret : n5_pmc2_action(data, 0x2a);
+ 	case 3:
+ 		/* Override all four PCIe fan-curve output points. */
+ 		for (i = 0; i < ARRAY_SIZE(pcie_curve_pwm); i++) {
+-			ret = n5_pmc2_write(pcie_curve_pwm[i], pwm);
++			ret = n5_pmc2_write(data, pcie_curve_pwm[i], pwm);
+ 			if (ret)
+ 				return ret;
+ 		}
+-		return n5_pmc2_action(0x30);
++		return n5_pmc2_action(data, 0x30);
+ 	default:
+ 		return -EINVAL;
+ 	}
+ }
+ 
+ /* Caller holds data->lock. */
+-static int n5_set_auto_locked(int channel)
++static int n5_set_auto_locked(struct n5_data *data, int channel)
+ {
+ 	static const u8 auto_command[N5_PWM_CHANNELS] = { 0x21, 0x2e, 0x2b, 0x31 };
+ 
+ 	if (channel < 0 || channel >= N5_PWM_CHANNELS)
+ 		return -EINVAL;
+-	return n5_pmc2_action(auto_command[channel]);
++	return n5_pmc2_action(data, auto_command[channel]);
+ }
+ 
+ /*
+@@ -335,11 +430,11 @@
+  * the EC has no automatic for DCR5, after 0x31 it keeps the last duty,
+  * which may be 0 (befunde BEFUNDE.md). Same value as .shutdown (0006).
+  */
+-static int n5_handback_locked(int channel)
++static int n5_handback_locked(struct n5_data *data, int channel)
+ {
+ 	if (channel == N5_PWM_PCIE)
+-		return n5_set_pwm_locked(channel, 255);
+-	return n5_set_auto_locked(channel);
++		return n5_set_pwm_locked(data, channel, 255);
++	return n5_set_auto_locked(data, channel);
+ }
+ 
+ /* Caller holds data->lock and the muxed region N5_SIO_INDEX/N5_SIO_DATA. */
+@@ -491,10 +586,13 @@
+ 		if (attr != hwmon_temp_input || channel >= N5_TEMP_CHANNELS)
+ 			return -EOPNOTSUPP;
+ 		mutex_lock(&data->lock);
+-		if (data->dead)
++		if (data->dead) {
+ 			ret = -ENODEV;
+-		else
+-			ret = n5_ec_read_locked(n5_temp_reg[channel], &temp);
++		} else {
++			n5_access_begin(data);
++			ret = n5_ec_read_locked(data, n5_temp_reg[channel],
++						&temp);
++		}
+ 		mutex_unlock(&data->lock);
+ 		if (ret)
+ 			return ret;
+@@ -512,10 +610,12 @@
+ 		if (attr != hwmon_fan_input)
+ 			return -EOPNOTSUPP;
+ 		mutex_lock(&data->lock);
+-		if (data->dead)
++		if (data->dead) {
+ 			ret = -ENODEV;
+-		else
+-			ret = n5_read_fan_locked(channel, value);
++		} else {
++			n5_access_begin(data);
++			ret = n5_read_fan_locked(data, channel, value);
++		}
+ 		mutex_unlock(&data->lock);
+ 		return ret;
+ 	case hwmon_pwm:
+@@ -580,6 +680,7 @@
+ 		ret = -ENODEV;
+ 		goto out;
+ 	}
++	n5_access_begin(data);
+ 	if (attr == hwmon_pwm_input) {
+ 		if (value < 0 || value > 255) {
+ 			ret = -EINVAL;
+@@ -591,7 +692,12 @@
+ 		}
+ 		/* A failed multi-register update may still have changed the EC. */
+ 		data->pwm_touched[channel] = true;
+-		ret = n5_set_pwm_locked(channel, value);
++		ret = n5_set_pwm_locked(data, channel, value);
++		/*
++		 * On failure the cache keeps the last confirmed value and the
++		 * error goes to the caller; the driver does not write 255 on
++		 * its own (driver/patches/0005-timeout-budget.patch).
++		 */
+ 		if (!ret)
+ 			data->pwm[channel] = value;
+ 	} else if (attr == hwmon_pwm_enable) {
+@@ -599,7 +705,7 @@
+ 		case 0:
+ 			/* Full-speed fail-safe mode. */
+ 			data->pwm_touched[channel] = true;
+-			ret = n5_set_pwm_locked(channel, 255);
++			ret = n5_set_pwm_locked(data, channel, 255);
+ 			if (!ret) {
+ 				data->pwm[channel] = 255;
+ 				data->pwm_enable[channel] = 0;
+@@ -610,7 +716,7 @@
+ 			/* Entering manual mode starts at full speed for safety. */
+ 			if (data->pwm_enable[channel] != 1) {
+ 				data->pwm_touched[channel] = true;
+-				ret = n5_set_pwm_locked(channel, 255);
++				ret = n5_set_pwm_locked(data, channel, 255);
+ 				if (!ret)
+ 					data->pwm[channel] = 255;
+ 			}
+@@ -621,7 +727,7 @@
+ 			break;
+ 		case 2:
+ 			data->pwm_touched[channel] = true;
+-			ret = n5_handback_locked(channel);
++			ret = n5_handback_locked(data, channel);
+ 			if (!ret) {
+ 				data->pwm_enable[channel] = 2;
+ 				/*
+@@ -775,7 +881,8 @@
+ 	for (i = 0; i < N5_PWM_CHANNELS; i++) {
+ 		if (!data->pwm_touched[i])
+ 			continue;
+-		ret = n5_handback_locked(i);
++		n5_access_begin(data);
++		ret = n5_handback_locked(data, i);
+ 		if (ret) {
+ 			/* Kept for a later bind of this module (pwm_unknown). */
+ 			set_bit(i, &n5_unrestored);

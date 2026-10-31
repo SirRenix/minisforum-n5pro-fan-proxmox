@@ -1,11 +1,17 @@
 #!/bin/sh
 # postinst of minisforum-n5-it5571-dkms: take over a hand installation
 # (deploy/install.sh), register the source with DKMS, build and install the
-# module for every kernel that has headers, load it once when it is not.
+# module for every kernel that has headers, load it once when it is not, then
+# start the regulator units the prerm stopped (upgrade order: stop regulator,
+# dkms remove, dkms install, load, start regulator).
+# abort-*: the prerm already ran 'dkms remove' for this version; the module is
+# registered and built again (not loaded) and the regulator started again.
 set -e
 PKG=minisforum-n5-it5571
 VER=@VERSION@
 MOD=minisforum_n5_it5571
+# units the prerm stopped before 'dkms remove' (upgrade, deconfigure)
+STATE=/run/$PKG-dkms.restart
 # sha256 of the two /etc files deploy/install.sh wrote before this package
 # existed; an identical copy is removed (the /usr/lib file applies), an
 # edited one is kept (it overrides the /usr/lib file).
@@ -14,10 +20,49 @@ LEGACY_LOAD=f346cbe2a9cea0372632c7aac1b01db4f54392f46a09f9dd6b1e54cbd076729e
 
 say() { echo "$PKG: $*"; }
 
+loaded() { lsmod 2>/dev/null | grep -q "^$MOD "; }
+
+# restart_regulators <loaded>: start the units the prerm stopped ($STATE)
+# when the module is loaded (1); without it a regulator only runs into its
+# sensor alarm. The record is removed either way.
+restart_regulators() {
+	[ -f "$STATE" ] || return 0
+	if [ "$1" != 1 ]; then
+		say "not starting $(tr '\n' ' ' <"$STATE")- module not loaded" >&2
+	elif command -v systemctl >/dev/null 2>&1; then
+		while IFS= read -r u; do
+			case "$u" in
+			n5-fangov.service | n5-fand.service) ;;
+			*) continue ;;
+			esac
+			if systemctl start "$u"; then
+				say "started $u again"
+			else
+				say "WARNING: could not start $u - check 'systemctl status $u'" >&2
+			fi
+		done <"$STATE"
+	fi
+	rm -f "$STATE"
+}
+
+# on_exit: a failure before the regular restart (dkms add, mktemp, the
+# hand-install takeover, ...) must not leave the regulator stopped without
+# a word; restart_regulators removes $STATE, so after a regular restart this
+# is a no-op.
+# shellcheck disable=SC2329 # invoked by the EXIT trap
+on_exit() {
+	rc=$?
+	if [ "$rc" -ne 0 ] && [ -f "$STATE" ]; then
+		say "WARNING: $1 failed (exit $rc) before the regulator was started again" >&2
+		if loaded; then restart_regulators 1; else restart_regulators 0; fi
+	fi
+	return "$rc"
+}
+
 adopt_hand_install() {
-	for d in /usr/src/$PKG-*; do
+	for d in /usr/src/"$PKG"-*; do
 		[ -d "$d" ] || continue
-		v=${d#/usr/src/$PKG-}
+		v=${d#/usr/src/"$PKG"-}
 		[ "$v" = "$VER" ] && continue
 		dpkg-query -S "$d" >/dev/null 2>&1 && continue # another package owns it
 		say "taking over the hand-installed DKMS source $v (deploy/install.sh)"
@@ -25,6 +70,7 @@ adopt_hand_install() {
 		rm -rf "$d"
 	done
 	for pair in "/etc/modprobe.d/$PKG.conf $LEGACY_MODPROBE" "/etc/modules-load.d/$PKG.conf $LEGACY_LOAD"; do
+		# shellcheck disable=SC2086 # split "path sha256" on purpose
 		set -- $pair
 		[ -f "$1" ] || continue
 		if [ "$(sha256sum "$1" | cut -d' ' -f1)" = "$2" ]; then
@@ -36,9 +82,10 @@ adopt_hand_install() {
 	done
 }
 
-case "$1" in
-configure)
-	adopt_hand_install
+# build_all: register this version with DKMS and build/install it for every
+# kernel with headers. Sets failed_running=1 when the running kernel's build
+# failed. Nothing is loaded here.
+build_all() {
 	dkms status -m $PKG -v $VER 2>/dev/null | grep -q . || dkms add -m $PKG -v $VER >/dev/null
 	running=$(uname -r)
 	failed_running=0
@@ -61,14 +108,41 @@ configure)
 		fi
 		rm -f "$log"
 	done
-	[ $failed_running -eq 0 ] || exit 1
-	if lsmod 2>/dev/null | grep -q "^$MOD "; then
-		say "module already loaded; the new build takes effect after 'modprobe -r $MOD && modprobe $MOD' (stop the regulator first) or the next boot"
+}
+
+case "$1" in
+configure)
+	trap 'on_exit configure' EXIT
+	adopt_hand_install
+	build_all
+	if [ $failed_running -ne 0 ]; then
+		# the loaded module is unchanged; the regulator can run on it
+		if loaded; then restart_regulators 1; else restart_regulators 0; fi
+		exit 1
+	fi
+	# a loaded module is never reloaded here: the new build takes effect
+	# after a manual reload or the next boot
+	if loaded; then
+		say "module already loaded; the new build takes effect after 'systemctl stop n5-fangov; modprobe -r $MOD; modprobe $MOD; systemctl start n5-fangov' or the next boot"
+		restart_regulators 1
 	elif modprobe $MOD 2>/dev/null; then
 		say "module loaded"
+		restart_regulators 1
 	else
 		say "module not loaded now (no matching N5 Pro, or no permission here); it loads at boot via /usr/lib/modules-load.d/$PKG.conf"
+		restart_regulators 0
 	fi
+	;;
+abort-upgrade | abort-deconfigure | abort-remove)
+	# the prerm stopped the regulator and ran 'dkms remove' for this
+	# version; the operation was rolled back, so this version stays
+	# installed and needs its module again (built, not loaded: a loaded
+	# module is untouched by dkms remove)
+	trap 'on_exit "$1"' EXIT
+	say "$1: registering and building $VER again"
+	build_all
+	[ $failed_running -eq 0 ] || say "WARNING: no module for the running kernel after $1; the driver is missing after the next boot" >&2
+	if loaded; then restart_regulators 1; else restart_regulators 0; fi
 	;;
 esac
 exit 0

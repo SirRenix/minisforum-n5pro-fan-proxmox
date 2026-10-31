@@ -1,0 +1,155 @@
+Description: hwmon ABI: drop fanN_min, report EC sentinels as -ENODATA, hide fan4
+ fanN_min was always writable (0644), also in read-only mode, without lock
+ and without any effect (D6). It is removed (HWMON_F_MIN and the cache).
+ .
+ A tachometer value of 0xffff was reported as 65535 RPM (D8). It is now
+ -ENODATA; 0 stays a valid reading (fan stopped). The temperature
+ sentinels 0x00 and 0xff (already -ENODATA upstream) are named constants.
+ .
+ fan4 (PCIe, DCR5) has no tachometer input; upstream returned a constant
+ 0 RPM, the same value as a stopped fan, distinguishable only by the label
+ (D12). fan4_input and fan4_label are now hidden; pwm4/pwm4_enable stay.
+ n5-fangov does not read fan4 (fixed channel table, HasTach=false) and
+ the F8b watcher samples fan1-fan3 only.
+ .
+ Resolves D6, D8, D12 (hidden attribute).
+ .
+ Tested: build/static analysis as 0001. Not tested on hardware: sysfs
+ listing (no fanN_min, no fan4_*), sensors output, n5-fangov start.
+Author: SirRenix <7069603+SirRenix@users.noreply.github.com>
+Origin: vendor
+Forwarded: no
+Last-Update: 2026-10-09
+---
+--- a/driver-prototype/minisforum_n5_it5571.c
++++ b/driver-prototype/minisforum_n5_it5571.c
+@@ -90,6 +90,13 @@
+ #define N5_TEMP_CHANNELS        4
+ /* pwm4, PCIe (DCR5): the EC has no automatic for it, hand-back is 255. */
+ #define N5_PWM_PCIE             3
++/* fan1-fan3 have a tachometer; fan4 (PCIe, DCR5) has none. */
++#define N5_TACH_CHANNELS        3
++
++/* EC sentinel values (review item D8), reported as -ENODATA. */
++#define N5_TEMP_NONE            0x00
++#define N5_TEMP_INVALID         0xff
++#define N5_TACH_INVALID         0xffff
+ 
+ /*
+  * Writes are gated on the system vendor in addition to the product/board
+@@ -141,7 +148,6 @@
+ 	struct device *hwmon_dev;
+ 	struct dentry *debugfs;
+ 	struct mutex lock;
+-	long fan_min[N5_FAN_CHANNELS];
+ 	u8 pwm[N5_PWM_CHANNELS];
+ 	u8 pwm_enable[N5_PWM_CHANNELS];
+ 	bool pwm_touched[N5_PWM_CHANNELS];
+@@ -351,10 +357,8 @@
+ 	int attempt, ret;
+ 
+ 	/* The N5 firmware exposes DCR5 for PCIe PWM, but no TACH4 input. */
+-	if (channel == 3) {
+-		*rpm = 0;
+-		return 0;
+-	}
++	if (channel >= N5_TACH_CHANNELS)
++		return -EOPNOTSUPP;
+ 
+ 	for (attempt = 0; attempt < 4; attempt++) {
+ 		ret = n5_pmc2_read(data, high_command[channel], &high_before);
+@@ -549,12 +553,13 @@
+ 			return 0;
+ 		}
+ 	case hwmon_fan:
++		/* fan4 (PCIe) has no tachometer input: not exposed. */
++		if (channel >= N5_TACH_CHANNELS)
++			return 0;
+ 		switch (attr) {
+ 		case hwmon_fan_input:
+ 		case hwmon_fan_label:
+ 			return 0444;
+-		case hwmon_fan_min:
+-			return 0644;
+ 		default:
+ 			return 0;
+ 		}
+@@ -596,18 +601,13 @@
+ 		mutex_unlock(&data->lock);
+ 		if (ret)
+ 			return ret;
+-		if (temp == 0 || temp == 0xff)
++		/* EC sentinels 0x00 and 0xff: no sensor value. */
++		if (temp == N5_TEMP_NONE || temp == N5_TEMP_INVALID)
+ 			return -ENODATA;
+ 		*value = (long)(s8)temp * 1000;
+ 		return 0;
+ 	case hwmon_fan:
+-		if (channel >= N5_FAN_CHANNELS)
+-			return -EOPNOTSUPP;
+-		if (attr == hwmon_fan_min) {
+-			*value = data->fan_min[channel];
+-			return 0;
+-		}
+-		if (attr != hwmon_fan_input)
++		if (channel >= N5_TACH_CHANNELS || attr != hwmon_fan_input)
+ 			return -EOPNOTSUPP;
+ 		mutex_lock(&data->lock);
+ 		if (data->dead) {
+@@ -617,6 +617,9 @@
+ 			ret = n5_read_fan_locked(data, channel, value);
+ 		}
+ 		mutex_unlock(&data->lock);
++		/* 0xffff: no valid tachometer reading (0 = fan stopped). */
++		if (!ret && *value == N5_TACH_INVALID)
++			return -ENODATA;
+ 		return ret;
+ 	case hwmon_pwm:
+ 		if (channel >= N5_PWM_CHANNELS)
+@@ -649,7 +652,7 @@
+ 		return 0;
+ 	}
+ 	if (type == hwmon_fan && attr == hwmon_fan_label &&
+-	    channel < N5_FAN_CHANNELS) {
++	    channel < N5_TACH_CHANNELS) {
+ 		*str = n5_fan_label[channel];
+ 		return 0;
+ 	}
+@@ -662,13 +665,6 @@
+ 	struct n5_data *data = dev_get_drvdata(dev);
+ 	int ret = 0;
+ 
+-	if (type == hwmon_fan && attr == hwmon_fan_min) {
+-		if (channel >= N5_FAN_CHANNELS || value < 0 || value > 65535)
+-			return -EINVAL;
+-		data->fan_min[channel] = value;
+-		return 0;
+-	}
+-
+ 	if (type != hwmon_pwm || channel >= N5_PWM_CHANNELS)
+ 		return -EOPNOTSUPP;
+ 	if (!data->write_enabled)
+@@ -768,10 +764,10 @@
+ 		HWMON_T_INPUT | HWMON_T_LABEL,
+ 		HWMON_T_INPUT | HWMON_T_LABEL),
+ 	HWMON_CHANNEL_INFO(fan,
+-		HWMON_F_INPUT | HWMON_F_MIN | HWMON_F_LABEL,
+-		HWMON_F_INPUT | HWMON_F_MIN | HWMON_F_LABEL,
+-		HWMON_F_INPUT | HWMON_F_MIN | HWMON_F_LABEL,
+-		HWMON_F_INPUT | HWMON_F_MIN | HWMON_F_LABEL),
++		HWMON_F_INPUT | HWMON_F_LABEL,
++		HWMON_F_INPUT | HWMON_F_LABEL,
++		HWMON_F_INPUT | HWMON_F_LABEL,
++		HWMON_F_INPUT | HWMON_F_LABEL),
+ 	HWMON_CHANNEL_INFO(pwm,
+ 		HWMON_PWM_INPUT | HWMON_PWM_ENABLE,
+ 		HWMON_PWM_INPUT | HWMON_PWM_ENABLE,
+@@ -1015,7 +1011,7 @@
+ 			 experimental_write ? " (experimental_write=1 ignored)" : "");
+ 	}
+ 	dev_info(&pdev->dev,
+-		 "registered 4 fan and 4 temperature channels%s\n",
++		 "registered 3 fan and 4 temperature channels%s\n",
+ 		 data->write_enabled ? " plus 4 writable PWM channels" : "");
+ 	return 0;
+ }
