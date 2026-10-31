@@ -4,7 +4,7 @@ Host: n5host, Kernel 7.0.14-20-pve, BIOS 1.05 (03/31/2026)
 Treiberquelle: driver/upstream/driver-prototype/minisforum_n5_it5571.c
   SHA256 E8676ED3820C3DB72B6F9821F0A0AF12245EB6290380817D390952E67CB25A74
 Volle Tabellen/DSL NICHT im Repo (Maschinen-Firmware), nur im Session-Scratchpad.
-Disassembler: iasl 20250404 (acpica-tools, debian:trixie-slim, Container auf debdocker, danach geloescht)
+Disassembler: iasl 20250404 (acpica-tools, debian:trixie-slim, Container auf einem Build-Host, danach geloescht)
 
 == 1. Befehle (n5host, nur lesend) ==
 ls -la /sys/firmware/acpi/tables/ /sys/firmware/acpi/tables/dynamic
@@ -13,7 +13,7 @@ grep 006x /proc/ioports
 journalctl -k -b | grep -iE "ACPI: EC|PNP0C09|_GLK|global lock|ECDT|EC0"
 ls /sys/bus/acpi/drivers/ec
 sudo cat /sys/firmware/acpi/tables/{DSDT,SSDT*,FACS,FACP} > ~/acpi-p3/  -> tar -> scp -> rm -rf auf n5host (geprueft: 0 Reste)
-debdocker: docker run --rm debian:trixie-slim; iasl -e SSDT*.dat -d DSDT.dat; je SSDT: iasl -e DSDT.dat -d SSDTn.dat;
+Build-Host: docker run --rm debian:trixie-slim; iasl -e SSDT*.dat -d DSDT.dat; je SSDT: iasl -e DSDT.dat -d SSDTn.dat;
   iasl -d FACS.dat FACP.dat; /tmp-Reste + Image entfernt.
 
 Tabellen: DSDT (30648 B), SSDT1..SSDT19, FACS, FACP, APIC, HPET, MCFG, IVRS, PCCT, VFCT, WSMT, ... ; KEINE ECDT; dynamic/ leer.

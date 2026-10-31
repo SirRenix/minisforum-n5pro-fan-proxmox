@@ -1,0 +1,16 @@
+tool: retro-k1-warning.sh 0.1.0 (TESTSPEC 0.4 #15)
+label: f8b-patched-20261017
+date_utc: 20261031T162822Z
+window: 1792244514 .. 1792849314 (2026-10-17 13:41:54 .. 2026-10-24 13:41:54 UTC)
+journal: kernel lines in the window 59; earliest kernel line in the journal 1791318947; complete=yes
+retro pattern: WARNING:|cut here
+run K1 pattern (K1_PATTERN of /var/lib/n5-validation/patched-20261017/config.snapshot): Oops|BUG:|kernel BUG at|general protection|Call Trace|INFO: task .* blocked for more than|hung_task|soft lockup|hard LOCKUP|rcu.*stall|watchdog: |Hardware Error|mce:|Machine check|AER:|PCIe Bus Error|nvme.*(timeout|reset)|minisforum.*(timed? ?out|fail|error)
+--- boots (journalctl --list-boots) ---
+IDX BOOT ID FIRST ENTRY LAST ENTRY
+ -2 58aeb7afd6624dd4b940d40122f83c8b Tue 2026-10-06 14:25:01 CEST Sat 2026-10-17 12:09:49 CEST
+ -1 69c8f8982fd741fcb5ee760d5f963f95 Sat 2026-10-17 12:27:33 CEST Sat 2026-10-17 15:31:08 CEST
+ 0 1c5be8a10e8c48c5a3dbbcb154e429ed Sat 2026-10-17 15:31:50 CEST Sat 2026-10-31 17:28:22 CET
+--- hits: epoch, ISO UTC, in-run-K1|NEW, kernel line (host name removed) ---
+(none)
+---
+RESULT f8b-patched-20261017: 0 line(s) matching "WARNING:|cut here", 0 of them not caught by the run K1 pattern (NEW); journal complete=yes

@@ -1,0 +1,178 @@
+# F8b patched-20261017 - Abschluss (Zusammenfassung, nicht die volle CSV)
+# Erfasst 2026-10-31 17:1x-17:3x CET, nur lesend. Hostname durch n5host ersetzt, Gast-IDs durch <gast>,
+#   Paketpfade gekuerzt. Sonst unveraendert uebernommen.
+# Quelle 1: reports/final.txt des Laufs (= Inhalt der Abschlussmail "[n5-validation] ABSCHLUSS patched-20261017: PASS",
+#   laut Journal versandt 2026-10-24 15:44:36 CEST); final.done "2026-10-24T15:44:33+0200 PASS".
+#   Timer stehen dort noch "active/enabled", weil der Bericht vor dem Abschalten erzeugt wird.
+# Quelle 2: Journal, apt-Historie, zpool, modinfo, systemctl am 2026-10-31 (unten).
+# Volle Rohdaten bleiben auf n5host unter /var/lib/n5-validation/patched-20261017/ (samples.csv 20062 Zeilen inkl. Kopf).
+Lauf:        patched-20261017 auf n5host
+Start:       2026-10-17T15:41:54+0200
+Ende (Soll): 2026-10-24T15:41:54+0200 (7 Tage)
+Jetzt:       2026-10-24T15:44:33+0200 (Tag 7/7, Laufzeit 7 Tage 0 h)
+Kernel:      7.0.14-20-pve, Taint 12289 (Start 12289)
+Uptime:      168 h
+Statistik-Zeitraum: 2026-10-17T15:41:54+0200 .. 2026-10-24T15:44:33+0200
+
+Kriterien (Urteil bisher, Ereignisse gesamt / annotiert / unerklaert / im Zeitraum):
+  K1 PASS    0 /    0 /    0 /    0  Kernel-Log: Oops/BUG/Call Trace/hung task/soft lockup/RCU stall/watchdog/MCE/AER/NVMe-Reset/EC-Fehler
+  K2 PASS    0 /    0 /    0 /    0  boot_id gewechselt (Neustart, geplant oder nicht)
+  K3 PASS    0 /    0 /    0 /    0  n5-fangov nicht aktiv, NRestarts gestiegen oder Journal >= warning
+  K4 PASS    0 /    0 /    0 /    0  Luefter 0 RPM (2 Samples), Temperaturgrenze, EC-Lesefehler oder EC-hwmon fehlt
+  K5 PASS    0 /    0 /    0 /    0  Sampler-Luecke > 90 s, Uhrsprung rueckwaerts oder letztes Sample veraltet
+  K6 PASS    0 /    0 /    0 /    0  Datenverzeichnis > 200 MB oder Root-FS < 5 GB frei
+  K7 PASS    0 /    0 /    0 /    0  Kernel-Taint seit Start veraendert
+  K8 PASS    0 /    0 /    0 /    0  Watcher selbst: Dienst fehlgeschlagen, Journal unlesbar, Abdeckung < 99 %
+
+Abdeckung seit Start (K8, Grenze 99 %, geplante Ausfallzeit ausgenommen):
+  Sampler: 100.00 % (20055 Samples, ungedeckt 0 s)
+  Check:   100.00 % (2007 Laeufe, ungedeckt 0 s)
+  Letzter Check: 2026-10-24T15:44:32+0200 (vor 0 min)
+
+Dienste:
+  n5vw-sample.service    Result=success NRestarts=0 ExecMainExitTimestamp=Sat 2026-10-24 15:44:32 CEST ExecMainStatus=0
+  n5vw-check.service     (laeuft gerade)
+  n5vw-report.service    Result=success NRestarts=0 ExecMainExitTimestamp=Sat 2026-10-24 07:00:04 CEST ExecMainStatus=0
+  n5vw-sample.timer      LastTriggerUSec=Sat 2026-10-24 15:44:32 CEST ActiveState=active UnitFileState=enabled
+  n5vw-check.timer       LastTriggerUSec=Sat 2026-10-24 15:44:32 CEST ActiveState=active UnitFileState=enabled
+  n5vw-report.timer      LastTriggerUSec=Sat 2026-10-24 07:00:02 CEST ActiveState=active UnitFileState=enabled
+
+Samples 20061, mittlerer Abstand 30,2 s, groesste Luecke 31 s
+  erstes .. letztes: 2026-10-17T15:41:55+0200 .. 2026-10-24T15:44:32+0200
+
+Wert                       min       max    mittel       n    leer
+uptime_s                 614.0  605571.0  303094.3   20061       0
+load1                      0.0       3.4       0.6   20061       0
+fan1_rpm                1406.0    4802.0    1687.1   20061       0
+fan2_rpm                2518.0    3054.0    2594.6   20061       0
+fan3_rpm                1676.0    1836.0    1712.0   20061       0
+ec_temp1_cpu_c            32.0      73.0      36.7   20061       0
+ec_temp2_system_c         31.0      50.0      32.9   20061       0
+ec_temp3_board_c          25.0      39.0      25.8   20061       0
+ec_temp4_ambient_c        21.0      25.0      21.9   20061       0
+pwm1_cached               60.0     226.0      71.2   20061       0
+pwm2_cached               94.0     122.0      96.8   20061       0
+pwm3_cached              103.0     110.0     103.0   20061       0
+pwm4_cached              255.0     255.0     255.0   20061       0
+pwm1_enable_cached         1.0       1.0       1.0   20061       0
+pwm2_enable_cached         1.0       1.0       1.0   20061       0
+pwm3_enable_cached         1.0       1.0       1.0   20061       0
+pwm4_enable_cached         2.0       2.0       2.0   20061       0
+k10_tctl_c                33.1      74.7      37.6   20061       0
+nvme_max_c                41.8      49.8      42.7   20061       0
+hdd_max_c                 39.0      42.0      39.5   20061       0
+ec_read_errors             0.0       0.0       0.0   20061       0
+
+Luefter-Bereiche (RPM): fan1_rpm 1406..4802  fan2_rpm 2518..3054  fan3_rpm 1676..1836
+(pwm*-Spalten = gecachte Treiberwerte, kein EC-Readback)
+
+n5-fangov ActiveState in Samples: active=20061
+n5-fangov NRestarts (max im Zeitraum): 0
+
+Boot-IDs im Zeitraum: 1
+  1c5be8a1-0e8c-48c5-a3db-bcb154e429ed  2026-10-17T15:41:55+0200 .. 2026-10-24T15:44:32+0200
+
+Datenverzeichnis: /var/lib/n5-validation/patched-20261017 (3400 KB)
+
+Unerklaerte Ereignisse (alle):
+  keine
+
+Als erklaert gezaehlte Ereignisse mit der deckenden Annotation:
+  keine
+
+Hinweis: "PASS" heisst "kein unerklaerter Fehler beobachtet unter diesen Bedingungen",
+nicht "fehlerfrei". Beobachtet: 7 Tage 0 h (Tag 7/7).
+Fehlt diese Tagesmail, laeuft der Watcher nicht.
+
+## config.snapshot (sha256; Zeilen ab Schwellwerten identisch zu baseline-20261008, diff leer)
+f1102d53596bdb96f31c9390f5a2a5af0bc1e497f9e850136a02f6a4b752b4ca  patched-20261017/config.snapshot
+b44b76a15975202faea3193c787cda30d664f9c97ea80e7060a5ae4dedbc0798  baseline-20261008/config.snapshot
+(unterschiedlich nur in Kopf: RUN_ID, START_EPOCH, BOOT_ID_START, Schreibdatum)
+
+## Treiber / Regler / Kernel (2026-10-31, Boot unveraendert)
+version:        0.2.1+sr1~rc2
+srcversion:     E9CF5951A3238F3B9930797
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions
+parameters:     debug_regs=N experimental_write=Y force=N
+dpkg:           minisforum-n5-it5571-dkms 0.2.1+sr1~rc2-1, n5-fangov 0.4.2
+n5-fangov:      NRestarts=0, ExecMainStartTimestamp=Sat 2026-10-17 15:40:12 CEST
+uname -r:       7.0.14-20-pve
+tainted:        12289
+
+## journalctl --list-boots (Ausschnitt)
+ -2 58aeb7afd6624dd4b940d40122f83c8b Tue 2026-10-06 14:25:01 CEST Sat 2026-10-17 12:09:49 CEST
+ -1 69c8f8982fd741fcb5ee760d5f963f95 Sat 2026-10-17 12:27:33 CEST Sat 2026-10-17 15:31:08 CEST
+  0 1c5be8a10e8c48c5a3dbbcb154e429ed Sat 2026-10-17 15:31:50 CEST Sat 2026-10-31 17:27:41 CET
+Ende Boot -1: "Reached target reboot.target - System Reboot" 15:31:08 (Warmstart, 614 s vor Laufbeginn)
+
+## systemctl nach Laufende (2026-10-31)
+list-timers --all 'n5vw-*': 0 timers listed
+list-units --all 'n5vw-*':  0 loaded units listed
+unit files: n5vw-check.timer / n5vw-report.timer / n5vw-sample.timer disabled
+Journal: 2026-10-24T15:44:36+02:00 n5host n5vw-check: n5vw: mail sent: [n5-validation] ABSCHLUSS patched-20261017: PASS
+
+## /var/log/apt/history.log im Laufzeitraum (17.10. 15:41 - 24.10. 15:41)
+Start-Date: 2026-10-21  20:04:38
+Commandline: apt-get install -y --only-upgrade ca-certificates
+Upgrade: ca-certificates:amd64 (20250419, 20250419+deb13u1)
+End-Date: 2026-10-21  20:04:39
+
+Start-Date: 2026-10-21  20:11:30
+Commandline: apt-get install -y --only-upgrade -o Dpkg::Options::=--force-confold cifs-utils curl libcurl3t64-gnutls libcurl4-openssl-dev libcurl4t64 libexpat1-dev libexpat1 libjxl0.11 liblzma-dev liblzma5 librsvg2-2 librsvg2-common linux-libc-dev xz-utils
+Upgrade: cifs-utils:amd64 (2:7.4-1, 2:7.4-1+deb13u2), libcurl4-openssl-dev:amd64 (8.14.1-2+deb13u5, 8.14.1-2+deb13u7), liblzma5:amd64 (5.8.1-1+deb13u1, 5.8.1-1+deb13u2), libexpat1:amd64 (2.8.3-1~deb13u1, 2.9.0-1~deb13u1), librsvg2-common:amd64 (2.60.0+dfsg-1, 2.60.0+dfsg-1+deb13u1), xz-utils:amd64 (5.8.1-1+deb13u1, 5.8.1-1+deb13u2), libcurl3t64-gnutls:amd64 (8.14.1-2+deb13u5, 8.14.1-2+deb13u7), libjxl0.11:amd64 (0.11.2-0.1~deb13u2, 0.11.2-0.1~deb13u3), liblzma-dev:amd64 (5.8.1-1+deb13u1, 5.8.1-1+deb13u2), libcurl4t64:amd64 (8.14.1-2+deb13u5, 8.14.1-2+deb13u7), librsvg2-2:amd64 (2.60.0+dfsg-1, 2.60.0+dfsg-1+deb13u1), libexpat1-dev:amd64 (2.8.3-1~deb13u1, 2.9.0-1~deb13u1), curl:amd64 (8.14.1-2+deb13u5, 8.14.1-2+deb13u7), linux-libc-dev:amd64 (6.12.111-1, 6.12.113-1)
+End-Date: 2026-10-21  20:11:32
+(vor dem Lauf, 17.10.: 12:30 Treiber 0.2.1-1 -> 0.2.1+sr1~rc2-1; 12:31 n5-fangov 0.4.2 -> 0.5.0~rc2; 15:39 Rueckweg 0.5.0~rc2 -> 0.4.2)
+(im Zeitraum von baseline-20261008, 08.10.-15.10.: keine apt-Vorgaenge)
+
+## zpool status (scan) am 2026-10-31
+  pool: data
+  scan: scrub repaired 0B in 03:07:46 with 0 errors on Sun Oct 11 03:31:47 2026
+  pool: media
+  scan: scrub repaired 0B in 13:14:19 with 0 errors on Sun Oct 11 13:38:23 2026
+  pool: vmdata
+  scan: scrub repaired 0B in 00:03:49 with 0 errors on Sun Oct 11 00:27:57 2026
+  pool: vmdatatest
+  scan: scrub repaired 0B in 00:00:39 with 0 errors on Sun Oct 11 00:24:48 2026
+(letzter Scrub 11.10. = in baseline-20261008; im Zeitraum von patched-20261017 kein Scrub)
+
+## Journal Scrub/Backup im Laufzeitraum
+2026-10-18T03:00:03+02:00 n5host pvescheduler: INFO: Starting Backup of VM <gast> (lxc)
+2026-10-18T03:00:16+02:00 n5host pvescheduler: INFO: Finished Backup of VM <gast> (00:00:13)
+2026-10-18T03:00:16+02:00 n5host pvescheduler: INFO: Backup job finished successfully
+(keine Zeile class=scrub_*)
+
+## Kernel-Zeilen im Laufzeitraum (journalctl _TRANSPORT=kernel, alle Boots), nach Klasse
+patched-20261017: 59 Zeilen
+  53 apparmor DENIED (LXC-Gaeste: mount/change_onexec)
+   2 perf: interrupt took too long ... lowering kernel.perf_event_max_sample_rate
+   2 Retention time reached, vacuuming.
+   1 kauditd_printk_skb: N callbacks suppressed
+   1 hrtimer: interrupt took N ns
+  minisforum / EC-timeout: 0
+baseline-20261008 (zum Vergleich): 84 Zeilen
+  49 apparmor DENIED (LXC-Gaeste)
+   1 perf: interrupt took too long
+  34 sonstige, darunter >= 27 Bridge-/tap-Portmeldungen eines VM-Gasts (Gast gestoppt/gestartet),
+     1 Partitionstabelle eines zvol, 1 "kvm: vcpu0, guest rIP ... Unhandled WRMSR(0xc0010007) = 0xffff"
+     (Klassenliste bei 20 Klassen abgeschnitten)
+  minisforum / EC-timeout: 0
+
+## Rueckpruefung WARNING: (TESTSPEC 0.4 #15), retro-k1-warning.sh 0.1.0, 2026-10-31 16:28:22Z
+RESULT f8b-baseline-20261008: 0 line(s) matching "WARNING:|cut here", 0 of them not caught by the run K1 pattern (NEW); journal complete=yes
+RESULT f8b-patched-20261017: 0 line(s) matching "WARNING:|cut here", 0 of them not caught by the run K1 pattern (NEW); journal complete=yes
+Rohdateien: k1-retro-warning-f8b-baseline-20261008-20261031T162822Z.txt, k1-retro-warning-f8b-patched-20261017-20261031T162822Z.txt (je .sha256)
+
+## Aus samples.csv berechnet (awk, 2026-10-31), Lauf 2 | Lauf 1
+Sampler-Abstand min/max:                 29 / 31 s            | 29 / 31 s
+Samples mit Tctl >= 50 / >= 60 / >= 70:  277 (1,38 %) / 172 / 5 | 1101 (5,49 %) / 883 / 6
+Samples mit fan1 >= 3000 / >= 4000 rpm:  241 (1,20 %) / 8     | 1021 (5,09 %) / 4
+Samples mit load1 >= 2:                  39                   | 1664 (11.10. 00-13 Uhr ~120/h: Scrub)
+Episoden Tctl >= 55 (>= 2 min):          12, Summe 87,0 min   | 19, Summe 441,5 min
+Mittel ohne erste 60 min Tctl/fan1/load: 37,54 / 1682,9 / 0,55 | 38,77 / 1778,3 / 0,74
+Tctl-Max:  2026-10-17T17:02:57 74,7 (fan1 4286)  | 2026-10-09T19:18:21 73,0 (fan1 4364)
+fan1-Max:  2026-10-17T15:56:07 4802 (Tctl 68,3, EC-CPU 73) | 2026-10-09T19:49:31 4455
+Lauf 2, erste 20 min (Uptime 614-1828 s): fan1 3428-4802, Tctl 61,5-74,0, ab 16:02 Ruhe (fan1 1760, Tctl 41,5)
+Episoden Lauf 2: 17.10. 15:41-16:00 (Startphase nach Reboot, 18,5 min, Tctl 74,0); 03:55 am 18./19./22./23./24.10. (2,5-26 min);
+  15:55 am 18./23.10. (3,5/14,5 min); Einzelne 2-3 min: 18.10. 15:33, 22.10. 11:16, 24.10. 12:08, 14:49
+Episoden Lauf 1: 08:55 am 09./11./12./13./14./15.10. (4-127,5 min; 11.10. mit Scrub); 20:55 am 09./15.10. (19,5/76 min); Rest 2-7,5 min
+EC 0x06 (ambient) Tagesmittel:  Lauf 2 21,2-22,2 (min 21, max 25) | Lauf 1 21,1-22,8 (min 20, max 26)

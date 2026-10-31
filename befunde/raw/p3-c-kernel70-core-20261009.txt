@@ -1,4 +1,4 @@
-# P3 Gruppe C - Kernel-Kernpfade, torvalds/linux Tag v7.0 (raw.githubusercontent.com), abgerufen 2026-10-09T14:54:51Z auf debdocker
+# P3 Gruppe C - Kernel-Kernpfade, torvalds/linux Tag v7.0 (raw.githubusercontent.com), abgerufen 2026-10-09T14:54:51Z auf einem Build-Host
 # Zeilennummern = Originaldatei
 f75929c11e81ba49d9f2c274eee39af4c1e1e57a7898dcf64ec81bca9438d96a  dd.c
 051153cf27a2f3cbcfe760b0d919220b8e6108551f89aee4d8140f52888cc758  hwmon.c

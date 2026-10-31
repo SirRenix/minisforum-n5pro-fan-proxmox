@@ -1,0 +1,752 @@
+rc2 rebuild 2026-10-16 (UTC 16:58-17:20), after the H8 delta review
+(audit-20261016/H8-delta-rc2.md) and the rc2 Go review (rc2-go-review.md).
+Driver source unchanged against rc2-build-20261016.txt: no finding of the two
+reviews changes driver code (N-4 = comment in 0005, deferred to the next patch
+round so the H8-reviewed source hash stays valid). Changed outside the driver:
+tools/f8a 0.2.1 (N-1: f8a-pcie.sh expects DCR5 = 0xff after pwm4_enable=2,
+FAIL otherwise; fake driver model in test/), README (N-2, N-3).
+No hardware involved; n5host not touched. Docker build host = buildhost,
+container debian:trixie image 913f6706df59, build container hostname
+buildhost-ct, test container fresh debian:trixie. Repo state: working tree
+2026-10-16 (uncommitted), tar without .git, befunde, ectest, go.
+
+Result:
+- patched source sha256 48f47ff8c9adfb325422aefcb7caf85541788ad70dcd43a4e409483eecf07eef
+  (= H8-reviewed rc2), Makefile edfec5e4... unchanged
+- plain, W=1, sparse (C=2), smatch (C=2): no compiler/checker message on
+  7.0.14-20-pve and 7.0.12-1-pve (only the container's pahole/BTF note);
+  negative control: sparse and smatch both report the known defects
+- checkpatch --no-tree -f: 0 errors, 0 warnings; --strict: the same 6 CHECKs
+- modinfo version 0.2.1+sr1~rc2, srcversion E9CF5951A3238F3B9930797 (both
+  kernels, local build and DKMS build from the new .deb)
+- build-deb.sh: new .deb sha256 775b32d752d8bfa127b92cb43229054ad2f6c6c3bbbd86f4c3d6d9c097ddca91;
+  content (files, control, maintainer scripts, md5sums, modes, owners) identical
+  to the reviewed dist .deb c099f629197b62116643195a1d34ffe59717ec51f100fd457e4db9fe20eeb72b,
+  only tar mtimes differ (build-deb.sh sets no SOURCE_DATE_EPOCH). dist/ keeps
+  c099f629 (the hash H8 F7 and the run card refer to); 775b32d7 is not kept.
+- test-deb.sh on c099f629: PASS (fresh debian:trixie, headers 6.12.113+deb13-amd64)
+- tools/f8a test/run-tests.sh: 215 passed, 0 failed; shellcheck 0.11.0: no finding
+Not done: hardware test (window 1), c-review (decision 5).
+
+
+################################################################################
+### S0 container and tools
+
+$ date -u; cat /etc/debian_version; uname -m; nproc; hostname
+Fri Oct 16 17:13:02 UTC 2026
+13.7
+x86_64
+4
+buildhost-ct
+[exit 0]
+
+$ apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git patch build-essential bc bison flex libelf-dev libssl-dev kmod perl python3 libsqlite3-dev sqlite3 libdbd-sqlite3-perl libtry-tiny-perl pkg-config xz-utils zstd binutils dkms >/dev/null 2>&1 && echo tools ok
+tools ok
+[exit 0]
+
+$ curl -fsSL -o /usr/share/keyrings/proxmox-archive-keyring.gpg https://enterprise.proxmox.com/debian/proxmox-archive-keyring-trixie.gpg && [ "$(sha256sum </usr/share/keyrings/proxmox-archive-keyring.gpg | cut -d" " -f1)" = 136673be77aba35dcce385b28737689ad64fd785a797e57897589aed08db6e45 ] && echo "keyring sha256 as in P2"
+keyring sha256 as in P2
+[exit 0]
+
+$ printf "Types: deb\nURIs: http://download.proxmox.com/debian/pve\nSuites: trixie\nComponents: pve-no-subscription\nSigned-By: /usr/share/keyrings/proxmox-archive-keyring.gpg\n" >/etc/apt/sources.list.d/proxmox.sources && apt-get update -qq && apt-get install -y -qq --no-install-recommends proxmox-headers-7.0.14-20-pve proxmox-headers-7.0.12-1-pve >/dev/null 2>&1 && echo headers ok
+headers ok
+[exit 0]
+
+$ dpkg-query -W proxmox-headers-7.0.14-20-pve proxmox-headers-7.0.12-1-pve gcc-14 binutils dkms perl
+binutils	2.44-3
+dkms	3.2.2-1~deb13u1
+gcc-14	14.2.0-19
+perl	5.40.1-6+deb13u1
+proxmox-headers-7.0.12-1-pve	7.0.12-1
+proxmox-headers-7.0.14-20-pve	7.0.14-20
+[exit 0]
+
+$ git clone -q https://git.kernel.org/pub/scm/devel/sparse/sparse.git /opt/sparse && git -C /opt/sparse checkout -q 37156835e3d725b6d750f000be33ba3814bb2310 && cd /opt/sparse && make -j$(nproc) PREFIX=/usr/local >/tmp/sparse-build.log 2>&1 && make PREFIX=/usr/local install >/dev/null 2>&1; sparse --version; git -C /opt/sparse log -1 --format="%H %cd" --date=iso
+v0.6.5-rc1
+37156835e3d725b6d750f000be33ba3814bb2310 2025-12-18 02:38:24 -0500
+[exit 0]
+
+$ (git clone -q https://repo.or.cz/smatch.git /opt/smatch || git clone -q https://github.com/error27/smatch.git /opt/smatch) && git -C /opt/smatch checkout -q 5189e3fb018b783a26dcb45c02c114c1d1aad290 && cd /opt/smatch && make -j$(nproc) >/tmp/smatch-build.log 2>&1; ls -l /opt/smatch/smatch | cut -c1-10; git -C /opt/smatch log -1 --format="%H %cd" --date=iso
+-rwxr-xr-x
+5189e3fb018b783a26dcb45c02c114c1d1aad290 2026-05-05 13:45:43 +0300
+[exit 0]
+
+
+################################################################################
+### S1 repo state, patched source
+
+$ cd /in/repo && grep -E "^(UPSTREAM_TAG|UPSTREAM_COMMIT|PKG_REV|FORK_VERSION|FORK_RC)=" packaging/UPSTREAM; grep -v "^#" driver/patches/series | sed "/^$/d"
+UPSTREAM_TAG=v0.2.1
+UPSTREAM_COMMIT=feb6d9a5fbf6662a52fa7496009537945d2b30b0
+PKG_REV=1
+FORK_VERSION=sr1
+FORK_RC=rc2
+0001-downstream-marking.patch
+0002-write-allowlist.patch
+0003-debugfs-dcr.patch
+0004-remove-ordering.patch
+0005-timeout-budget.patch
+0006-shutdown.patch
+0007-abi-fixes.patch
+[exit 0]
+
+$ cd /in/repo && sha256sum driver/patches/*.patch driver/patches/series driver/upstream/driver-prototype/*
+2f05c8148b47837dea6d941bf3250d8729015e8cb8271503e0cc3fe6d29817dd  driver/patches/0001-downstream-marking.patch
+5cb9d301d3e58c58dd59fa597ce175d2da4b472488e0e7d39e9513bef59a8742  driver/patches/0002-write-allowlist.patch
+04101e351c71344d6dea3f7ad2076531e9d37afd518c9d1e499f98988928e304  driver/patches/0003-debugfs-dcr.patch
+1eb3cc8aee84e322d7622eb66359239782b30d502dc523fc18db1d56622ede20  driver/patches/0004-remove-ordering.patch
+810908ad87a6914ee417534f968fdb4c01e005e4563729732e56eb6ae562be7c  driver/patches/0005-timeout-budget.patch
+bf0acb7bb4ea1da06cfe1deadf938014c591f97bc137a597b716368b760bea6b  driver/patches/0006-shutdown.patch
+3695b6024e76b196a4c519a1c68e5c5a33533f748f0675f5451b7b4985f7c8b3  driver/patches/0007-abi-fixes.patch
+5dc43756cb750e3373ed66f4abcfbb71deb06e4fc09e2512f22fd264e2e33619  driver/patches/series
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  driver/upstream/driver-prototype/Makefile
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  driver/upstream/driver-prototype/minisforum_n5_it5571.c
+[exit 0]
+
+$ LC_ALL=C grep -nP "[^\x00-\x7f]|\r" /in/repo/driver/patches/* || echo "patches: ASCII only, no CR"
+patches: ASCII only, no CR
+[exit 0]
+
+$ rm -rf /work && mkdir -p /work && cp -a /in/repo/driver/upstream /work/tree && cd /work/tree && for p in $(grep -v "^#" /in/repo/driver/patches/series | sed "/^$/d"); do patch -p1 --forward --no-backup-if-mismatch --fuzz=0 -s < /in/repo/driver/patches/$p || { echo "FAIL $p"; exit 1; }; done; sha256sum driver-prototype/minisforum_n5_it5571.c driver-prototype/Makefile
+48f47ff8c9adfb325422aefcb7caf85541788ad70dcd43a4e409483eecf07eef  driver-prototype/minisforum_n5_it5571.c
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  driver-prototype/Makefile
+[exit 0]
+
+$ cd /work/tree/driver-prototype && sha256sum minisforum_n5_it5571.c | grep -q 48f47ff8c9adfb325422aefcb7caf85541788ad70dcd43a4e409483eecf07eef && echo 'patched source == H8-reviewed rc2 48f47ff8c9adfb325422aefcb7caf85541788ad70dcd43a4e409483eecf07eef'
+patched source == H8-reviewed rc2 48f47ff8c9adfb325422aefcb7caf85541788ad70dcd43a4e409483eecf07eef
+[exit 0]
+
+
+################################################################################
+### F4/F5 plain + W=1 build, 7.0.14-20-pve
+
+$ mkdir -p /work/7.0.14-20-pve && cp /work/tree/driver-prototype/minisforum_n5_it5571.c /work/tree/driver-prototype/Makefile /work/7.0.14-20-pve/ && cd /work/7.0.14-20-pve && make -C /lib/modules/7.0.14-20-pve/build M=$PWD modules | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/7.0.14-20-pve && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.14-20-pve/build M=$PWD W=1 modules | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/7.0.14-20-pve && for f in -Wextra -Wmissing-prototypes -Wmissing-declarations -Wunused-but-set-variable; do printf '%s in .o.cmd: %s\n' "$f" "$(grep -c -- "$f" .minisforum_n5_it5571.o.cmd)"; done
+-Wextra in .o.cmd: 1
+-Wmissing-prototypes in .o.cmd: 1
+-Wmissing-declarations in .o.cmd: 1
+-Wunused-but-set-variable in .o.cmd: 0
+[exit 0]
+
+
+################################################################################
+### F6 modinfo, 7.0.14-20-pve
+
+$ cd /work/7.0.14-20-pve && /usr/sbin/modinfo ./minisforum_n5_it5571.ko | grep -vE '^(sig|signature|\s)'
+filename:       /work/7.0.14-20-pve/./minisforum_n5_it5571.ko
+version:        0.2.1+sr1~rc2
+license:        GPL
+description:    Minisforum N5 family IT5571 fan/temp hwmon driver; N5 Pro/Air support is experimental; not affiliated with Minisforum; use at your own risk
+author:         ltdstudio, community exploration for the Minisforum N5 family
+srcversion:     E9CF5951A3238F3B9930797
+alias:          dmi*:pn*N5AIR*:rn*F8NAB*:
+alias:          dmi*:pn*N5A*:rn*F8NAB*:
+alias:          dmi*:svn*MicroComputer(HK)TechLimited*:pn*N5PRO*:rn*F8NAA*:
+alias:          dmi*:pn*N5*:rn*F8NAA*:
+depends:        
+name:           minisforum_n5_it5571
+retpoline:      Y
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+parm:           force:Bind read-only on an unknown system (never enables PWM writes; sensor reads still send EC read commands) (bool)
+parm:           experimental_write:Enable PWM writes on boards in the downstream write allowlist; experimental, may leave fans at a fixed duty (bool)
+parm:           debug_regs:Read-only debugfs dump of EC PWM registers I2EC 0x1800-0x180f (validation only; off: no debugfs, no Super-I/O access) (bool)
+[exit 0]
+
+
+################################################################################
+### F2 sparse C=2, 7.0.14-20-pve
+
+$ cd /lib/modules/7.0.14-20-pve/build && sh scripts/checker-valid.sh sparse -D__x86_64__ && echo 'checker-valid: sparse accepted'
+1
+checker-valid: sparse accepted
+[exit 0]
+
+$ cd /work/7.0.14-20-pve && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.14-20-pve/build M=$PWD C=2 modules | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+
+################################################################################
+### F3 smatch C=2, 7.0.14-20-pve
+
+$ cd /work/7.0.14-20-pve && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.14-20-pve/build M=$PWD C=2 CHECK='/opt/smatch/smatch -p=kernel' modules | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+
+################################################################################
+### F4/F5 plain + W=1 build, 7.0.12-1-pve
+
+$ mkdir -p /work/7.0.12-1-pve && cp /work/tree/driver-prototype/minisforum_n5_it5571.c /work/tree/driver-prototype/Makefile /work/7.0.12-1-pve/ && cd /work/7.0.12-1-pve && make -C /lib/modules/7.0.12-1-pve/build M=$PWD modules | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/7.0.12-1-pve && make -C /lib/modules/7.0.12-1-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.12-1-pve/build M=$PWD W=1 modules | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/7.0.12-1-pve && for f in -Wextra -Wmissing-prototypes -Wmissing-declarations -Wunused-but-set-variable; do printf '%s in .o.cmd: %s\n' "$f" "$(grep -c -- "$f" .minisforum_n5_it5571.o.cmd)"; done
+-Wextra in .o.cmd: 1
+-Wmissing-prototypes in .o.cmd: 1
+-Wmissing-declarations in .o.cmd: 1
+-Wunused-but-set-variable in .o.cmd: 0
+[exit 0]
+
+
+################################################################################
+### F6 modinfo, 7.0.12-1-pve
+
+$ cd /work/7.0.12-1-pve && /usr/sbin/modinfo ./minisforum_n5_it5571.ko | grep -vE '^(sig|signature|\s)'
+filename:       /work/7.0.12-1-pve/./minisforum_n5_it5571.ko
+version:        0.2.1+sr1~rc2
+license:        GPL
+description:    Minisforum N5 family IT5571 fan/temp hwmon driver; N5 Pro/Air support is experimental; not affiliated with Minisforum; use at your own risk
+author:         ltdstudio, community exploration for the Minisforum N5 family
+srcversion:     E9CF5951A3238F3B9930797
+alias:          dmi*:pn*N5AIR*:rn*F8NAB*:
+alias:          dmi*:pn*N5A*:rn*F8NAB*:
+alias:          dmi*:svn*MicroComputer(HK)TechLimited*:pn*N5PRO*:rn*F8NAA*:
+alias:          dmi*:pn*N5*:rn*F8NAA*:
+depends:        
+name:           minisforum_n5_it5571
+retpoline:      Y
+vermagic:       7.0.12-1-pve SMP preempt mod_unload modversions 
+parm:           force:Bind read-only on an unknown system (never enables PWM writes; sensor reads still send EC read commands) (bool)
+parm:           experimental_write:Enable PWM writes on boards in the downstream write allowlist; experimental, may leave fans at a fixed duty (bool)
+parm:           debug_regs:Read-only debugfs dump of EC PWM registers I2EC 0x1800-0x180f (validation only; off: no debugfs, no Super-I/O access) (bool)
+[exit 0]
+
+
+################################################################################
+### F2 sparse C=2, 7.0.12-1-pve
+
+$ cd /lib/modules/7.0.12-1-pve/build && sh scripts/checker-valid.sh sparse -D__x86_64__ && echo 'checker-valid: sparse accepted'
+1
+checker-valid: sparse accepted
+[exit 0]
+
+$ cd /work/7.0.12-1-pve && make -C /lib/modules/7.0.12-1-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.12-1-pve/build M=$PWD C=2 modules | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+
+################################################################################
+### F3 smatch C=2, 7.0.12-1-pve
+
+$ cd /work/7.0.12-1-pve && make -C /lib/modules/7.0.12-1-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.12-1-pve/build M=$PWD C=2 CHECK='/opt/smatch/smatch -p=kernel' modules | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+
+################################################################################
+### F2/F3 negative control (known defects, same tools, 7.0.14-20-pve)
+
+$ mkdir -p /work/neg && cp /in/negctl/* /work/neg/ && cd /work/neg && make -C /lib/modules/7.0.14-20-pve/build M=$PWD C=2 modules 2>&1 | grep -E 'negctl.c:[0-9]+'
+negctl.c:9:18: warning: cast removes address space '__iomem' of expression
+[exit 0]
+
+$ cd /work/neg && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.14-20-pve/build M=$PWD C=2 CHECK='/opt/smatch/smatch -p=kernel' modules 2>&1 | grep -E 'negctl.c:[0-9]+'
+negctl.c:21 negctl_b() error: dereferencing freed memory 'q' (line 20)
+[exit 0]
+
+
+################################################################################
+### F1 checkpatch
+
+$ sha256sum /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl /lib/modules/7.0.12-1-pve/build/scripts/checkpatch.pl
+6e7abb5d613b8916f162db09d4442fbd444f31d2402022b641e9ecfcc3279323  /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl
+6e7abb5d613b8916f162db09d4442fbd444f31d2402022b641e9ecfcc3279323  /lib/modules/7.0.12-1-pve/build/scripts/checkpatch.pl
+[exit 0]
+
+$ cd /work/tree/driver-prototype && perl /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl --no-tree -f minisforum_n5_it5571.c
+total: 0 errors, 0 warnings, 1106 lines checked
+
+minisforum_n5_it5571.c has no obvious style problems and is ready for submission.
+[exit 0]
+
+$ cd /work/tree/driver-prototype && perl /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl --no-tree --strict -f minisforum_n5_it5571.c | grep -E '^(CHECK|WARNING|ERROR|total)' ; echo '(strict: informational)'
+CHECK: struct mutex definition without comment
+CHECK: Alignment should match open parenthesis
+CHECK: Alignment should match open parenthesis
+CHECK: Alignment should match open parenthesis
+CHECK: Alignment should match open parenthesis
+CHECK: Alignment should match open parenthesis
+total: 0 errors, 0 warnings, 6 checks, 1106 lines checked
+(strict: informational)
+[exit 0]
+
+
+################################################################################
+### S2 build-deb.sh on a copy of the repo (new .deb), comparison with the reviewed dist .deb
+
+$ cp -a /in/repo /work/repo && cd /work/repo && mkdir -p /work/olddist && mv dist/* /work/olddist/ && KEEP_SRC=/work/pkgsrc bash packaging/build-deb.sh && cat dist/*.sha256 && cp dist/minisforum-n5-it5571-dkms_0.2.1+sr1~rc2-1_all.deb dist/minisforum-n5-it5571-dkms_0.2.1+sr1~rc2-1_all.deb.sha256 /out/
+applying 0001-downstream-marking.patch
+applying 0002-write-allowlist.patch
+applying 0003-debugfs-dcr.patch
+applying 0004-remove-ordering.patch
+applying 0005-timeout-budget.patch
+applying 0006-shutdown.patch
+applying 0007-abi-fixes.patch
+built /work/repo/dist/minisforum-n5-it5571-dkms_0.2.1+sr1~rc2-1_all.deb
+ Package: minisforum-n5-it5571-dkms
+ Version: 0.2.1+sr1~rc2-1
+ Depends: dkms (>= 3.0), proxmox-default-headers | linux-headers-amd64
+775b32d752d8bfa127b92cb43229054ad2f6c6c3bbbd86f4c3d6d9c097ddca91  minisforum-n5-it5571-dkms_0.2.1+sr1~rc2-1_all.deb
+[exit 0]
+
+$ cd /work/olddist && sha256sum minisforum-n5-it5571-dkms_0.2.1+sr1~rc2-1_all.deb && cat minisforum-n5-it5571-dkms_0.2.1+sr1~rc2-1_all.deb.sha256
+c099f629197b62116643195a1d34ffe59717ec51f100fd457e4db9fe20eeb72b  minisforum-n5-it5571-dkms_0.2.1+sr1~rc2-1_all.deb
+c099f629197b62116643195a1d34ffe59717ec51f100fd457e4db9fe20eeb72b  minisforum-n5-it5571-dkms_0.2.1+sr1~rc2-1_all.deb
+[exit 0]
+
+$ mkdir -p /work/x/old /work/x/new && dpkg-deb -R /work/olddist/minisforum-n5-it5571-dkms_0.2.1+sr1~rc2-1_all.deb /work/x/old && dpkg-deb -R /work/repo/dist/minisforum-n5-it5571-dkms_0.2.1+sr1~rc2-1_all.deb /work/x/new && diff -r /work/x/old /work/x/new && echo 'content (files, control, maintainer scripts, md5sums): identical'
+content (files, control, maintainer scripts, md5sums): identical
+[exit 0]
+
+$ for d in old new; do dpkg-deb -c /work/$( [ $d = old ] && echo olddist || echo repo/dist )/minisforum-n5-it5571-dkms_0.2.1+sr1~rc2-1_all.deb | awk '{print $1, $2, $6}' > /work/x/$d.list; done; diff /work/x/old.list /work/x/new.list && echo 'modes/owners/paths: identical (only mtimes differ)'
+modes/owners/paths: identical (only mtimes differ)
+[exit 0]
+
+$ sha256sum /work/pkgsrc/minisforum_n5_it5571.c | grep -q 48f47ff8c9adfb325422aefcb7caf85541788ad70dcd43a4e409483eecf07eef && echo 'packaged source == 48f47ff8c9adfb325422aefcb7caf85541788ad70dcd43a4e409483eecf07eef'; grep -nE '^(PATCH|PRE_BUILD|POST_BUILD|PRE_INSTALL|POST_ADD)' /work/pkgsrc/dkms.conf || echo 'dkms.conf: no PATCH/PRE_BUILD/POST_BUILD/PRE_INSTALL/POST_ADD'
+packaged source == 48f47ff8c9adfb325422aefcb7caf85541788ad70dcd43a4e409483eecf07eef
+dkms.conf: no PATCH/PRE_BUILD/POST_BUILD/PRE_INSTALL/POST_ADD
+[exit 0]
+
+
+################################################################################
+### F7 DKMS build from the new .deb, both kernels
+
+$ mkdir -p /work/deb && dpkg-deb -x /work/repo/dist/minisforum-n5-it5571-dkms_0.2.1+sr1~rc2-1_all.deb /work/deb && cp -a /work/deb/usr/src/minisforum-n5-it5571-* /usr/src/ && dkms add -m minisforum-n5-it5571 -v '0.2.1+sr1~rc2'
+Creating symlink /var/lib/dkms/minisforum-n5-it5571/0.2.1+sr1~rc2/source -> /usr/src/minisforum-n5-it5571-0.2.1+sr1~rc2
+[exit 0]
+
+$ dkms build -m minisforum-n5-it5571 -v '0.2.1+sr1~rc2' -k 7.0.14-20-pve 2>&1 | tail -n 3; grep -E 'warning|error' /var/lib/dkms/minisforum-n5-it5571/0.2.1+sr1~rc2/7.0.14-20-pve/x86_64/log/make.log | grep -v pahole || echo 'make.log: no warning/error'
+
+Building module(s)... done.
+Signing module /var/lib/dkms/minisforum-n5-it5571/0.2.1+sr1~rc2/build/minisforum_n5_it5571.ko
+make.log: no warning/error
+[exit 0]
+
+$ ko=$(ls /var/lib/dkms/minisforum-n5-it5571/'0.2.1+sr1~rc2'/7.0.14-20-pve/x86_64/module/minisforum_n5_it5571.ko*); /usr/sbin/modinfo $ko | grep -E '^(version|srcversion|vermagic)'
+version:        0.2.1+sr1~rc2
+srcversion:     E9CF5951A3238F3B9930797
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+[exit 0]
+
+$ dkms build -m minisforum-n5-it5571 -v '0.2.1+sr1~rc2' -k 7.0.12-1-pve 2>&1 | tail -n 3; grep -E 'warning|error' /var/lib/dkms/minisforum-n5-it5571/0.2.1+sr1~rc2/7.0.12-1-pve/x86_64/log/make.log | grep -v pahole || echo 'make.log: no warning/error'
+
+Building module(s)... done.
+Signing module /var/lib/dkms/minisforum-n5-it5571/0.2.1+sr1~rc2/build/minisforum_n5_it5571.ko
+make.log: no warning/error
+[exit 0]
+
+$ ko=$(ls /var/lib/dkms/minisforum-n5-it5571/'0.2.1+sr1~rc2'/7.0.12-1-pve/x86_64/module/minisforum_n5_it5571.ko*); /usr/sbin/modinfo $ko | grep -E '^(version|srcversion|vermagic)'
+version:        0.2.1+sr1~rc2
+srcversion:     E9CF5951A3238F3B9930797
+vermagic:       7.0.12-1-pve SMP preempt mod_unload modversions 
+[exit 0]
+
+
+################################################################################
+### end
+
+$ date -u
+Fri Oct 16 17:13:56 UTC 2026
+[exit 0]
+
+
+################################################################################
+### T1 packaging/test/test-deb.sh in a fresh container (debian:trixie, repo copy with dist/ c099f629 mounted at /repo)
+
+headers: 6.12.113+deb13-amd64
+--- hand installation 0.2.0, as deploy/install.sh left it
+minisforum-n5-it5571/0.2.0, 6.12.113+deb13-amd64, x86_64: installed
+--- apt install the package
+Setting up minisforum-n5-it5571-dkms (0.2.1+sr1~rc2-1) ...
+minisforum-n5-it5571: taking over the hand-installed DKMS source 0.2.0 (deploy/install.sh)
+minisforum-n5-it5571: removed the hand-installed /etc/modprobe.d/minisforum-n5-it5571.conf; /usr/lib/modprobe.d/minisforum-n5-it5571.conf applies
+minisforum-n5-it5571: removed the hand-installed /etc/modules-load.d/minisforum-n5-it5571.conf; /usr/lib/modules-load.d/minisforum-n5-it5571.conf applies
+minisforum-n5-it5571: built and installed for 6.12.113+deb13-amd64
+minisforum-n5-it5571: module not loaded now (no matching N5 Pro, or no permission here); it loads at boot via /usr/lib/modules-load.d/minisforum-n5-it5571.conf
+minisforum-n5-it5571/0.2.1+sr1~rc2, 6.12.113+deb13-amd64, x86_64: installed
+filename:       /lib/modules/6.12.113+deb13-amd64/updates/dkms/minisforum_n5_it5571.ko.xz
+version:        0.2.1+sr1~rc2
+--- stubs: systemctl, dkms and modprobe log their calls (update order, E7)
+--- an edited /etc copy is kept on reinstall; an active n5-fangov is stopped and started around it
+minisforum-n5-it5571: stopped n5-fangov.service (its stop failsafe applies until it runs again)
+minisforum-n5-it5571: keeping /etc/modprobe.d/minisforum-n5-it5571.conf (edited); it overrides /usr/lib/modprobe.d/minisforum-n5-it5571.conf
+minisforum-n5-it5571: built and installed for 6.12.113+deb13-amd64
+minisforum-n5-it5571: module loaded
+minisforum-n5-it5571: started n5-fangov.service again
+systemctl is-active --quiet n5-fangov.service
+systemctl stop n5-fangov.service
+systemctl is-active --quiet n5-fand.service
+dkms status -m minisforum-n5-it5571 -v 0.2.1+sr1~rc2
+dkms remove -m minisforum-n5-it5571 -v 0.2.1+sr1~rc2 --all
+dkms status -m minisforum-n5-it5571 -v 0.2.1+sr1~rc2
+dkms add -m minisforum-n5-it5571 -v 0.2.1+sr1~rc2
+dkms install -m minisforum-n5-it5571 -v 0.2.1+sr1~rc2 -k 6.12.113+deb13-amd64 --force
+modprobe minisforum_n5_it5571
+systemctl start n5-fangov.service
+order: stop=2 remove=5 install=8 load=9 start=10
+--- inactive regulator: nothing is started
+minisforum-n5-it5571: keeping /etc/modprobe.d/minisforum-n5-it5571.conf (edited); it overrides /usr/lib/modprobe.d/minisforum-n5-it5571.conf
+minisforum-n5-it5571: built and installed for 6.12.113+deb13-amd64
+minisforum-n5-it5571: module loaded
+--- a stale record from an interrupted sequence does not start a stopped regulator
+minisforum-n5-it5571: keeping /etc/modprobe.d/minisforum-n5-it5571.conf (edited); it overrides /usr/lib/modprobe.d/minisforum-n5-it5571.conf
+minisforum-n5-it5571: built and installed for 6.12.113+deb13-amd64
+minisforum-n5-it5571: module loaded
+--- module already loaded (reference host case): no modprobe of the module, regulator started again
+minisforum-n5-it5571: stopped n5-fangov.service (its stop failsafe applies until it runs again)
+minisforum-n5-it5571: keeping /etc/modprobe.d/minisforum-n5-it5571.conf (edited); it overrides /usr/lib/modprobe.d/minisforum-n5-it5571.conf
+minisforum-n5-it5571: built and installed for 6.12.113+deb13-amd64
+minisforum-n5-it5571: module already loaded; the new build takes effect after 'systemctl stop n5-fangov; modprobe -r minisforum_n5_it5571; modprobe minisforum_n5_it5571; systemctl start n5-fangov' or the next boot
+minisforum-n5-it5571: started n5-fangov.service again
+--- postinst fails early (dkms add): the regulator is started again, then dpkg --configure repairs
+minisforum-n5-it5571: stopped n5-fangov.service (its stop failsafe applies until it runs again)
+minisforum-n5-it5571: keeping /etc/modprobe.d/minisforum-n5-it5571.conf (edited); it overrides /usr/lib/modprobe.d/minisforum-n5-it5571.conf
+minisforum-n5-it5571: WARNING: configure failed (exit 1) before the regulator was started again
+minisforum-n5-it5571: started n5-fangov.service again
+--- aborted upgrade (new preinst fails, module loaded as on the reference host): DKMS entry and module are back, regulator started
+minisforum-n5-it5571: stopped n5-fangov.service (its stop failsafe applies until it runs again)
+minisforum-n5-it5571: abort-upgrade: registering and building 0.2.1+sr1~rc2 again
+minisforum-n5-it5571: built and installed for 6.12.113+deb13-amd64
+minisforum-n5-it5571: started n5-fangov.service again
+--- remove; an active legacy n5-fand is stopped before dkms remove and stays stopped
+minisforum-n5-it5571: stopped n5-fand.service (its stop failsafe applies until it runs again)
+minisforum-n5-it5571: module files removed; a loaded module stays until reboot. Without the driver the fans run on the BIOS curve after the next boot. A regulator stopped here stays stopped.
+systemctl is-active --quiet n5-fangov.service
+systemctl is-active --quiet n5-fand.service
+systemctl stop n5-fand.service
+dkms status -m minisforum-n5-it5571 -v 0.2.1+sr1~rc2
+dkms remove -m minisforum-n5-it5571 -v 0.2.1+sr1~rc2 --all
+order: stop=3 remove=5
+PASS
+exit=0
+
+################################################################################
+### T2 tools/f8a/test/run-tests.sh (debian:trixie, f8a 0.2.1, read-only mount)
+
+# f8a container tests on Debian GNU/Linux 13 (trixie), bash 5.2.37(1)-release
+## guards
+ok   - snapshot refuses wrong DMI product
+ok   -   ... names the DMI mismatch
+ok   - snapshot refuses wrong sys_vendor
+ok   - snapshot refuses with n5-fangov active
+ok   -   ... message
+ok   - snapshot refuses when n5-fangov state is unknown (systemctl unusable)
+ok   -   ... and no research tool ran
+ok   - stress refuses with n5-fangov activating
+ok   - pcie refuses with n5-fangov activating
+ok   - snapshot refuses without tty and without --yes
+ok   - stress refuses without tty
+ok   - pcie refuses without tty
+ok   - snapshot --require-mode A refuses while module loaded
+ok   - research tool refused while module loaded
+ok   -   ... and the stub was not called
+ok   - ec_probe write refused (allowlist)
+ok   - ec_probe read refused (allowlist)
+ok   -   ... no research call reached a stub
+ok   - research tool refused while a port is reserved by someone else
+ok   -   ... and the stub was not called
+ok   - pwm value 99 refused
+ok   -   ... and not written
+ok   - F8A_BIN_DIR ignored outside test mode
+ok   - stress cancels on wrong confirmation
+ok   -   ... module untouched (no modprobe call)
+ok   - stress refuses without debug_regs=1
+ok   - stress refuses when a modprobe.d override sets experimental_write=0
+ok   - pcie refuses on the same override
+ok   - pcie refuses with pwm3 manual (failsafe 140 would be lost on unload)
+ok   -   ... module untouched
+ok   - stress refuses at Tctl 85 C
+ok   - stress refuses without drivetemp source
+ok   - stress refuses with fan3 at 0 rpm
+ok   - test mode refuses real modprobe outside F8A_ROOT
+## kernel-log pattern and attribution
+ok   - klog: 6 hits, 3 attributed to the driver
+ok   - klog: old line ignored (--since)
+ok   - klog: verdict FAIL with driver hits, foreign hits named too
+ok   - klog: foreign-only hit is FAIL until annotated (TESTSPEC 0.3 5a)
+ok   - klog: a hit is never INCONCLUSIVE
+ok   - klog: no hit gives no verdict part
+ok   - klog: unreadable journal stays INCONCLUSIVE
+## snapshot
+ok   - snapshot A exit 0
+ok   - snapshot A raw file exists
+ok   - snapshot A sha256 verifies
+ok   - snapshot A has two EC RAM dumps
+ok   - snapshot A has I2EC block
+ok   - snapshot A has TACH
+ok   - snapshot A dumps compared: curve regions identical
+ok   - snapshot A reports no non-temperature change
+ok   - snapshot A RESULT complete
+ok   - snapshot A identity: ec_firmware_release
+ok   - snapshot A identity: effective modprobe options
+ok   - snapshot A temps independent
+ok   - snapshot A host name redacted
+ok   - snapshot A n5host present
+ok   - snapshot A research calls only while unloaded
+ok   - snapshot A exactly 4 research calls
+ok   - snapshot A wrote nothing to sysfs
+ok   - snapshot A with a failing research tool: exit 3
+ok   -   ... RESULT INCOMPLETE names the tool
+ok   -   ... sha256 still written
+ok   - snapshot B exit 0
+ok   - snapshot B no research tool called
+ok   - snapshot B dcr content
+ok   - snapshot B DCR5 decoded
+ok   - snapshot B pwm labelled as cache
+ok   - snapshot B ioports listed
+ok   - snapshot B module params
+ok   - snapshot B lsmod line
+ok   - snapshot B lsmod nvme line
+ok   - snapshot B wrote nothing to sysfs
+ok   - snapshot B without debug_regs: dcr unavailable
+## diff
+ok   - diff identical: exit 0
+ok   - diff identical: verdict
+ok   - diff ignores temperature byte 0x09
+ok   - diff changed: exit 1
+ok   - diff reports 0x34
+ok   - diff reports non-curve byte 0xe4
+ok   - diff hides temperature byte 0x04
+ok   - diff names the region
+ok   - diff other regions identical
+ok   - diff verdict CHANGED
+ok   - diff with a mode-B file: exit 2
+## stress load
+ok   - stress load exit 0
+ok   - stress load PASS
+ok   - stress load: kernel-log line from before the start not counted
+ok   - stress load 3 cycles
+ok   - stress load injected ENODEV counted
+ok   - stress load no unexpected errno
+ok   - stress load 3x modprobe -r
+ok   - stress load reload with debug_regs=1
+ok   - stress load final pwm1_enable=2
+ok   - stress load final pwm2_enable=2
+ok   - stress load: only pwm1/pwm2 written
+ok   - stress load: pwm1/pwm2 were written
+ok   - stress load: no duty below 100 attempted
+ok   - stress load module loaded with debug_regs
+ok   - stress load enable=2 recorded per cycle
+ok   - stress load race note
+ok   - stress load sha256
+ok   - stress load host redacted
+ok   - stress load: no research tool called
+ok   - stress load: no process left
+## stress unbind
+ok   - stress unbind exit 0
+ok   - stress unbind PASS
+ok   - stress unbind 3 unbind + 3 bind
+ok   - stress unbind no modprobe
+ok   - stress unbind ENODEV counted
+ok   - stress unbind final pwm1/2_enable=2
+ok   - stress unbind: only pwm1/pwm2 and bind/unbind written
+## stress abort on kernel-log hit (driver Oops)
+ok   - klog abort exit != 0
+ok   - klog abort after cycle 2
+ok   - klog abort FAIL
+ok   - klog abort shows the line
+ok   - klog abort shows the module frame
+ok   - klog abort restore pwm1/2_enable=2
+ok   - klog abort module loaded
+## stress abort on a foreign kernel-log hit
+ok   - foreign hit aborts
+ok   - foreign hit: FAIL until annotated (TESTSPEC 0.3 5a)
+ok   - foreign hit: exit != 0
+ok   - foreign hit: never INCONCLUSIVE
+ok   - foreign hit restore pwm1/2_enable=2
+## stress abort on temperature, restore
+ok   - hot abort exit != 0
+ok   - hot abort reason
+ok   - hot abort INCONCLUSIVE
+ok   - hot abort max Tctl reported
+ok   - hot abort restore pwm1/2_enable=2
+ok   - hot abort module loaded
+## stress: watcher sees a limit while modprobe -r blocks
+ok   - watcher warns during the blocked teardown
+ok   -   ... warning comes before the abort
+ok   -   ... abort right after the teardown
+ok   -   ... restore pwm1/2_enable=2, module loaded
+## stress abort on a stalled fan
+ok   - stall abort exit != 0
+ok   - stall abort names fan2
+ok   - stall abort FAIL
+ok   - stall abort restore pwm1/2_enable=2
+## stress abort when n5-fangov starts
+ok   - fangov abort
+ok   - fangov abort INCONCLUSIVE
+## stress: kernel log unreadable
+ok   - journal unreadable aborts
+ok   -   ... verdict INCONCLUSIVE, not FAIL
+ok   -   ... module loaded again
+## stress: Ctrl-C (SIGINT to the process group)
+ok   - INT: summary written
+ok   - INT: final pwm1/2_enable=2 logged
+ok   - INT: pwm1/2_enable=2
+ok   - INT: module loaded with debug_regs
+ok   - INT: sha256 verifies
+## stress: terminal hangup (script(1) killed = lost SSH session)
+/src/test/run-tests.sh: line 99: 18594 Done                    printf '%s\n' "$1"
+     18595 Killed                  | perl -e '$SIG{INT}=$SIG{QUIT}="DEFAULT"; exec @ARGV or die' -- script -qefc "$cmd" /dev/null > "$2" 2>&1
+ok   - HUP: summary written to the file
+ok   - HUP: pwm1/2_enable=2
+ok   - HUP: module loaded
+ok   - HUP: sha256 verifies
+## stress: SIGTERM to the script
+ok   - TERM: summary written
+ok   - TERM: pwm1/2_enable=2, bound
+## stress: SIGKILL of the main script leaves no writer behind
+ok   - KILL: loops and watcher end on their own within 3 s
+ok   - KILL: no further pwm writes
+## pcie (module loaded at start)
+ok   - pcie exit 0
+ok   - pcie call sequence exact
+ok   - pcie: no research tool while loaded
+ok   - pcie: ec_probe never with write
+ok   - pcie: pwm4 was 255 at unload (rc2 hand-back)
+ok   - pcie: final module loaded normally
+ok   - pcie: final pwm4_enable=2
+ok   - pcie: diff shows curve change
+ok   - pcie: DCR5 a7 while manual
+ok   - pcie: DCR5 ff after the hand-back
+ok   - pcie: hand-back check ok
+ok   - pcie: series printed
+ok   - pcie: impossibility note
+ok   - pcie: M3 not decided note
+ok   - pcie: signature warning ignored
+ok   - pcie: run result COMPLETE
+ok   - pcie: only pwm4 written (exact)
+ok   - pcie: tach checked while loaded
+ok   - pcie: before/after snapshots exist
+## pcie (module not loaded at start)
+ok   - pcie unloaded-start exit 0
+ok   - pcie unloaded-start: final module unloaded
+ok   - pcie unloaded-start: identical curve tables without injection
+## pcie: hand-back as in driver 0.2.1/rc1 (0x31, DCR5 keeps a7) is FAIL
+ok   - pcie 0x31 hand-back: exit 1
+ok   - pcie 0x31 hand-back: check line
+ok   - pcie 0x31 hand-back: run result FAIL
+ok   - pcie 0x31 hand-back: never COMPLETE
+## pcie abort on temperature during (b)
+ok   - pcie hot abort exit != 0
+ok   - pcie hot abort reason
+ok   - pcie hot abort: INCONCLUSIVE
+ok   - pcie hot abort: pwm4 back to 2
+ok   - pcie hot abort: module loaded normally
+ok   - pcie hot abort: no after-snapshot
+ok   - pcie hot abort: research tools only unloaded
+## pcie abort on a foreign kernel-log hit during (b)
+ok   - pcie foreign hit exit != 0
+ok   - pcie foreign hit: FAIL until annotated (TESTSPEC 0.3 5a)
+ok   - pcie foreign hit: never INCONCLUSIVE
+ok   - pcie foreign hit: pwm4 back to 2
+## pcie: research tool fails in the after-snapshot
+ok   - pcie tool failure: exit 3
+ok   - pcie tool failure: INCONCLUSIVE with data gap
+ok   - pcie tool failure: module restored normally
+## pcie: Ctrl-C in (b) with pwm4 manual
+ok   - pcie INT: pwm4 manual before the signal
+ok   - pcie INT: final line logged
+ok   - pcie INT: pwm4_enable=2, debug_regs=N
+ok   - pcie INT: result INCONCLUSIVE (interrupted)
+## pcie: SIGTERM during a research tool waits for it (C2)
+ok   - pcie TERM: the running research tool finished
+ok   - pcie TERM: module reloaded only after the research tool ended
+ok   - pcie TERM: no research tool while loaded
+ok   - pcie TERM: module loaded normally at the end
+## mutual exclusion with n5-ectest (TESTKIT-DESIGN 5)
+ok   - no n5-ectest: not busy
+ok   - running n5-ectest (log) not reported
+ok   - held /run/n5-ectest.lock reported
+ok   - free lock: not busy
+## pwm writer lock (n5-ectest map/handback, n5-fangov >= 0.5)
+ok   - pcie refused while the writer lock is held
+ok   - pcie names the holder
+ok   - pcie wrote nothing under a held lock
+ok   - pcie touched no module under a held lock
+ok   - stress refused while the writer lock is held
+ok   - stress names the lock
+ok   - pcie holds the writer lock while it runs
+ok   - lock file names f8a-pcie.sh
+ok   - lock free after the run
+
+# result: 215 passed, 0 failed

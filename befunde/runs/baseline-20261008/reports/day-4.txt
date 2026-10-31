@@ -1,0 +1,74 @@
+Lauf:        baseline-20261008 auf n5host
+Start:       2026-10-08T22:25:44+0200
+Ende (Soll): 2026-10-15T22:25:44+0200 (7 Tage)
+Jetzt:       2026-10-12T07:00:03+0200 (Tag 4/7, 80 h seit Start)
+Kernel:      7.0.14-20-pve, Taint 12289 (Start 12289)
+Uptime:      176 h
+Statistik-Zeitraum: 2026-10-11T07:00:03+0200 .. 2026-10-12T07:00:03+0200
+
+Kriterien (Urteil bisher, Ereignisse gesamt / annotiert / unerklaert / im Zeitraum):
+  K1 PASS    0 /    0 /    0 /    0  Kernel-Log: Oops/BUG/Call Trace/hung task/soft lockup/RCU stall/watchdog/MCE/AER/NVMe-Reset/EC-Fehler
+  K2 PASS    0 /    0 /    0 /    0  boot_id gewechselt (Neustart, geplant oder nicht)
+  K3 PASS    0 /    0 /    0 /    0  n5-fangov nicht aktiv, NRestarts gestiegen oder Journal >= warning
+  K4 PASS    0 /    0 /    0 /    0  Luefter 0 RPM (2 Samples), Temperaturgrenze, EC-Lesefehler oder EC-hwmon fehlt
+  K5 PASS    0 /    0 /    0 /    0  Sampler-Luecke > 90 s, Uhrsprung rueckwaerts oder letztes Sample veraltet
+  K6 PASS    0 /    0 /    0 /    0  Datenverzeichnis > 200 MB oder Root-FS < 5 GB frei
+  K7 PASS    0 /    0 /    0 /    0  Kernel-Taint seit Start veraendert
+  K8 PASS    0 /    0 /    0 /    0  Watcher selbst: Dienst fehlgeschlagen, Journal unlesbar, Abdeckung < 99 %
+
+Abdeckung seit Start (K8, Grenze 99 %, geplante Ausfallzeit ausgenommen):
+  Sampler: 100.00 % (9614 Samples, ungedeckt 0 s)
+  Check:   100.00 % (963 Laeufe, ungedeckt 0 s)
+  Letzter Check: 2026-10-12T06:58:01+0200 (vor 2 min)
+
+Dienste:
+  n5vw-sample.service    Result=success NRestarts=0 ExecMainExitTimestamp=Mon 2026-10-12 07:00:03 CEST ExecMainStatus=0 
+  n5vw-check.service     Result=success NRestarts=0 ExecMainExitTimestamp=Mon 2026-10-12 06:58:02 CEST ExecMainStatus=0 
+  n5vw-report.service    Result=success NRestarts=0 ExecMainExitTimestamp= ExecMainStatus=0 
+  n5vw-sample.timer      LastTriggerUSec=Mon 2026-10-12 07:00:03 CEST ActiveState=active UnitFileState=enabled 
+  n5vw-check.timer       LastTriggerUSec=Mon 2026-10-12 06:58:01 CEST ActiveState=active UnitFileState=enabled 
+  n5vw-report.timer      LastTriggerUSec=Mon 2026-10-12 07:00:03 CEST ActiveState=active UnitFileState=enabled 
+
+Samples im Zeitraum: 2864 von erwartet 2880 (99.4 %), 2026-10-11T07:00:18+0200 .. 2026-10-12T07:00:03+0200
+
+Wert                       min       max    mittel       n    leer
+uptime_s              549806.0  636191.0  593015.5    2864       0
+load1                      0.0       5.3       1.0    2864       0
+fan1_rpm                1425.0    3756.0    1888.7    2864       0
+fan2_rpm                2524.0    3062.0    2648.2    2864       0
+fan3_rpm                1626.0    1972.0    1700.1    2864       0
+ec_temp1_cpu_c            33.0      67.0      39.3    2864       0
+ec_temp2_system_c         31.0      50.0      34.4    2864       0
+ec_temp3_board_c          25.0      39.0      27.2    2864       0
+ec_temp4_ambient_c        21.0      26.0      22.4    2864       0
+pwm1_cached               60.0     172.0      80.9    2864       0
+pwm2_cached               94.0     122.0      99.4    2864       0
+pwm3_cached               99.0     119.0     102.1    2864       0
+pwm4_cached              255.0     255.0     255.0    2864       0
+pwm1_enable_cached         1.0       1.0       1.0    2864       0
+pwm2_enable_cached         1.0       1.0       1.0    2864       0
+pwm3_enable_cached         1.0       1.0       1.0    2864       0
+pwm4_enable_cached         2.0       2.0       2.0    2864       0
+k10_tctl_c                33.2      67.3      40.2    2864       0
+nvme_max_c                41.8      49.8      43.4    2864       0
+hdd_max_c                 39.0      43.0      39.9    2864       0
+ec_read_errors             0.0       0.0       0.0    2864       0
+
+Luefter-Bereiche (RPM): fan1_rpm 1425..3756  fan2_rpm 2524..3062  fan3_rpm 1626..1972  
+(pwm*-Spalten = gecachte Treiberwerte, kein EC-Readback)
+
+n5-fangov ActiveState in Samples: active=2864 
+n5-fangov NRestarts (max im Zeitraum): 0
+
+Boot-IDs im Zeitraum: 1
+  58aeb7af-d662-4dd4-b940-d40122f83c8b  2026-10-11T07:00:18+0200 .. 2026-10-12T07:00:03+0200
+
+Datenverzeichnis: /var/lib/n5-validation/baseline-20261008 (1636 KB)
+
+Unerklaerte Ereignisse (hoechstens 15, Nummer fuer annotate.sh --event):
+  keine
+
+Annotationen: keine
+
+Hinweis: "PASS" heisst "kein unerklaerter Fehler beobachtet in 3 Tagen
+unter diesen Bedingungen", nicht "fehlerfrei". Fehlt diese Tagesmail, laeuft der Watcher nicht.

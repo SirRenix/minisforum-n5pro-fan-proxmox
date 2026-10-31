@@ -1,0 +1,116 @@
+13:33:14 f8a-snapshot 0.2.1 label=warm mode=A
+mode A: driver module not loaded; research tools (userspace port I/O) are used
+
+=== identity ===
+tool: f8a 0.2.1
+date_utc: 2026-10-17T13:33:14Z
+uptime_s: 94.05
+boot_id: 1c5be8a1-0e8c-48c5-a3db-bcb154e429ed
+kernel: 7.0.14-20-pve
+host: n5host
+dmi.product_name: N5 PRO
+dmi.board_name: F8NAA
+dmi.board_version: 1.0
+dmi.sys_vendor: Micro Computer (HK) Tech Limited
+dmi.bios_vendor: American Megatrends International, LLC.
+dmi.bios_version: 1.05
+dmi.bios_date: 03/31/2026
+dmi.bios_release: 5.35
+dmi.ec_firmware_release: 0.14
+
+=== lsmod (filtered) ===
+k10temp 16384 0 - Live 0xffffffffc07a5000
+drivetemp 16384 0 - Live 0xffffffffc0611000
+nvme 65536 7 - Live 0xffffffffc0600000
+
+=== /proc/ioports 002e-002f/0062/0066/0068/006c ===
+(no entries: ports not reserved)
+
+=== module parameters ===
+module not loaded
+modprobe.d / modules-load.d entries:
+/etc/modprobe.d/n5-mw1-blacklist.conf:blacklist minisforum_n5_it5571  # Wartungsfenster 1, F2/F3; Entfernen in G1
+/usr/lib/modprobe.d/minisforum-n5-it5571.conf:options minisforum_n5_it5571 experimental_write=1
+(none)
+effective options (modprobe -c):
+options minisforum_n5_it5571 experimental_write=1
+
+=== independent temperatures (k10temp, nvme, drivetemp) ===
+Tctl=61.7 NVMe_max=41.8 HDD_max=40.0
+
+=== n5-fangov ===
+is-active: inactive
+is-enabled: disabled
+
+=== BEGIN EC_RAM 1 ===
+EC_SC 状态寄存器: 0x00 (IBF=0 OBF=0)
+EC RAM dump (256 bytes):
+      0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
+00: 00 00 00 0E 1F 19 16 00 00 32 00 00 00 00 00 00 
+10: 00 19 00 14 2D 19 17 37 2D 19 41 37 1B 4B 41 1E 
+20: 52 4B 21 57 52 22 64 57 00 00 00 00 00 00 02 00 
+30: 16 3C 00 1A 64 3C 1A 64 64 00 00 00 00 00 00 00 
+40: 01 05 00 00 00 03 00 00 00 00 00 00 00 00 00 00 
+50: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+60: 00 0C 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+70: 0C 22 00 10 64 22 10 64 64 0C 22 00 10 64 22 10 
+80: 64 64 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+90: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+A0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+B0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+C0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+D0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+E0: 00 00 00 00 0D 00 00 00 00 00 00 00 00 00 00 00 
+F0: 00 0A 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+
+非零字节数: 58/256
+=== END EC_RAM 1 ===
+
+=== BEGIN EC_RAM 2 ===
+EC_SC 状态寄存器: 0x00 (IBF=0 OBF=0)
+EC RAM dump (256 bytes):
+      0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
+00: 00 00 00 0E 20 19 16 00 00 33 00 00 00 00 00 00 
+10: 00 19 00 14 2D 19 17 37 2D 19 41 37 1B 4B 41 1E 
+20: 52 4B 21 57 52 22 64 57 00 00 00 00 00 00 02 00 
+30: 16 3C 00 1A 64 3C 1A 64 64 00 00 00 00 00 00 00 
+40: 01 05 00 00 00 03 00 00 00 00 00 00 00 00 00 00 
+50: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+60: 00 0C 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+70: 0C 22 00 10 64 22 10 64 64 0C 22 00 10 64 22 10 
+80: 64 64 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+90: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+A0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+B0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+C0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+D0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+E0: 00 00 00 00 0D 00 00 00 00 00 00 00 00 00 00 00 
+F0: 00 0A 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+
+非零字节数: 58/256
+=== END EC_RAM 2 ===
+
+=== BEGIN I2EC ===
+1800: 00 ff 00 62 4b 64 64 ff 00 00 00 06 00 00 00 00
+1810: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 b5 03
+1820: e9 03 00 02 00 00 00 02 00 00 00 48 00 00 00 00
+=== END I2EC ===
+
+=== TACH (n5_fan rpm) ===
+TACH1: 2272 RPM
+TACH2: 2154 RPM
+TACH3: 1685 RPM
+
+=== EC RAM dump 1 vs dump 2 (same snapshot) ===
+EC RAM bytes changed (temperature offsets 0x04 0x05 0x06 0x09 excluded):
+  (none)
+curve-table regions (TESTSPEC C1):
+  0x10-0x27: identical
+  0x30-0x38: identical
+  0x70-0x81: identical
+EC temperatures from dump 1: CPU(0x09)=50 System(0x04)=31 Board(0x05)=25 Ambient(0x06)=22
+
+=== independent temperatures (end) ===
+Tctl=63.1 NVMe_max=41.8 HDD_max=40.0
+13:33:16 snapshot done
+RESULT: complete

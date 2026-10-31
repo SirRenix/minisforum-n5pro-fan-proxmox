@@ -29,7 +29,7 @@ Nutzerbericht im Upstream-Issue, nicht geprüft. `validated` und `tested` setzen
 <!-- hwstatus:begin -->
 | Produkt | Board | BIOS | EC-FW | Status | Herkunft | Stand | Bemerkung |
 |---|---|---|---|---|---|---|---|
-| N5 PRO | F8NAA | 1.05 | 0.14 | experimental | eigen | 2026-10-09 | TESTSPEC-Lauf ausstehend (Wartungsfenster P7/P8); F8b-Baseline läuft seit 2026-10-08; Kanalzuordnung am 2026-09-14 vor TESTSPEC gemessen (BEFUNDE.md Phase 6) |
+| N5 PRO | F8NAA | 1.05 | 0.14 | experimental | eigen | 2026-10-17 | TESTSPEC-Lauf unvollständig (Wartungsfenster 1 am 2026-10-17: T1 nicht gelaufen, Gate G4; BEFUNDE.md); F8b-Baseline 2026-10-08–15 PASS; Kanalzuordnung am 2026-09-14 vor TESTSPEC gemessen (BEFUNDE.md Phase 6) |
 | N5 | F8NAA | * | * | experimental | upstream | 2026-10-09 | upstream validated (Treiberautor, BIOS 1.04), nicht durch uns geprüft, kein TESTSPEC-Lauf; Treiber-Flag `validated` = Schreib-Gate |
 | N5A | F8NAB | * | * | experimental | upstream | 2026-10-09 | N5 Air; read-only (keine Schreibfreigabe ab Treiber 0.2.1+sr1) |
 | N5 AIR | F8NAB | * | * | experimental | upstream | 2026-10-09 | N5 Air, alternativer DMI-String; read-only (keine Schreibfreigabe ab Treiber 0.2.1+sr1) |
@@ -38,8 +38,11 @@ Nutzerbericht im Upstream-Issue, nicht geprüft. `validated` und `tested` setzen
 
 ## TESTSPEC-Läufe
 
-Noch keine. Je Lauf eine Zeile: Board, BIOS, EC-FW, Test, Spec-Version, Verdict, Link auf
-`befunde/runs/<lauf>/`.
+Je Lauf eine Zeile: Board, BIOS, EC-FW, Test, Spec-Version, Verdict, Link auf
+`befunde/runs/<lauf>/`. Gültig ist `docs/TESTSPEC.md` 0.4; ein Lauf behält die Version, nach
+der er lief. Read-only-Ergebnisse von Boards außerhalb der Schreibtabelle gehören ebenfalls
+hierher (TESTSPEC 0.4 §8).
 
 | Lauf | Board | BIOS | EC-FW | Test | Spec | Verdict |
 |---|---|---|---|---|---|---|
+| `patched-20261017` (17.–24.10.2026; Treiber `0.2.1+sr1~rc2`, Kernel `7.0.14-20-pve`, n5-fangov 0.4.2) — [BEFUNDE.md §F8b-Lauf 2](BEFUNDE.md#f8b-lauf-2-patched-20261017-1710-1541--2410-1541), [Rohzusammenfassung](raw/f8b-patched-20261017-abschluss.txt), [Rohdaten](runs/patched-20261017/) | N5 PRO / F8NAA | 1.05 | 0.14 | F8b | 0.3 | PASS (1 run; gestartet unter 0.3, K1–K8 wie gelaufen; Vergleich mit Baseline 0.2.1 nach 0.4 §5a erfüllt) |

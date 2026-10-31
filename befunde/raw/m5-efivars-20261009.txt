@@ -5,7 +5,7 @@ efivars nur gelesen (ls/head/cat), kein Schreiben, kein chattr, kein efibootmgr,
 kein EC-Portzugriff. Firmware-Analyse am Schreibtisch.
 
 Quellen
-- BIOS-Paket: Homelab/PvE/F8NAA_STX_1.05_260331.zip
+- BIOS-Paket: F8NAA_STX_1.05_260331.zip (lokale Ablage)
   ZIP  sha256 0EDEB88E2144B7B18807775496FE4FCA26A1012B890D25EE858874E2ED0AA7C8
   F8NAA.BIN sha256 6d2ee15a4c2f02fcdf126e77ceca16f746b009ae346e6efb0eee066df2745c6a
   (= Image aus bios-f8naa-1.05-analyse.md; EC-Teil = ECVer 00.00.00.0E = 0.14 = live)

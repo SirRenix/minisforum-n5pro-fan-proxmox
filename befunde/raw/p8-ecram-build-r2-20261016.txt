@@ -1,0 +1,367 @@
+P8 draft rebuild r2 2026-10-16 (UTC 15:22:59-15:23:45): draft patch
+driver/patches-draft/0008-debugfs-ecram.patch, revised after the review of the
+first draft (findings 1-7: stopping flag for teardown, byte start only with
+>= 320 ms budget left and no "EC timeout" wording for that abort,
+mutex_lock_killable, non-seekable open, MODULE_VERSION 0.2.1+sr2~rc1, header
+texts). On top of driver/patches/series 0001-0007 (base source sha256
+c093187f...). Not in series, not packaged, no DKMS build. Build/static
+analysis against proxmox-headers-7.0.14-20-pve and 7.0.12-1-pve. No hardware
+involved; n5host not touched.
+Docker build host = buildhost; container debian:trixie image 913f6706df59
+(same image as the first draft build p8-ecram-build-20261016.txt), fresh
+container, same build script as that run plus section H0 (kernel headers:
+nonseekable_open, FMODE_LSEEK/FMODE_PREAD, mutex_lock_killable present).
+Container and work dirs removed afterwards; the debian:trixie image kept.
+Patch file sha256 999eb0e9721719abf7d05e7c23863b623ec83af41c8193f20cc80b293a39dc96,
+patched source sha256 106d013cf8363ee4b83b6c69231dea6d80a33b687d6546d2953120aaf1ac5cb7,
+modinfo version 0.2.1+sr2~rc1, srcversion 427A532316F6BC67BB30F37 (both kernels).
+Result: patch applies with --fuzz=0; plain, W=1, sparse (C=2), smatch (C=2)
+without any message on both kernels; checkpatch --no-tree -f 0/0 on both
+kernels' checkpatch.pl (same sha256). --strict: the same 6 CHECKs as the sr1
+source in P4 (line numbers shifted), none in the new code. checkpatch on the
+patch file itself is informational (DEP-3 header is not a commit message format).
+
+
+################################################################################
+### S0 container and tools
+
+$ date -u; cat /etc/debian_version; uname -m; nproc
+Fri Oct 16 15:22:59 UTC 2026
+13.7
+x86_64
+4
+[exit 0]
+
+$ apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git patch build-essential bc bison flex libelf-dev libssl-dev kmod perl python3 libsqlite3-dev sqlite3 libdbd-sqlite3-perl libtry-tiny-perl pkg-config xz-utils zstd binutils >/dev/null && echo tools ok
+tools ok
+[exit 0]
+
+$ curl -fsSL -o /usr/share/keyrings/proxmox-archive-keyring.gpg https://enterprise.proxmox.com/debian/proxmox-archive-keyring-trixie.gpg && [ "$(sha256sum </usr/share/keyrings/proxmox-archive-keyring.gpg | cut -d" " -f1)" = 136673be77aba35dcce385b28737689ad64fd785a797e57897589aed08db6e45 ] && echo "keyring sha256 as in P2"
+keyring sha256 as in P2
+[exit 0]
+
+$ apt-get update -qq && apt-get install -y -qq --no-install-recommends proxmox-headers-7.0.14-20-pve proxmox-headers-7.0.12-1-pve >/dev/null && echo headers ok
+headers ok
+[exit 0]
+
+$ dpkg-query -W proxmox-headers-7.0.14-20-pve proxmox-headers-7.0.12-1-pve gcc-14 binutils perl
+binutils	2.44-3
+gcc-14	14.2.0-19
+perl	5.40.1-6+deb13u1
+proxmox-headers-7.0.12-1-pve	7.0.12-1
+proxmox-headers-7.0.14-20-pve	7.0.14-20
+[exit 0]
+
+$ git clone -q https://git.kernel.org/pub/scm/devel/sparse/sparse.git /opt/sparse && cd /opt/sparse && make -j$(nproc) PREFIX=/usr/local >/tmp/sparse-build.log 2>&1 && make PREFIX=/usr/local install >/dev/null 2>&1; sparse --version; git -C /opt/sparse log -1 --format="%H %cd %s" --date=iso
+v0.6.5-rc1
+37156835e3d725b6d750f000be33ba3814bb2310 2025-12-18 02:38:24 -0500 lift handling of ->immutable into dup_token()
+[exit 0]
+
+$ git clone -q https://repo.or.cz/smatch.git /opt/smatch || git clone -q https://github.com/error27/smatch.git /opt/smatch; cd /opt/smatch && make -j$(nproc) >/tmp/smatch-build.log 2>&1; ls -l /opt/smatch/smatch; git -C /opt/smatch log -1 --format="%H %cd %s" --date=iso
+-rwxr-xr-x 1 root root 7440368 Oct 16 15:23 /opt/smatch/smatch
+5189e3fb018b783a26dcb45c02c114c1d1aad290 2026-05-05 13:45:43 +0300 Merge ../hotfix
+[exit 0]
+
+################################################################################
+### P0 apply series 0001-0007 then draft 0008 with --fuzz=0
+
+$ cd /in && sha256sum patches/*.patch patches/series 0008-debugfs-ecram.patch && (cd upstream && sha256sum -c SHA256SUMS)
+c5c8aea686835fe09b518cfb51781076866c53f330c013e69499fd29647f2c1d  patches/0001-downstream-marking.patch
+36602ad49b0efcaf8ccbbd67bf748bec2e4502d679a646dff1a817da053a1235  patches/0002-write-allowlist.patch
+04101e351c71344d6dea3f7ad2076531e9d37afd518c9d1e499f98988928e304  patches/0003-debugfs-dcr.patch
+030acfef392c04958b88540413e34b51d6fc82f2030851f737cb86fa2538ee70  patches/0004-remove-ordering.patch
+6de217d1288cc2be191b0ea6f4d305bee77bda28d0c9ca0ccbc0d034c5f7f576  patches/0005-timeout-budget.patch
+e54a9d9982018641390f2b809aba277b31ebe02c20da6b87b3243063a1c94b08  patches/0006-shutdown.patch
+23557c1f2c8b1565b7bc0214056c8d0263d3725cc62a7453caaa89c076a5eab8  patches/0007-abi-fixes.patch
+5dc43756cb750e3373ed66f4abcfbb71deb06e4fc09e2512f22fd264e2e33619  patches/series
+999eb0e9721719abf7d05e7c23863b623ec83af41c8193f20cc80b293a39dc96  0008-debugfs-ecram.patch
+LICENSE: OK
+LICENSES/GPL-2.0: OK
+LICENSES/KERNEL-COPYING: OK
+driver-prototype/Makefile: OK
+driver-prototype/minisforum_n5_it5571.c: OK
+[exit 0]
+
+$ rm -rf /work && mkdir -p /work && cp -a /in/upstream /work/tree && cd /work/tree && for p in $(grep -v "^#" /in/patches/series | sed "/^$/d"); do patch -p1 --forward --no-backup-if-mismatch --fuzz=0 -s < /in/patches/$p || exit 1; done && sha256sum driver-prototype/$MOD.c | grep -q c093187f0e4644992362096fe48fce9e846b201d6407541aac80624a4e15c3a5 && echo "base (0001-0007) = c093187f0e4644992362096fe48fce9e846b201d6407541aac80624a4e15c3a5" && patch -p1 --forward --no-backup-if-mismatch --fuzz=0 < /in/0008-debugfs-ecram.patch && sha256sum driver-prototype/$MOD.c driver-prototype/Makefile
+base (0001-0007) = c093187f0e4644992362096fe48fce9e846b201d6407541aac80624a4e15c3a5
+patching file driver-prototype/minisforum_n5_it5571.c
+106d013cf8363ee4b83b6c69231dea6d80a33b687d6546d2953120aaf1ac5cb7  driver-prototype/minisforum_n5_it5571.c
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  driver-prototype/Makefile
+[exit 0]
+
+$ sha256sum /work/tree/driver-prototype/minisforum_n5_it5571.c | grep -q 106d013cf8363ee4b83b6c69231dea6d80a33b687d6546d2953120aaf1ac5cb7 && echo "patched source = 106d013cf8363ee4b83b6c69231dea6d80a33b687d6546d2953120aaf1ac5cb7"; LC_ALL=C grep -nP "[^\x00-\x7f]|\r" /work/tree/driver-prototype/minisforum_n5_it5571.c || echo "ASCII only, no CR"
+patched source = 106d013cf8363ee4b83b6c69231dea6d80a33b687d6546d2953120aaf1ac5cb7
+ASCII only, no CR
+[exit 0]
+
+################################################################################
+### F4/F5 plain + W=1 build, kernel 7.0.14-20-pve
+
+$ cd /work/7.0.14-20-pve && make -C /lib/modules/7.0.14-20-pve/build M=$PWD modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/7.0.14-20-pve && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.14-20-pve/build M=$PWD W=1 modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/7.0.14-20-pve && for f in -Wextra -Wmissing-prototypes -Wmissing-declarations; do printf '%s in .o.cmd: %s\n' $f $(grep -c -- $f .minisforum_n5_it5571.o.cmd); done
+-Wextra in .o.cmd: 1
+-Wmissing-prototypes in .o.cmd: 1
+-Wmissing-declarations in .o.cmd: 1
+[exit 0]
+
+$ cd /work/7.0.14-20-pve && /usr/sbin/modinfo ./minisforum_n5_it5571.ko | grep -vE '^(sig|signature|\s)'
+filename:       /work/7.0.14-20-pve/./minisforum_n5_it5571.ko
+version:        0.2.1+sr2~rc1
+license:        GPL
+description:    Minisforum N5 family IT5571 fan/temp hwmon driver; N5 Pro/Air support is experimental; not affiliated with Minisforum; use at your own risk
+author:         ltdstudio, community exploration for the Minisforum N5 family
+srcversion:     427A532316F6BC67BB30F37
+alias:          dmi*:pn*N5AIR*:rn*F8NAB*:
+alias:          dmi*:pn*N5A*:rn*F8NAB*:
+alias:          dmi*:svn*MicroComputer(HK)TechLimited*:pn*N5PRO*:rn*F8NAA*:
+alias:          dmi*:pn*N5*:rn*F8NAA*:
+depends:        
+name:           minisforum_n5_it5571
+retpoline:      Y
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+parm:           force:Bind read-only on an unknown system (never enables PWM writes; sensor reads still send EC read commands) (bool)
+parm:           experimental_write:Enable PWM writes on boards in the downstream write allowlist; experimental, may leave fans at a fixed duty (bool)
+parm:           debug_regs:Read-only debugfs dumps dcr (EC PWM registers I2EC 0x1800-0x180f) and ecram (EC RAM 0x00-0xff) (validation only; off: no debugfs, no Super-I/O access, no EC RAM dump) (bool)
+[exit 0]
+
+################################################################################
+### F2 sparse C=2, kernel 7.0.14-20-pve
+
+$ cd /lib/modules/7.0.14-20-pve/build && sh scripts/checker-valid.sh sparse -D__x86_64__ && echo 'checker-valid: sparse accepted'
+1
+checker-valid: sparse accepted
+[exit 0]
+
+$ cd /work/7.0.14-20-pve && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.14-20-pve/build M=$PWD C=2 modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+################################################################################
+### F3 smatch C=2, kernel 7.0.14-20-pve
+
+$ cd /work/7.0.14-20-pve && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.14-20-pve/build M=$PWD C=2 CHECK='/opt/smatch/smatch -p=kernel' modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+################################################################################
+### F4/F5 plain + W=1 build, kernel 7.0.12-1-pve
+
+$ cd /work/7.0.12-1-pve && make -C /lib/modules/7.0.12-1-pve/build M=$PWD modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/7.0.12-1-pve && make -C /lib/modules/7.0.12-1-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.12-1-pve/build M=$PWD W=1 modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/7.0.12-1-pve && for f in -Wextra -Wmissing-prototypes -Wmissing-declarations; do printf '%s in .o.cmd: %s\n' $f $(grep -c -- $f .minisforum_n5_it5571.o.cmd); done
+-Wextra in .o.cmd: 1
+-Wmissing-prototypes in .o.cmd: 1
+-Wmissing-declarations in .o.cmd: 1
+[exit 0]
+
+$ cd /work/7.0.12-1-pve && /usr/sbin/modinfo ./minisforum_n5_it5571.ko | grep -vE '^(sig|signature|\s)'
+filename:       /work/7.0.12-1-pve/./minisforum_n5_it5571.ko
+version:        0.2.1+sr2~rc1
+license:        GPL
+description:    Minisforum N5 family IT5571 fan/temp hwmon driver; N5 Pro/Air support is experimental; not affiliated with Minisforum; use at your own risk
+author:         ltdstudio, community exploration for the Minisforum N5 family
+srcversion:     427A532316F6BC67BB30F37
+alias:          dmi*:pn*N5AIR*:rn*F8NAB*:
+alias:          dmi*:pn*N5A*:rn*F8NAB*:
+alias:          dmi*:svn*MicroComputer(HK)TechLimited*:pn*N5PRO*:rn*F8NAA*:
+alias:          dmi*:pn*N5*:rn*F8NAA*:
+depends:        
+name:           minisforum_n5_it5571
+retpoline:      Y
+vermagic:       7.0.12-1-pve SMP preempt mod_unload modversions 
+parm:           force:Bind read-only on an unknown system (never enables PWM writes; sensor reads still send EC read commands) (bool)
+parm:           experimental_write:Enable PWM writes on boards in the downstream write allowlist; experimental, may leave fans at a fixed duty (bool)
+parm:           debug_regs:Read-only debugfs dumps dcr (EC PWM registers I2EC 0x1800-0x180f) and ecram (EC RAM 0x00-0xff) (validation only; off: no debugfs, no Super-I/O access, no EC RAM dump) (bool)
+[exit 0]
+
+################################################################################
+### F2 sparse C=2, kernel 7.0.12-1-pve
+
+$ cd /lib/modules/7.0.12-1-pve/build && sh scripts/checker-valid.sh sparse -D__x86_64__ && echo 'checker-valid: sparse accepted'
+1
+checker-valid: sparse accepted
+[exit 0]
+
+$ cd /work/7.0.12-1-pve && make -C /lib/modules/7.0.12-1-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.12-1-pve/build M=$PWD C=2 modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+################################################################################
+### F3 smatch C=2, kernel 7.0.12-1-pve
+
+$ cd /work/7.0.12-1-pve && make -C /lib/modules/7.0.12-1-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.12-1-pve/build M=$PWD C=2 CHECK='/opt/smatch/smatch -p=kernel' modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+################################################################################
+### H0 kernel API used by the new code, headers
+
+$ grep -n "nonseekable_open\|define FMODE_LSEEK\|define FMODE_PREAD" /lib/modules/7.0.14-20-pve/build/include/linux/fs.h; grep -n "mutex_lock_killable" /lib/modules/7.0.14-20-pve/build/include/linux/mutex.h | head -3
+114:#define FMODE_LSEEK		((__force fmode_t)(1 << 2))
+116:#define FMODE_PREAD		((__force fmode_t)(1 << 3))
+3105:extern int nonseekable_open(struct inode * inode, struct file * filp);
+189:extern int __must_check _mutex_lock_killable(struct mutex *lock,
+195:#define mutex_lock_killable(lock) _mutex_lock_killable(lock, 0, NULL)
+204:#define mutex_lock_killable_nest_lock(lock, nest_lock)			\
+[exit 0]
+
+$ grep -n "nonseekable_open\|define FMODE_LSEEK\|define FMODE_PREAD" /lib/modules/7.0.12-1-pve/build/include/linux/fs.h; grep -n "mutex_lock_killable" /lib/modules/7.0.12-1-pve/build/include/linux/mutex.h | head -3
+114:#define FMODE_LSEEK		((__force fmode_t)(1 << 2))
+116:#define FMODE_PREAD		((__force fmode_t)(1 << 3))
+3099:extern int nonseekable_open(struct inode * inode, struct file * filp);
+189:extern int __must_check _mutex_lock_killable(struct mutex *lock,
+195:#define mutex_lock_killable(lock) _mutex_lock_killable(lock, 0, NULL)
+204:#define mutex_lock_killable_nest_lock(lock, nest_lock)			\
+[exit 0]
+
+################################################################################
+### F1 checkpatch --no-tree -f on the patched file
+
+$ sha256sum /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl /lib/modules/7.0.12-1-pve/build/scripts/checkpatch.pl
+6e7abb5d613b8916f162db09d4442fbd444f31d2402022b641e9ecfcc3279323  /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl
+6e7abb5d613b8916f162db09d4442fbd444f31d2402022b641e9ecfcc3279323  /lib/modules/7.0.12-1-pve/build/scripts/checkpatch.pl
+[exit 0]
+
+$ cd /work/cpsrc && perl /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl --no-tree -f minisforum_n5_it5571.c
+total: 0 errors, 0 warnings, 1195 lines checked
+
+minisforum_n5_it5571.c has no obvious style problems and is ready for submission.
+[exit 0]
+
+$ cd /work/cpsrc && perl /lib/modules/7.0.12-1-pve/build/scripts/checkpatch.pl --no-tree -f minisforum_n5_it5571.c
+total: 0 errors, 0 warnings, 1195 lines checked
+
+minisforum_n5_it5571.c has no obvious style problems and is ready for submission.
+[exit 0]
+
+$ cd /work/cpsrc && perl /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl --no-tree --strict -f minisforum_n5_it5571.c   # informational only
+CHECK: struct mutex definition without comment
+#165: FILE: minisforum_n5_it5571.c:165:
++	struct mutex lock;
+
+CHECK: Alignment should match open parenthesis
+#848: FILE: minisforum_n5_it5571.c:848:
++	HWMON_CHANNEL_INFO(temp,
++		HWMON_T_INPUT | HWMON_T_LABEL,
+
+CHECK: Alignment should match open parenthesis
+#853: FILE: minisforum_n5_it5571.c:853:
++	HWMON_CHANNEL_INFO(fan,
++		HWMON_F_INPUT | HWMON_F_LABEL,
+
+CHECK: Alignment should match open parenthesis
+#858: FILE: minisforum_n5_it5571.c:858:
++	HWMON_CHANNEL_INFO(pwm,
++		HWMON_PWM_INPUT | HWMON_PWM_ENABLE,
+
+CHECK: Alignment should match open parenthesis
+#1074: FILE: minisforum_n5_it5571.c:1074:
++	data->hwmon_dev = devm_hwmon_device_register_with_info(&pdev->dev,
++			N5_DRIVER_NAME, data, &n5_chip_info, NULL);
+
+CHECK: Alignment should match open parenthesis
+#1174: FILE: minisforum_n5_it5571.c:1174:
++	n5_pdev = platform_device_register_simple(N5_DRIVER_NAME,
++						    PLATFORM_DEVID_NONE, NULL, 0);
+
+total: 0 errors, 0 warnings, 6 checks, 1195 lines checked
+
+NOTE: For some of the reported defects, checkpatch may be able to
+      mechanically convert to the typical style using --fix or --fix-inplace.
+
+minisforum_n5_it5571.c has style problems, please review.
+
+NOTE: If any of the errors are false positives, please report
+      them to the maintainer, see CHECKPATCH in MAINTAINERS.
+[exit 1]
+
+$ cd /work/tree && perl /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl --no-tree --no-signoff /in/0008-debugfs-ecram.patch   # informational: the patch itself
+ERROR: Avoid using diff content in the commit message - patch(1) might not work
+#121: 
+--- a/driver-prototype/minisforum_n5_it5571.c
+
+ERROR: Invalid commit separator - some tools may have problems applying this
+#121: 
+--- a/driver-prototype/minisforum_n5_it5571.c
+
+WARNING: Missing commit description - Add an appropriate one
+
+total: 2 errors, 1 warnings, 213 lines checked
+
+NOTE: For some of the reported defects, checkpatch may be able to
+      mechanically convert to the typical style using --fix or --fix-inplace.
+
+/in/0008-debugfs-ecram.patch has style problems, please review.
+
+NOTE: If any of the errors are false positives, please report
+      them to the maintainer, see CHECKPATCH in MAINTAINERS.
+[exit 1]
+
+################################################################################
+### F2/F3 negative control
+
+$ cd /work/negctl && make -C /lib/modules/7.0.14-20-pve/build M=$PWD C=2 modules 2>&1 | grep -E 'CHECK|warning|error' | grep -v pahole
+  CHECK   negctl.c
+negctl.c:7:17: warning: dereference of noderef expression
+[exit 0]
+
+$ cd /work/negctl && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null; make -C /lib/modules/7.0.14-20-pve/build M=$PWD C=2 CHECK='/opt/smatch/smatch -p=kernel' modules 2>&1 | grep -E 'CHECK|warning|error' | grep -v pahole
+  CHECK   negctl.c
+negctl.c:15 negctl_b() error: dereferencing freed memory 'q' (line 14)
+[exit 0]
+
+################################################################################
+### end
+
+$ date -u
+Fri Oct 16 15:23:45 UTC 2026
+[exit 0]

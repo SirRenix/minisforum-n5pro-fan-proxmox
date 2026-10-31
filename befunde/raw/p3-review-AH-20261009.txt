@@ -1,5 +1,5 @@
 P3 Review Gruppe A/H - Rohdaten 2026-10-09
-Quelle: n5host (ssh pve, nur lesend) + lokale Arbeitskopie
+Quelle: n5host (ssh n5host, nur lesend) + lokale Arbeitskopie
 
 ### lokal: sha256 vendored
 e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  <repo>\driver\upstream\driver-prototype\minisforum_n5_it5571.c

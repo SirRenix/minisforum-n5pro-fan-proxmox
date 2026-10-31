@@ -1,0 +1,53 @@
+Z2 2026-10-17T15:35:18+02:00 driver 0.2.1+sr1~rc2 srcversion E9CF5951A3238F3B9930797
+start: pwm3_enable=2 DCR3/4=64/64
+pwm3_enable=1 (Treiber: 255)
+enable1 +1ms DCR3/4=64/64 fan3=1681
+enable1 +1547ms DCR3/4=ff/64 fan3=1689
+enable1 +4630ms DCR3/4=ff/ff fan3=2753
+enable1 +15060ms DCR3/4=ff/ff fan3=3552 (Ende)
+pwm3=180
+write180 +0ms DCR3/4=ff/ff fan3=3552
+write180 +1716ms DCR3/4=ff/b4 fan3=3552
+write180 +4755ms DCR3/4=b4/b4 fan3=3599
+write180 +30065ms DCR3/4=b4/b4 fan3=2739 (Ende)
+pwm3_enable=2 (Rueckgabe 0x2b)
+handback +1ms DCR3/4=b4/b4 fan3=2736
+handback +224ms DCR3/4=b0/b4 fan3=2732
+handback +448ms DCR3/4=ac/b4 fan3=2715
+handback +2209ms DCR3/4=ac/b0 fan3=2715
+handback +2433ms DCR3/4=ac/ab fan3=2715
+handback +2658ms DCR3/4=ac/a7 fan3=2715
+handback +2884ms DCR3/4=ac/a2 fan3=2715
+handback +3112ms DCR3/4=ac/9e fan3=2715
+handback +3337ms DCR3/4=ac/99 fan3=2715
+handback +3569ms DCR3/4=ac/97 fan3=2715
+handback +5114ms DCR3/4=ab/97 fan3=2658
+handback +5339ms DCR3/4=a6/97 fan3=2655
+handback +5563ms DCR3/4=a2/97 fan3=2632
+handback +5779ms DCR3/4=9e/97 fan3=2585
+handback +6000ms DCR3/4=99/97 fan3=2542
+handback +6217ms DCR3/4=95/97 fan3=2498
+handback +6435ms DCR3/4=91/97 fan3=2450
+handback +6653ms DCR3/4=8f/97 fan3=2420
+handback +8155ms DCR3/4=8f/96 fan3=2420
+handback +8379ms DCR3/4=8f/91 fan3=2420
+handback +8603ms DCR3/4=8f/8d fan3=2420
+handback +8828ms DCR3/4=8f/89 fan3=2420
+handback +9055ms DCR3/4=8f/84 fan3=2420
+handback +9280ms DCR3/4=8f/80 fan3=2420
+handback +9505ms DCR3/4=8f/7b fan3=2420
+handback +9729ms DCR3/4=8f/7a fan3=2420
+handback +11272ms DCR3/4=8d/7a fan3=2291
+handback +11489ms DCR3/4=88/7a fan3=2281
+handback +11708ms DCR3/4=84/7a fan3=2250
+handback +11928ms DCR3/4=80/7a fan3=2218
+handback +12151ms DCR3/4=7b/7a fan3=2162
+handback +12378ms DCR3/4=77/7a fan3=2118
+handback +12603ms DCR3/4=72/7a fan3=2039
+handback +14349ms DCR3/4=72/77 fan3=2039
+handback +14567ms DCR3/4=72/73 fan3=2039
+handback +14784ms DCR3/4=72/6f fan3=2039
+handback +15002ms DCR3/4=72/6a fan3=2039
+handback +15002ms DCR3/4=72/6a fan3=2039 (Ende)
+ende: dcr 1800: 00 ff 00 75 4b 72 6a ff 00 00 00 06 00 00 00 00
+dmesg: keine Treiber-Warnungen

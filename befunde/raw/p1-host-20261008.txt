@@ -1,6 +1,6 @@
 # P1 Host-Messung n5host (n5host), READ-ONLY
 # Datum: 2026-10-08 21:21:26 +02:00 (Workstation-Zeit)
-# Aufruf: Skript p1-host.sh per 'ssh pve bash -s' (Skripttext unten am Ende)
+# Aufruf: Skript p1-host.sh per 'ssh n5host bash -s' (Skripttext unten am Ende)
 # Hostname in uname-Ausgabe durch n5host ersetzt
 
 ### 1. Kernel

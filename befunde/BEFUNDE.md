@@ -115,8 +115,9 @@ Vorgänger `n5-fand`, heute `legacy/`). Stoppverhalten des Reglers: CPU/SSD →
 EC-Automatik (nachweislich funktionsfähig), HDD → fester sicherer Wert 140
 (≈ 2250 RPM; am 14.09. stand hier noch 119 ≈ 1900 RPM). Ab Treiber `0.2.1+sr1` (Patch 0006)
 setzt der Treiber beim Reboot/Ausschalten HDD und PCIe auf 255 und CPU/SSD auf
-EC-Automatik; der Regler-Failsafe HDD 140 übersteht einen Warmstart dann nicht
-(TESTSPEC T6, ungemessen).
+EC-Automatik. T6 gemessen 17.10.2026 (§Wartungsfenster 1, F3/A4): BIOS/EC setzt DCR3/4 bei
+Kalt- und Warmstart auf 0x64 (100), der Regler-Failsafe HDD 140 übersteht also keinen Neustart;
+DCR5 (PCIe) behält seinen Wert über einen Warmstart, nach Kaltstart 0x00.
 
 ## Dauerbetrieb (seit 14.09.2026 17:33)
 
@@ -139,8 +140,7 @@ EC-Automatik; der Regler-Failsafe HDD 140 übersteht einen Warmstart dann nicht
 ## Offene Punkte
 
 - Reboot-Nachweis: Modul lädt automatisch, `n5-fand` startet, Kurven greifen.
-  Beim nächsten Reboot außerdem I2EC-Snapshot lesen → klärt, wie BIOS 1.05
-  die DCRs initialisiert (offene Frage aus Phase 6).
+  DCR-Initialisierung durch BIOS 1.05 geklärt 17.10.2026 (§Wartungsfenster 1, T6).
 - Bedeutung von EC[0x34] = 100 % konstant ungeklärt; liegt innerhalb einer
   Tabelle bei 0x30–0x38, vermutlich Kurvenpunkt, kein Live-Sollwert.
 - EC-RAM-Tabellen: dekodiert 08.10. (Schreibtisch, Dumps 14.09.) — Tripel
@@ -166,10 +166,316 @@ von einem zweiten Agenten gegengeprüft.
 | n5-fangov Unit | `WatchdogSec=60`, `Restart=always`, `ExecStopPost=failsafe`, `KillMode=control-group`; Host-Konfig `profile = "n5pro"` | gemessen |
 | SIGKILL/Absturz | `ExecStopPost` setzt Safe-State (CPU/SSD auto, HDD 140); Hänger: Watchdog nach ≤ 3×Intervall + 60 s (~90 s); Neustart erzeugt kurzen 255-Stoß auf pwm1/2 | aus Code abgeleitet, am Host zu messen |
 | pwm-Cache | Treiber liefert pwm/pwm_enable nur aus Cache → n5-fangov-Read-back-Prüfung wirkungslos, EC-Übernahme nicht erkennbar | aus Code abgeleitet |
-| Profil `auto` | fehlt `experimental_write`, fällt n5-fangov bei `profile = "auto"` (Default) **still auf `monitor`** zurück: `check` besteht, keine Regelung. pve01 betrifft das nicht (`n5pro`) | aus Code abgeleitet |
+| Profil `auto` | fehlt `experimental_write`, fällt n5-fangov bei `profile = "auto"` (Default) **still auf `monitor`** zurück: `check` besteht, keine Regelung. Den Referenzhost betrifft das nicht (`n5pro`) | aus Code abgeleitet |
 | `versionLess` | `0.2.1+sr1` gilt als < `0.2.1`; `~rc` nicht unterscheidbar; kein Test | aus Code abgeleitet |
 | EC-Tabellen | 4 Tripel-Tabellen, Format **(Solldrehzahl/100, T_oben, T_unten)** (M5, 09.10., EC-Code). A 0x10–0x27 = CPU (DCR1, Eingang EC 0x09), B 0x30–0x38 = SSD (DCR2, Eingang EC 0x05), C 0x70–0x78 = HDD DCR3, D 0x79–0x81 = HDD DCR4 (Eingang EC 0x06). Werte aus Konstanten beim EC-Start, OS kann sie nicht beschreiben. Die Setup-Variable „Fan 1–4 Setting“ ist vom OS nicht lesbar | abgeleitet (Firmware-Code), Messwerte 14.09. passen; am Gerät offen: Startphase, Override-Register, BIOS-User-Mode (M1) |
 | PCIe 0x8c | erklärt: keine EC-Automatik für DCR5 (s. o.); „Kurvenpunkte überschrieben“ damit unwahrscheinlich, F1/M2 bestätigt am Gerät | abgeleitet |
+
+## F8b-Baseline `baseline-20261008` (08.10. 22:25 – 15.10. 22:25)
+
+TESTSPEC §5a, Lauf 1 (ungepatchter Treiber). Watcher `tools/validation-watch/`, 30-s-Sampler,
+5-min-Check. Zusammenfassung `raw/f8b-baseline-20261008-abschluss.txt`; volle Rohdaten auf dem
+Host unter `/var/lib/n5-validation/baseline-20261008/` (`samples.csv`, 20 061 Zeilen).
+
+**Ergebnis: PASS — kein Fehler beobachtet in 7 Tagen unter diesen Bedingungen.**
+Bedingungen: Treiberpaket `minisforum-n5-it5571-dkms` 0.2.1-1 (modinfo 0.2.0, srcversion
+`96E49785…`, `experimental_write=Y`), Kernel `7.0.14-20-pve`, n5-fangov 0.4.2 regelt pwm1–3
+(`pwm*_enable` 1), pwm4 EC-Automatik (2), BIOS 1.05, EC 0.14. Normaler Produktivbetrieb; die
+Woche enthielt Sonntag 11.10. mit allen ZFS-Scrubs (00:24–13:38, `media` 13 h 14 min,
+`data` 3 h 08 min, 0 Fehler) und dem wöchentlichen vzdump-Backup (ein Container, 03:00, 13 s; im
+Journal der einzige Backup-Job im Zeitraum), außerdem Builds in einer Build-VM (09.10.) und täglich
+~1 h Last aus einem Container (Gast A, s. Kennlinie). Abschlussmail 15.10. 22:30:17 („ABSCHLUSS … PASS“).
+
+| K | Kriterium (TESTSPEC §5a) | Ereignisse gesamt / annotiert / unerklärt | Verdikt |
+|---|---|---|---|
+| K1 | Kernel-Log (Oops/BUG/Call Trace/hung task/soft lockup/RCU stall/watchdog/MCE/AER/NVMe-Reset/EC-Fehler) | 0 / 0 / 0 | PASS |
+| K2 | Boot-ID-Wechsel | 0 / 0 / 0 (1 Boot-ID `58aeb7af…`, Uptime durchgehend 346 132 → 951 201 s) | PASS |
+| K3 | n5-fangov inaktiv / Restart / Journal ≥ warning | 0 / 0 / 0 (`active` in 20 061 von 20 061 Samples, NRestarts 0) | PASS |
+| K4 | Lüfter 0 rpm, Temperaturgrenzen, EC-Lesefehler | 0 / 0 / 0 (`ec_read_errors` 0; Maxima Tctl 73,0 · NVMe 50,8 · HDD 44 · EC-CPU 70 °C; fan1 1 417–4 455, fan2 2 513–3 147, fan3 1 623–1 972 rpm) | PASS |
+| K5 | Sampler-Lücke > 90 s | 0 / 0 / 0 | PASS |
+| K6 | Datenverzeichnis > 200 MB / Root-FS < 5 GB | 0 / 0 / 0 (Datenverzeichnis 3,4 MB) | PASS |
+| K7 | Kernel-Taint verändert | 0 / 0 / 0 (12289 = P+O+E bei Start und Ende) | PASS |
+| K8 | Watcher selbst (Dienst, Journal, Abdeckung < 99 %) | 0 / 0 / 0 | PASS |
+
+| Abdeckung (K8) | Wert |
+|---|---|
+| Sampler | 100,00 % (20 052 Samples bis Soll-Ende, ungedeckt 0 s); 20 061 bis zum letzten Sample 22:30:13 |
+| Check | 100,00 % (2 007 Läufe, ungedeckt 0 s) |
+| Annotationen / geplante Ausfallzeit | keine |
+| Timer nach Laufende | `systemctl list-timers --all 'n5vw-*'` → 0 Timer, Units `inactive/disabled` (geprüft 15.10. 23:16) |
+
+Hinweis zur Statistik: `status.sh` nach Laufende meldet „Check läuft nicht“ und „Samples im
+Zeitraum 99,0 %“ — Folge des Abschaltens (Statistik-Zeitraum bis „jetzt“), kein Befund.
+
+Bedeutung für B10 (SMM-Restrisiko, Plan §7): Lauf 1 zeigt 0 EC-Lesefehler/Timeouts. Akzeptanz
+erst, wenn Lauf 2 (gepatchter Treiber, 7 Tage) dasselbe zeigt.
+
+## Wartungsfenster 1 (17.10.2026)
+
+12:06–15:43, Betreiber am Gerät, Prüfvorschrift TESTSPEC 0.3. Getestet: Treiber `0.2.1+sr1~rc2`
+(srcversion `E9CF5951A3238F3B9930797`), n5-fangov 0.5.0-rc2; Kernel `7.0.14-20-pve`, BIOS 1.05,
+EC 0.14. Host im Produktivbetrieb (Gäste liefen, Betreiberentscheidung 17.10.: keine Gäste
+stilllegen). Rohdaten `raw/*20261017*` (je `.sha256`, auf `n5host` gegen die Originale geprüft,
+10/10). Verdikte nach TESTSPEC 0.3; Schritte ohne TESTSPEC-Test (Checklisten B/C) mit PASS/FAIL
+gegen die Erwartung der Laufkarte.
+
+### Block A — Ausgangszustand, Kaltstart
+
+| Schritt | Verdikt | Beleg |
+|---|---|---|
+| A1 Regler aus | PASS | Failsafe CPU/SSD auto, HDD 140 |
+| A2 Autoload aus | PASS (Maßnahme unzureichend) | Datei entfernt, Modul lud nach dem Kaltstart trotzdem — über den DMI-Modalias (udev), nicht über `systemd-modules-load`. Kein Schreibzugriff seit Boot (Regler aus, `pwm1–4_enable` = 2). Ohne Autoload braucht es eine `modprobe.d`-Blacklist (in F2 so gemacht, wirkt) |
+| A3 Kaltstart | PASS | ≥ 30 s stromlos, SATA 4/4, Pools healthy |
+| A4 T6-kalt / M1 (Modus A) | REPORTED | `RESULT: complete`; EC-RAM-Dumps gleich, Kurventabellen identisch; TACH 2489/2232/1659 rpm; EC CPU 61 / System 41 / Board 32 / Ambient 21 °C; Tctl 62,5 °C (Gäste starten). `raw/f8a-snapshot-cold-20261017T102943Z.txt` |
+
+### Block B — Treiber rc2
+
+| Schritt | Verdikt | Beleg |
+|---|---|---|
+| B1 Installation | PASS | DKMS für 7.0.12-1/-19/-20 installed, kein Restart-Marker; postinst lädt das Modul und legt die Autoload-Datei neu an (Paketdatei) |
+| B2 Identität (0001/0002/0007) | PASS | Version/srcversion = Build; neue Parametertexte; „WRITES ENABLED"; kein `fan*_min`/`fan4`; 3 fan, 4 temp, 4 pwm |
+| B3 `experimental_write=0` | PASS | keine pwm-Knoten, dmesg nennt den Grund |
+| B4 `force=1` | PASS | ohne Zusatzwirkung auf erkanntem Board |
+| B5 debugfs `dcr` (0003) | PASS / Teil offen | `dcr` 3× = `n5_i2ec_read 0x1800 16` = `dcr` nach Reload, byteidentisch; 0x2e/0x2f danach frei. Belegung **während** des Lesens nicht abgreifbar (zu kurz) |
+| B6 ohne `debug_regs` | PASS | kein debugfs-Verzeichnis |
+
+### Block C — n5-fangov 0.5.0-rc2, Gates
+
+| Schritt | Verdikt | Beleg |
+|---|---|---|
+| C1 Installation | PASS, Befund | postinst aktiviert den deaktivierten Dienst wieder (`systemctl enable` bei jedem configure; nicht neu in rc2) |
+| C2 `identify` | PASS | DMI inkl. `sys_vendor`, EC 0.14, Treiber + srcversion, `dcr`, hw_status `experimental`. Status-Notiz veraltet (nennt laufende F8b-Baseline) |
+| C3 `check` | PASS | Exit 0, Warnungen experimental + `debug_regs` |
+| C4 Gate read-only | PASS, Hinweis | FAIL „driver loaded read-only", 1 Alarm `driver` (Rest unterdrückt), nach 5 Starts `failed` + Alarm. onfailure-Text nennt „exited with code 0", tatsächlich scheiterte `ExecStartPre` mit 1 |
+| C5 Modul fehlt | PASS (Erwartung präzisiert) | FAIL „device not found …", Exit 1. „N5 EC driver missing" (`ErrDriverMissing`) kommt nur bei `profile = "auto"`; Host hat `profile = "n5pro"` |
+| C6 Start, Lock | PASS, Befund | `writer.lock` = `serve pid …`, `test pwm3` abgelehnt; DCR3 = DCR4. Im ersten Zyklus „EC register deviation" für alle Kanäle (z. B. DCR1 116 statt 188), Sekunden später `dcr` = Schreibwerte. Lesezeitpunkt vor Übernahme durch den EC (Z1/Z2), keine dauerhafte Abweichung |
+| C7 G5 remote | PASS | Daemon läuft → abgelehnt (G1); stdin kein Terminal → abgelehnt; `ssh -tt` → abgelehnt („session is remote"), Override `--i-am-at-the-console` by design |
+| C8 G1 im Neustart | PASS / Teil offen | `validate` abgelehnt „running or (re)starting". Failsafe fehlte im Journal, weil `systemctl kill` auch den Control-Prozess traf (Testartefakt); Failsafe nach Kill des Hauptprozesses in E3 belegt |
+| C9 Stopp | PASS | Failsafe, Lock leer |
+
+### Block D — `validate` T0/T1/T6
+
+| Schritt | Verdikt | Beleg |
+|---|---|---|
+| D1 pwm1 | T0 PASS, **T1 INCONCLUSIVE** (Gate G4), T6 REPORTED | G1/G2/G3/G5 PASS (G3 load 0,33), **G4 FAIL: Tctl-Spanne 13,5 °C** (Grenze < 5), EC-System 0,0 °C, HDD 0,0 °C; G6 PARTIAL. T1 nicht gelaufen, nichts geschrieben. Bündel verloren (Ausgabeordner fehlte, s. u.) |
+| D1 pwm2–pwm4, D2–D4 | nicht gelaufen | → Fenster 2 |
+
+Last vor D (Normalbetrieb): load 0,4–0,56, Tctl sekündlich 35–43 °C durch kurze Lastspitzen der
+Gäste (Healthchecks); 1-min-Mittel der Gäste wie in den 12 h davor. Folgerungen:
+
+- **G4-Tctl auf einem Host im Produktivbetrieb nicht erfüllbar:** die Spanne misst Rauschen
+  des Tctl-Sensors, die EC-Eingänge (0x04, HDD) standen. Umgesetzt in TESTSPEC 0.4 (#20, `docs/TESTSPEC.md`, freigegeben 2026-10-17).
+- **`validate` legt das Bündel erst nach dem Lauf an** (`os.Mkdir` ohne Elternordner) → bei
+  fehlendem `--out`-Ordner gehen die Ergebnisse verloren, bei gelaufenem T1 auch die
+  Schreibtest-Rohdaten.
+
+### Block E — F8a Stress und Fehlerinjektion
+
+| Schritt | Verdikt | Beleg |
+|---|---|---|
+| E1 load (50× Reload) | PASS | 50/50, 0 Kernel-Log-Treffer, `enable`=2 und fan1–3 > 0 nach jedem Reload, Schreibfehler nur ENOENT/ENODEV (0004); max Tctl 56,2 / NVMe 42,8 / HDD 39,0 °C. Danach DCR1/2 0xf9 (letzter Write), 1 min später EC-Automatik. `raw/f8a-stress-load-20261017T110418Z.txt` |
+| E2 unbind (50×) | PASS | 50/50, 0 Treffer; max Tctl 58,7 / NVMe 44,8 / HDD 41,0 °C. DCR5 blieb 0x00: Unbind gibt nur berührte Kanäle zurück, E2 schreibt pwm4 nicht (Laufkarten-Erwartung „PCIe 255" war falsch). `raw/f8a-stress-unbind-20261017T114401Z.txt` |
+| E3 `kill -9` (3×) | PASS | Failsafe (ExecStopPost; CPU/SSD auto, HDD 140) nach 56/66/63 ms, READY nach 5,5–5,6 s. DCR3-Meldung „106 after writing 140" = Lesezeitpunkt wie C6 |
+| E4 Lüfter abstecken | N/A | Stecker ohne Öffnen des Gehäuses nicht erreichbar; Stall-Alarm am Gerät ungeprüft |
+| E5 Latenz | REPORTED | Regler gestoppt. Read `fan1_input` median 4,21 / p95 5,22 / max 6,09 ms; Write `pwm1` median 15,80 / p95 17,29 / max 20,22 ms (davon ~6,7 ms `sudo tee`); keine EC-Timeouts |
+
+### Block F — Shutdown-Pfad, PCIe, T6-warm
+
+| Schritt | Verdikt | Beleg |
+|---|---|---|
+| F1 PCIe / M2 | **FAIL** (Skript), annotiert | DCR5 b0 0x00, b1/b2 0xa7, **c +0 s 0xa7**, c +60 s 0xff, c +300 s 0xff → `hand-back check … FAIL`. Kurventabellen 0x10–0x27/0x30–0x38/0x70–0x81 vorher = nachher, EC-RAM unverändert, 0 Kernel-Log-Treffer → **M2: der Treiber ändert keine EC-Kurven.** Annotation Z1: der +0-s-Punkt liest vor der Übernahme durch den EC; Treiber schreibt 255 korrekt. Kein PASS — Wiederholung mit Settle-Zeit (TESTSPEC 0.4) offen. `raw/f8a-pcie-m2-20261017T120056Z.txt`, `raw/f8a-snapshot-pcie-before-20261017T120057Z.txt`, `raw/f8a-snapshot-pcie-after-20261017T120615Z.txt` |
+| F2 Warmstart nach manuellem pwm1/pwm3 | PASS (Wirkung nicht direkt belegbar) | Blacklist statt Autoload-Datei; pwm1 = 150, pwm3 = 180; keine „not set to"-Warnung im Vorboot-Journal. `.shutdown` loggt bei Erfolg nichts; DCR5 stand schon vor dem Reboot auf 0xff (Z1) → Wirkung von `.shutdown` auf PCIe nicht von F1/Z1 trennbar, auf HDD vom BIOS überschrieben (F3) |
+| F3 T6-warm | REPORTED | SATA 4/4, Modul nicht geladen (Blacklist wirkt). Modus A: DCR1/2 0x62/0x4b (Automatik), **DCR3/4 0x64/0x64**, **DCR5 0xff**; nach Laden: 6b/4b/64/64/ff. `raw/f8a-snapshot-warm-20261017T133314Z.txt`, `raw/f8a-snapshot-warm-loaded-20261017T133332Z.txt` |
+| F4 T6-kalt nach Treiber-Shutdown | N/A | durch A3/A4 abgedeckt (HDD 140 vor Stromtrennung → 0x64, DCR5 0x00); Betreiber 17.10. |
+
+**T6 zusammen (A4, F3; je ein Kalt- und ein Warmstart):**
+
+| Kanal | Kaltstart | Warmstart |
+|---|---|---|
+| DCR1/2 (CPU/SSD) | EC-Automatik | EC-Automatik |
+| DCR3/4 (HDD) | 0x64 (vorher 140) | 0x64 (vorher manuell 180, `.shutdown` 255) |
+| DCR5 (PCIe) | 0x00 | 0xff (= Wert vor dem Reboot) |
+
+BIOS/EC setzen HDD bei beiden Boots auf 100; PCIe behält den letzten Wert über einen Warmstart.
+Damit ist Entscheidung 2 (PCIe 255 beim Shutdown/Hand-back) begründet: ohne sie bliebe ein
+niedriger PCIe-Wert über einen Warmstart stehen.
+
+### Zusatzmessungen (kein Verdikt)
+
+| Messung | Ergebnis | Rohdatei |
+|---|---|---|
+| Z1 DCR5-Latenz (alle 0,2 s) | Write 167 → DCR5 0xa7 nach ≤ 215 ms; Rückgabe (`pwm4_enable=2`) → 0xff nach ≤ 212 ms, danach 60 s stabil. PCIe springt ohne Rampe | `raw/z1-dcr5-latenz-20261017T130459Z.txt` |
+| Z2 DCR3/4 (alle 0,2 s) | `pwm3_enable=1` (Treiber 255): DCR3 nach ~1,5 s, DCR4 nach ~4,6 s auf 0xff — **nacheinander**. Write 180: DCR4 nach ~1,7 s, DCR3 nach ~4,8 s. Rückgabe (0x2b): EC senkt DCR3 und DCR4 **abwechselnd** in Schüben von ~4 je 0,22 s; nach 15 s 0x72/0x6a (fan3 2736 → 2039 rpm), Ende des Logs, noch nicht eingeschwungen | `raw/z2-dcr34-hdd-20261017T133518Z.txt` |
+
+Folgen:
+
+- Registerprüfungen direkt nach einem Write lesen Zwischenstände: PCIe ≤ 0,2 s, HDD mehrere
+  Sekunden je Register. Erklärt C6/E3 („deviation") und F1 (c +0 s).
+- **M5 (HDD-Regelung durch den EC nach 0x2b) jetzt durch Z2 gestützt:** gemessen ist, dass der EC
+  nach der Rückgabe DCR3/4 selbsttätig in Stufen vom Schreibwert weg bewegt (Rampe), passend zu
+  Upstream-#7. Nicht gemessen: Endwert, Solldrehzahl und Eingang EC 0x06 — die bleiben aus der
+  Firmware abgeleitet.
+
+### Befunde aus Fenster 1
+
+| Befund | Bereich | Schwere | Kurz |
+|---|---|---|---|
+| A2 | Doku/Laufkarte | – | Autoload über DMI-Modalias; Unterdrücken nur per Blacklist |
+| C1 | n5-fangov Paket | low | postinst `systemctl enable` bei jedem configure |
+| C4 | n5-fangov | low | onfailure-Text nennt falschen Exit-Grund |
+| C6/E3 | n5-fangov | low | DCR-Vergleich ohne Settle-Zeit |
+| D1-a | TESTSPEC | medium | G4-Tctl-Kriterium im Produktivbetrieb nicht erfüllbar |
+| D1-b | n5-fangov | medium | Bündelordner erst nach dem Lauf, ohne Elternordner |
+| F1 | f8a / TESTSPEC | low | c +0 s-Punkt ohne Settle-Zeit |
+| F2 | Treiber (sr2) | low | `.shutdown` ohne Erfolgs-Logzeile |
+| G3 | HA (Verbraucher) | low | REST-Sensoren erholen sich nach Start ohne erreichbare Quelle nicht von selbst |
+| G5 | validation-watch | low | `install.sh` Exit 1 nach erfolgreichem Start (`pipefail` + fehlendes `outbox`) |
+
+### Block G — Abschluss, Start F8b-Lauf 2
+
+| Schritt | Verdikt | Beleg |
+|---|---|---|
+| G1 Autoload zurück, Modul ohne `debug_regs` | PASS | Blacklist entfernt, Autoload-Datei unverändert (sha256) zurück; kein debugfs |
+| G2 n5-fangov 0.5.0-rc2 Dauerbetrieb | PASS | active/enabled, `check` Exit 0 (Warnung experimental), Journal ohne `warning`; Statuszeile auf Info (Entscheidung 9) |
+| G3 API-Verbraucher | PASS, Hinweis | API `status ok` + 3 Kanäle; HA-REST-Sensoren erst nach `rest.reload` mit Werten |
+| G4 Rückweg n5-fangov 0.4.2 | PASS | Downgrade, Konfig = Stand vorher, `check` all good, `check --after-update` Exit 0 (Modul für 3 Kernel), Journal ohne Warnungen |
+| G5 F8b-Lauf 2 `patched-20261017` | gestartet | START-Mail laut Journal versandt, erster Check `success`, Ende 24.10.2026 15:41. Treiber rc2 `E9CF5951…`, n5-fangov 0.4.2, Kernel 7.0.14-20. `install.sh` endete mit Exit 1 (Befund G5) |
+| G6 Rohdaten | PASS | 10 Rohdateien gegen `.sha256` geprüft, hier unter `raw/` |
+
+**Offen für Fenster 2:** T1/D3/D4 (alle Kanäle, nach TESTSPEC 0.4 mit produktivtauglichem G4),
+E4 (Stall-Alarm, Testidee ohne Abstecken), T2/T3 (pwm1–3), F1 mit Settle-Zeit.
+
+## F8b-Lauf 2 `patched-20261017` (17.10. 15:41 – 24.10. 15:41)
+
+TESTSPEC 0.4 §5a, Lauf 2 (gepatchter Treiber), Vergleich mit Lauf 1 nach §5a „Runs“ Nr. 1–4.
+Ausgewertet 31.10.2026, nur lesend. Zusammenfassung `raw/f8b-patched-20261017-abschluss.txt`
+(`.sha256`); Rückprüfung `WARNING:` `raw/k1-retro-warning-f8b-*-20261031T162822Z.txt` (je
+`.sha256`, gegen die Originale auf `n5host` geprüft). Volle Watcher-Rohdaten (`samples.csv`,
+20 061 Zeilen, Berichte, Konfig) anonymisiert mit `SHA256SUMS` unter
+[`runs/patched-20261017/`](runs/patched-20261017/), Lauf 1 unter
+[`runs/baseline-20261008/`](runs/baseline-20261008/).
+
+**Ergebnis: PASS — kein Fehler beobachtet in 7 Tagen unter diesen Bedingungen.**
+Lauf 2 ist für sich PASS (K1–K8 je 0 Ereignisse, Lauf vollständig) und hat in keinem K mehr
+unerklärte Ereignisse als Lauf 1 (beide 0). Abschlussmail 24.10. 15:44:36 („ABSCHLUSS … PASS“),
+`final.done` `2026-10-24T15:44:33+0200 PASS`; Timer `n5vw-*` danach `disabled`, 0 Units geladen
+(geprüft 31.10.).
+
+### Bedingungen
+
+| | Lauf 1 `baseline-20261008` | Lauf 2 `patched-20261017` | gleich? |
+|---|---|---|---|
+| Zeitraum | 08.10. 22:25:44 – 15.10. 22:25:44 (Do–Do) | 17.10. 15:41:54 – 24.10. 15:41:54 (Sa–Sa) | 7 Tage ✅ |
+| Treiber | Paket 0.2.1-1 (modinfo 0.2.0, srcversion `96E49785…`) | Paket `0.2.1+sr1~rc2-1`, srcversion `E9CF5951A3238F3B9930797`, `debug_regs=N`, `force=N` | **nein (Prüfgegenstand)** |
+| `experimental_write` | Y | Y | ✅ |
+| Kernel / Taint | `7.0.14-20-pve` / 12289 | `7.0.14-20-pve` / 12289 | ✅ |
+| n5-fangov | 0.4.2, pwm1–3 geregelt (`enable` 1), pwm4 EC (2) | 0.4.2 (Rückweg 17.10. 15:39 von 0.5.0-rc2), Start 15:40:12, gleiche Kanalbelegung | ✅ |
+| BIOS / EC | 1.05 / 0.14 | 1.05 / 0.14 | ✅ |
+| Watcher-Schwellen | `config.snapshot` `b44b76a1…` | `config.snapshot` `f1102d53…` | ✅ ab Schwellwertblock zeilengleich (`diff` leer); Unterschied nur Kopf (RUN_ID, Start, Boot-ID) |
+| Sampler / Check | 30 s / 300 s | 30 s / 300 s | ✅ |
+| Boot | eine Boot-ID `58aeb7af…`, Laufbeginn bei Uptime 346 132 s (4 Tage) | eine Boot-ID `1c5be8a1…`, **Laufbeginn 614 s nach einem Warmstart** (Ende Fenster 1, `reboot.target` 15:31:08) | **nein** |
+| Paketänderungen im Lauf | keine (apt-Historie leer) | **21.10. 20:04 und 20:11 Sicherheitsupdates** (s. u.) | **nein** |
+| ZFS-Scrub (2. Sonntag) | 11.10. 00:24–13:38 (`media` 13 h 14 min, `data` 3 h 08 min, 0 Fehler) | keiner (nächster 08.11.) | **nein** (#16, Variante a1, hingenommen) |
+| vzdump-Backup (Sonntag) | 11.10. 03:00, ein Container, 13 s | 18.10. 03:00, derselbe Container, 13 s | ✅ |
+| Lastepisode Gast A | ~08:55 täglich (09., 11.–15.10.), dazu 20:55 (09., 15.10.); 4–127,5 min | ~03:55 (18., 19., 22.–24.10.), dazu 15:55 (18., 23.10.); 2,5–26 min | vorhanden ✅, Lage und Länge **verschieden** |
+| VM-Neustart | ein VM-Gast gestoppt/gestartet (Bridge-/tap-Meldungen im Kernel-Log), 1× `kvm … Unhandled WRMSR` | keiner im Kernel-Log | nein (Gastbetrieb) |
+| Raumtemperatur | nicht in den Watcher-Daten; EC 0x06 Tagesmittel 21,1–22,8 °C (min 20, max 26) | EC 0x06 Tagesmittel 21,2–22,2 °C (min 21, max 25) | vergleichbar (abgeleitet über EC 0x06, §6 HDD) |
+
+### K1–K8 (gesamt / annotiert / unerklärt)
+
+| K | Kriterium | Lauf 1 | Lauf 2 | Bewertung |
+|---|---|---|---|---|
+| K1 | Kernel-Log (`K1_PATTERN`, ohne `WARNING:`) | 0 / 0 / 0 | 0 / 0 / 0 | gleich; Rückprüfung `WARNING:` beide 0 (s. u.) |
+| K2 | Boot-ID-Wechsel | 0 / 0 / 0 | 0 / 0 / 0 (Uptime 614 → 605 571 s) | gleich |
+| K3 | n5-fangov inaktiv / Restart / Journal ≥ warning | 0 / 0 / 0 | 0 / 0 / 0 (`active` 20 061/20 061, NRestarts 0, Journal ≥ warning leer) | gleich |
+| K4 | Lüfter 0 rpm, Temperaturgrenzen, EC-Lesefehler, hwmon fehlt | 0 / 0 / 0 | 0 / 0 / 0 (`ec_read_errors` 0 in allen Samples) | gleich |
+| K5 | Sampler-Lücke > 90 s, Uhrsprung, veraltet | 0 / 0 / 0 | 0 / 0 / 0 (Abstand 29–31 s) | gleich |
+| K6 | Datenverzeichnis / Root-FS | 0 / 0 / 0 (3,4 MB) | 0 / 0 / 0 (3,4 MB) | gleich |
+| K7 | Kernel-Taint | 0 / 0 / 0 (12289) | 0 / 0 / 0 (12289) | gleich |
+| K8 | Watcher (Dienst, Journal, Abdeckung) | 0 / 0 / 0 | 0 / 0 / 0 | gleich |
+
+| Abdeckung / Dienste | Lauf 1 | Lauf 2 |
+|---|---|---|
+| Sampler | 100,00 % (20 052 bis Soll-Ende, ungedeckt 0 s) | 100,00 % (20 055 bis Soll-Ende, ungedeckt 0 s); 20 061 bis 15:44:32 |
+| Check | 100,00 % (2 007 Läufe) | 100,00 % (2 007 Läufe) |
+| `n5vw-*` NRestarts | 0 | 0 |
+| n5-fangov NRestarts (max) | 0 | 0 |
+| `ec_read_errors` | 0 (max) | 0 (max) |
+| Annotationen | keine | keine |
+
+### Temperatur- und Lüfterkennwerte (Watcher-Samples, gemessen)
+
+| Wert | Lauf 1 min / max / Mittel | Lauf 2 min / max / Mittel |
+|---|---|---|
+| Tctl °C | 32,8 / 73,0 / 38,8 | 33,1 / 74,7 / 37,6 |
+| EC CPU (0x09) °C | 32 / 70 / 37,9 | 32 / 73 / 36,7 |
+| EC System / Board / Ambient °C | 29–50 / 24–39 / 20–26 | 31–50 / 25–39 / 21–25 |
+| NVMe max °C | 41,8 / 50,8 / 42,9 | 41,8 / 49,8 / 42,7 |
+| HDD max °C | 39 / 44 / 39,5 | 39 / 42 / 39,5 |
+| fan1 / fan2 / fan3 rpm | 1 417–4 455 / 2 513–3 147 / 1 623–1 972 | 1 406–4 802 / 2 518–3 054 / 1 676–1 836 |
+| pwm1 / pwm2 / pwm3 (gecacht) | 60–216 / 94–125 / 99–119 | 60–226 / 94–122 / 103–110 |
+| pwm4 / `pwm4_enable` | 255 / 2 | 255 / 2 |
+| load1 max / Mittel | 7,4 / 0,7 | 3,4 / 0,6 |
+| Samples Tctl ≥ 50 / ≥ 60 / ≥ 70 | 1 101 (5,49 %) / 883 / 6 | 277 (1,38 %) / 172 / 5 |
+| Samples fan1 ≥ 3 000 / ≥ 4 000 rpm | 1 021 (5,09 %) / 4 | 241 (1,20 %) / 8 |
+| Samples load1 ≥ 2 | 1 664 (davon 11.10. 00–13 Uhr ~120/h: Scrub) | 39 |
+| Episoden Tctl ≥ 55 °C, ≥ 2 min | 19, zusammen 441,5 min | 12, zusammen 87,0 min |
+| Mittel ohne erste 60 min: Tctl / fan1 / load1 | 38,8 / 1 778 / 0,74 | 37,5 / 1 683 / 0,55 |
+
+Die Maxima von Lauf 2 (Tctl 74,7 °C, fan1 4 802 rpm, EC CPU 73 °C) liegen in der Startphase nach
+dem Warmstart: 17.10. 15:41–16:00 (Uptime 614–1 830 s) fan1 3 428–4 802 rpm, Tctl 61,5–74,0 °C,
+ab 16:02 Ruhe (fan1 1 760, Tctl 41,5); Tctl-Max 17:02:57. Lauf 1 hatte keine Startphase. Alle
+Werte unter den K4-Grenzen (Tctl 85, NVMe 70, HDD 50, EC CPU 90 °C).
+
+### Rückprüfung `WARNING:` (TESTSPEC 0.4 #15)
+
+`tools/validation-watch/retro-k1-warning.sh` 0.1.0, je Lauf mit `--run-dir` (Fenster
+`START_EPOCH` + 7 Tage, K1-Muster aus dem `config.snapshot` des Laufs), 31.10. 16:28:22Z:
+
+| Lauf | Kernel-Zeilen im Fenster | Treffer `WARNING:\|cut here` | davon außerhalb K1 (NEW) | Journal vollständig | Exit |
+|---|---|---|---|---|---|
+| 1 `baseline-20261008` | 84 | 0 | 0 | ja | 0 |
+| 2 `patched-20261017` | 59 | 0 | 0 | ja | 0 |
+
+Die Kernel-Zeilen beider Fenster sind fremd: Lauf 2 53× AppArmor-`DENIED` (LXC-Gäste), 2× `perf:
+interrupt took too long`, 2× Journal-Vacuum, je 1× `kauditd`/`hrtimer`; Lauf 1 49× AppArmor,
+Bridge-/tap-Meldungen eines VM-Neustarts, 1× `kvm … Unhandled WRMSR`, 1× `perf`. Zeilen mit
+`minisforum` oder EC-Timeout: 0 in beiden Läufen.
+
+### B10 (SMM-Restrisiko, §5a „Runs“ Nr. 3)
+
+`ec_read_errors` = 0 in beiden Läufen, Lauf 2 ohne `EC timeout`-Zeile im Kernel-Log →
+**Bedingung für die Annahme von B10 erfüllt.** Der gepatchte Treiber würde EC-Timeouts loggen,
+die 0.2.1 nicht ausgab; Lauf 2 hätte damit mehr sehen können als Lauf 1 und hat 0 gesehen.
+
+### Abweichungen von „nur der Treiber ist anders“ (§5a „Runs“ Nr. 4)
+
+| Abweichung | Beleg | Wirkung auf das Urteil |
+|---|---|---|
+| Sicherheitsupdates 21.10. 20:04 (`ca-certificates`) und 20:11 (`cifs-utils`, `curl`/`libcurl*`, `xz-utils`/`liblzma*`, `libexpat1*`, `librsvg2-*`, `libjxl0.11`, `linux-libc-dev`) | `/var/log/apt/history.log`; kein Kernel, Treiber, n5-fangov, DKMS; kein Reboot (Boot-ID `1c5be8a1…` durchgehend), Taint unverändert | keine erkennbar; Lauf 2 gilt (Betreiber 31.10.) |
+| Kein Monats-Scrub in Lauf 2 (Lauf 1: 11.10.) | `zpool status`: letzter Scrub 11.10.; Journal ohne `scrub_*` im Fenster | hingenommen (#16, Variante a1); Lauf 2 hatte weniger I/O- und Dauerlast. Ein 2. Sonntag mit gepatchtem Treiber steht aus |
+| Laufbeginn 614 s nach einem Warmstart (Lauf 1: 4 Tage Uptime) | `uptime_s` erstes Sample; `--list-boots`, `reboot.target` 15:31:08 | Lauf 2 enthält die Gast-Startphase (18,5 min erhöhte Last) |
+| Lastepisode Gast A auf ~03:55/15:55 verschoben, kürzer (2,5–26 statt 4–127,5 min) | Episoden aus `samples.csv` | weniger Zeit über den CPU-Stufen 55/65 °C; Ursache der Verschiebung (Neustart des Gasts mit dem Host) abgeleitet, nicht geprüft |
+| Ein VM-Neustart nur in Lauf 1 | Kernel-Log Lauf 1 (Bridge-/tap-Meldungen) | Gastbetrieb, kein Kriterium |
+| Wochentage Do–Do statt Sa–Sa | Start-/Endzeit | je ein Sonntag mit Backup |
+
+Lauf 2 war damit insgesamt **weniger belastet** als Lauf 1 (Tctl ≥ 50 °C 1,38 % statt 5,49 %
+der Samples, load1 ≥ 2 39 statt 1 664 Samples) — gemessen. Das Urteil gilt für diese Last.
+
+### Urteil (Formulierung nach TESTSPEC §1 Regel 3; gelaufen nach 0.3, Vergleich nach 0.4 §5a)
+
+**On board N5 PRO / F8NAA, BIOS 1.05, EC 0.14, test F8b v0.3: PASS (1 run)** — Treiber
+`0.2.1+sr1~rc2` (srcversion `E9CF5951…`), Kernel `7.0.14-20-pve`, n5-fangov 0.4.2,
+17.10.–24.10.2026: kein Fehler beobachtet in 7 Tagen unter diesen Bedingungen. Vergleich mit
+Lauf 1 (Treiber 0.2.1, ebenfalls PASS): in keinem K mehr unerklärte Ereignisse (0 gegen 0).
+Einschränkungen: K1-Muster ohne `WARNING:` (Rückprüfung 0 Treffer), kein Monats-Scrub, Lauf 2
+leichter belastet als Lauf 1.
+
+Watcher-Rohdaten beider Läufe liegen anonymisiert mit `SHA256SUMS` unter `befunde/runs/`
+(abgelegt 31.10.2026, [`runs/README.md`](runs/README.md)).
+
+**Offen:** ein Lauf mit gepatchtem Treiber über einen 2. Sonntag (z. B. Beobachtungslauf
+n5-fangov 0.5.0, 08.11.).
 
 ## Für den GitHub-Issue an ltdstudio/minisforum-n5-it5571
 
