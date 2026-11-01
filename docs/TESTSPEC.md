@@ -2,7 +2,9 @@
 
 Version **0.4** (2026-10-17). Status: operator-approved 2026-10-17; every open point decided as
 recommended in the candidate. Applies to every run started after its publication. Results of
-maintenance window 1 and earlier keep their version 0.3 (§1 rule 1).
+maintenance window 1 and earlier keep their version 0.3 (§1 rule 1). §10 lists the changes
+adopted for 0.5 after maintenance window 2a (2026-11-01); they are not in force until `n5-ectest`
+implements them.
 Version 0.3 is kept in the Git history: branch `spec-0.3`, commit `5381b97`
 (`git show 5381b97:docs/TESTSPEC.md`).
 
@@ -495,9 +497,10 @@ T2–T5 `N/A` for pwm4; DCR5 at a hand-back is checked by F1 (§5.3).
   (module unloaded) and after reload; Super-I/O 0x2e/0x2f free afterwards; whether the region is
   claimed *during* the read was too short to observe. Closed with driver patch 0003 once approved.
 - Whether DCR4 drives a fan of its own (tach 0x88E0/E1) or reads the same signal as fan3.
-- **[Δ #21]** Write latency of DCR1/DCR2 (not measured); final value and duration of the HDD
-  hand-back ramp (not measured, §2.1 derived). A measurement can justify a shorter settle time in
-  a later version, not in this one.
+- **[Δ #21]** Write latency of DCR1/DCR2: measured 2026-11-01 (Z3, no verdict) — ≤ 0.22 s after
+  a write; after hand-back the EC ramps ≈ 20 steps/s (180 → table value in 4.9 s on pwm1, 5.3 s
+  on pwm2). Final value and duration of the HDD hand-back ramp: not measured. Used in §10, not in
+  this version.
 - **[Δ #20]** Noise of EC 0x09 at 5-s sampling under normal guest load (not measured); needed only
   if a later version wants a CPU-side stability criterion.
 
@@ -533,6 +536,20 @@ hardware status above `experimental`. Issue comments link the commit, not a summ
 - **#4 — T4/T5 tool:** `n5-ectest report` reproduces a hand evaluation (per §5.5) of the first
   T4/T5 log. Until then T4/T5 results are not quoted.
 - **#9 — `ecram`:** byte-compare against f8a mode A before `ecram` is a C1 path (§5.3).
+
+## 10. Changes adopted for 0.5 (not yet in force)
+
+Operator decision 2026-11-01, after maintenance window 2a (`befunde/BEFUNDE.md` §Wartungsfenster
+2a). The changes below fix gaps that window showed. They take effect, as version 0.5, only once
+`n5-ectest` implements them; until then 0.4 applies unchanged and every run names 0.4. No run is
+required to adopt them, and no 0.4 verdict is re-labelled (§1 rule 1).
+
+| # | Section | 0.4 | 0.5 | Evidence |
+|---|---|---|---|---|
+| 29 | §3 G4 | max − min < 1 °C over 5 min per input | The EC reports whole degrees, so < 1 °C meant "no change at all". New: mean of the last 60 s − mean of the first 60 s < 1 °C **and** max − min ≤ 1 °C, per input (EC 0x04, EC 0x06, HDD) | 2026-11-01: EC 0x04 alternated 29/30 °C in every gate window without a trend; pwm2/pwm4 four times INCONCLUSIVE |
+| 30 | §5.1 T1 | another tach outside ±50 rpm → FAIL ("another tach follows") | FAIL only if the **duty register of that other channel** (DCR) changes during the step. Another tach outside ±50 rpm while its DCR stays constant → `REPORTED` as airflow coupling with the deviation; the T1 verdict is decided by the other criteria | 2026-11-01 pwm3: fan2 +58 rpm at pwm3 = 255, DCR2 = 75 in every sample |
+| 31 | §3 G3 | load average (1 min) < 1.0 | load average (1 min) < 0.1 × number of online CPUs (reference host, 24 threads: < 2.4) | absolute 1.0 is tight on a production host with 24 threads; 2026-11-01 met (0.1–0.75) |
+| 32 | §2.1 | settle 10 s for pwm1–3, used for writes and hand-back checks alike | write checks pwm1/pwm2: 1 s (PCIe already 1 s); hand-back checks pwm1/pwm2: 12 s (255 → lowest table value at ≈ 20 steps/s, plus margin); pwm3 unchanged (10 s) | Z3 2026-11-01 (§7) |
 
 ## Changelog
 

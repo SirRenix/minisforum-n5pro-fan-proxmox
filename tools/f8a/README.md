@@ -27,7 +27,8 @@ scp -r tools/f8a n5host:/tmp/ && ssh n5host sudo cp -r /tmp/f8a /root/n5-mw1/f8a
 ssh n5host sudo bash -n /root/n5-mw1/f8a/f8a-*.sh
 ```
 
-Every run writes `/root/n5-mw1/raw/<script>-<label>-<UTC>.txt` plus `.sha256`;
+Every run writes `/root/f8a-raw/<script>-<label>-<UTC>.txt` plus `.sha256` (other directory:
+`F8A_OUT_DIR=/path`);
 the host name is replaced by `n5host`. Copy both to `befunde/raw/`.
 
 Common limits (sources independent of the EC driver): k10temp Tctl ≥ 85 °C,
@@ -140,7 +141,7 @@ Reads (mode A): EC RAM 0x00–0xFF twice, I2EC 0x1800–0x182F, TACH1–3, plus 
 temperatures. It takes a few seconds. Exit 0 = complete, 3 = incomplete (the
 file is still written), 1 = refused (the line says why).
 
-Output: `/root/n5-mw1/raw/f8a-snapshot-myboard-<UTC>.txt` and `.sha256`. The
+Output: `/root/f8a-raw/f8a-snapshot-myboard-<UTC>.txt` and `.sha256`. The
 host name is replaced by `n5host`; no serial numbers, MAC or IP addresses
 are read. Send both files (e.g. attached to the GitHub issue). Look through
 them before you send them.

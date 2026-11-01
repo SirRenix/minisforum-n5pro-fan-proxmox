@@ -1,0 +1,11 @@
+2026-11-01T16:20:03Z [t_s=153.649] operator confirmation typed (stdin tty, console flag false, local console true, remote: -, tmux: -)
+2026-11-01T16:20:03Z [t_s=153.651] start n5-ectest map pwm4: n5-ectest 0.1.0-mw2 (commit 88e2b9f0b861), driver minisforum_n5_it5571 0.2.1+sr1~rc3 srcversion D1E4D4D188041A61EC3D872; mode hardware
+2026-11-01T16:25:04Z [t_s=453.975] gate G1 PASS: none active; checked again at every sample, writer lock held
+2026-11-01T16:25:04Z [t_s=453.976] gate G2 PASS: no scrub, resilver, vzdump or proxmox-backup-client
+2026-11-01T16:25:04Z [t_s=453.977] gate G7 PASS: 
+2026-11-01T16:25:04Z [t_s=453.978] gate pwm PASS: minisforum_n5_it5571 at /sys/devices/platform/minisforum_n5_it5571 (srcversion D1E4D4D188041A61EC3D872)
+2026-11-01T16:25:04Z [t_s=453.979] gate G3 PASS: load1 0.73
+2026-11-01T16:25:04Z [t_s=453.980] gate G4 FAIL: over 5m0s: [system (ec 0x04) 1.0 C (>= 1 C) ambient (ec 0x06) 0.0 C (< 1 C) hdd 0.0 C (< 1 C)]
+2026-11-01T16:25:04Z [t_s=453.980] gate G5 PASS: confirmation typed (stdin tty), local console
+2026-11-01T16:25:04Z [t_s=453.981] gate G6 PARTIAL: duty registers recorded (first sample); no /sys/kernel/debug/minisforum_n5_it5571/ecram (driver 0.2.1+sr2 with debug_regs=1): the curve tables come from a mode-A snapshot (tools/f8a/f8a-snapshot.sh) taken after boot and before the module load, named in the run record; whether something wrote earlier in this boot is not visible
+2026-11-01T16:25:04Z [t_s=453.982] finish: 62 sample(s), aborted ""

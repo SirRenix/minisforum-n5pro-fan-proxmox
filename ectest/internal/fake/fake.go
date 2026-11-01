@@ -93,6 +93,14 @@ func (h *Host) Get(rel string) string {
 	return strings.TrimSpace(string(b))
 }
 
+// Remove deletes a file below the root (e.g. fan4_input, which driver sr1 does not register).
+func (h *Host) Remove(rel string) {
+	h.t.Helper()
+	if err := os.Remove(h.path(rel)); err != nil {
+		h.t.Fatal(err)
+	}
+}
+
 func (h *Host) link(rel, target string) {
 	h.t.Helper()
 	p := h.path(rel)

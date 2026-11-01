@@ -1,0 +1,35 @@
+{
+  "channel": 4,
+  "command": "map",
+  "spec_version": "0.4",
+  "tests": [
+    {
+      "id": "T0",
+      "verdict": "PASS",
+      "values": {
+        "bios_date": "03/31/2026",
+        "bios_version": "1.05",
+        "board_name": "F8NAA",
+        "board_version": "1.0",
+        "boot_type": "cold",
+        "driver_parameters": "present",
+        "driver_srcversion": "D1E4D4D188041A61EC3D872",
+        "driver_version": "0.2.1+sr1~rc3",
+        "ec_firmware_release": "0.14",
+        "kernel": "7.0.14-26-pve",
+        "product_name": "N5 PRO",
+        "spec_version": "0.4",
+        "tool_version": "0.1.0-mw2",
+        "uptime": "6451"
+      }
+    },
+    {
+      "id": "T1",
+      "channel": 4,
+      "verdict": "INCONCLUSIVE",
+      "reasons": [
+        "not run: gate G4 failed: over 5m0s: [system (ec 0x04) 1.0 C (\u003e= 1 C) ambient (ec 0x06) 0.0 C (\u003c 1 C) hdd 0.0 C (\u003c 1 C)]"
+      ]
+    }
+  ]
+}

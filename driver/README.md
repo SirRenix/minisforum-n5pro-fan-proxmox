@@ -12,7 +12,7 @@ driver/patches/series    patches in apply order ("#" and blank lines ignored)
 driver/patches/*.patch   one change per patch, DEP-3 header
 ```
 
-`series` lists `0001`–`0007` (version `0.2.1+sr1~rc3`, pre-release; `rc2` changes
+`series` lists `0001`–`0007` (version `0.2.1+sr1`, code of `~rc3`; `rc2` changed
 `0004`/`0006`: PCIe is handed back at 255 instead of 0x31 on `pwm4_enable=2` and on
 unbind/unload, and stays touched for `.shutdown`; `rc3` corrects the HDD statement in
 the `0006` comments, code unchanged); the released package `0.2.1-1`

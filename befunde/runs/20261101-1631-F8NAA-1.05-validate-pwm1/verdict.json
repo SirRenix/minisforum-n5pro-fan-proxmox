@@ -1,0 +1,435 @@
+{
+  "channel": 1,
+  "spec_version": "0.4",
+  "tests": [
+    {
+      "id": "T0",
+      "verdict": "PASS",
+      "values": {
+        "bios_date": "03/31/2026",
+        "bios_version": "1.05",
+        "board_name": "F8NAA",
+        "board_version": "1.0",
+        "boot_type": "cold",
+        "driver_parameters": "present",
+        "driver_srcversion": "D1E4D4D188041A61EC3D872",
+        "driver_version": "0.2.1+sr1~rc3",
+        "ec_firmware_release": "0.14",
+        "kernel": "7.0.14-26-pve",
+        "product_name": "N5 PRO",
+        "spec_version": "0.4",
+        "sys_vendor": "Micro Computer (HK) Tech Limited",
+        "tool_version": "0.5.0-rc4",
+        "uptime": "3665"
+      }
+    },
+    {
+      "id": "T6",
+      "verdict": "REPORTED",
+      "reasons": [
+        "snapshot before any write by this run; uptime 3665 s, boot type \"cold\"; writes earlier in this boot are not visible"
+      ],
+      "values": {
+        "dcr": {
+          "path": "/sys/kernel/debug/minisforum_n5_it5571/dcr",
+          "dump": "1800: 00 ff 00 56 4b 64 64 00 00 00 00 06 00 00 00 00",
+          "channels": {
+            "pwm1": 86,
+            "pwm2": 75,
+            "pwm3": 100,
+            "pwm4": 0
+          }
+        },
+        "pwm_cache": {
+          "pwm1": "180",
+          "pwm1_enable": "2",
+          "pwm2": "180",
+          "pwm2_enable": "2",
+          "pwm3": "255",
+          "pwm3_enable": "2",
+          "pwm4": "255",
+          "pwm4_enable": "2"
+        },
+        "sample": {
+          "dcr1": 86,
+          "dcr2": 75,
+          "dcr3": 100,
+          "dcr4": 100,
+          "dcr5": 0,
+          "ec_amb": 21,
+          "ec_board": 25,
+          "ec_cpu": 35,
+          "ec_sys": 31,
+          "fan1": 2007,
+          "fan2": 2151,
+          "fan3": 1654,
+          "hdd_max": 39,
+          "load1": 0.1,
+          "nvme_max": 42.85,
+          "t": "2026-11-01T15:31:10Z",
+          "tctl": 34.875
+        }
+      }
+    },
+    {
+      "id": "T1",
+      "channel": 1,
+      "verdict": "PASS",
+      "reasons": [
+        "DCR equal to the written value in every judged sample, own tach moved \u003e= 200 rpm per step, other tachs within +-50 rpm"
+      ],
+      "criteria": [
+        {
+          "name": "DCR equals the written value in every judged sample of every step",
+          "met": true,
+          "detail": "",
+          "values": {
+            "not_judged_samples": 4
+          }
+        },
+        {
+          "name": "tach noise at rest \u003c= 50 rpm",
+          "met": true,
+          "detail": ""
+        },
+        {
+          "name": "other tachs within +-50 rpm",
+          "met": true,
+          "detail": ""
+        },
+        {
+          "name": "table inputs of the other channels did not cross a step",
+          "met": true,
+          "detail": ""
+        },
+        {
+          "name": "own tach changes \u003e= 200 rpm per step (downwards)",
+          "met": true,
+          "detail": ""
+        }
+      ],
+      "values": [
+        {
+          "duty": 255,
+          "dcr": [
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255
+          ],
+          "fans": {
+            "1": [
+              5037,
+              5037,
+              5037,
+              5049,
+              5037,
+              5049,
+              5049,
+              5037,
+              5049,
+              5049,
+              5037,
+              5049
+            ],
+            "2": [
+              2158,
+              2160,
+              2167,
+              2151,
+              2169,
+              2154,
+              2151,
+              2156,
+              2154,
+              2151,
+              2151,
+              2145
+            ],
+            "3": [
+              1647,
+              1647,
+              1648,
+              1636,
+              1633,
+              1633,
+              1644,
+              1634,
+              1647,
+              1636,
+              1643,
+              1645
+            ]
+          },
+          "own_rpm": 5045,
+          "due_s": [
+            5,
+            10,
+            15,
+            20,
+            25,
+            30,
+            35,
+            40,
+            45,
+            50,
+            55,
+            60
+          ],
+          "settle_s": 10,
+          "not_judged": [
+            "DCR 255 at 5 s (settle time 10 s)"
+          ]
+        },
+        {
+          "duty": 217,
+          "dcr": [
+            217,
+            217,
+            217,
+            217,
+            217,
+            217,
+            217,
+            217,
+            217,
+            217,
+            217,
+            217
+          ],
+          "fans": {
+            "1": [
+              4418,
+              4418,
+              4418,
+              4409,
+              4418,
+              4427,
+              4418,
+              4409,
+              4418,
+              4409,
+              4418,
+              4418
+            ],
+            "2": [
+              2154,
+              2160,
+              2171,
+              2160,
+              2156,
+              2149,
+              2154,
+              2167,
+              2164,
+              2169,
+              2156,
+              2149
+            ],
+            "3": [
+              1639,
+              1651,
+              1639,
+              1639,
+              1649,
+              1649,
+              1653,
+              1649,
+              1643,
+              1640,
+              1643,
+              1651
+            ]
+          },
+          "own_rpm": 4415,
+          "due_s": [
+            5,
+            10,
+            15,
+            20,
+            25,
+            30,
+            35,
+            40,
+            45,
+            50,
+            55,
+            60
+          ],
+          "settle_s": 10,
+          "not_judged": [
+            "DCR 217 at 5 s (settle time 10 s)"
+          ]
+        },
+        {
+          "duty": 179,
+          "dcr": [
+            179,
+            179,
+            179,
+            179,
+            179,
+            179,
+            179,
+            179,
+            179,
+            179,
+            179,
+            179
+          ],
+          "fans": {
+            "1": [
+              3789,
+              3782,
+              3802,
+              3816,
+              3802,
+              3809,
+              3809,
+              3789,
+              3816,
+              3802,
+              3802,
+              3809
+            ],
+            "2": [
+              2149,
+              2156,
+              2151,
+              2154,
+              2151,
+              2147,
+              2164,
+              2162,
+              2139,
+              2149,
+              2147,
+              2147
+            ],
+            "3": [
+              1640,
+              1642,
+              1652,
+              1640,
+              1645,
+              1643,
+              1645,
+              1643,
+              1653,
+              1652,
+              1640,
+              1654
+            ]
+          },
+          "own_rpm": 3804.3333333333335,
+          "due_s": [
+            5,
+            10,
+            15,
+            20,
+            25,
+            30,
+            35,
+            40,
+            45,
+            50,
+            55,
+            60
+          ],
+          "settle_s": 10,
+          "not_judged": [
+            "DCR 179 at 5 s (settle time 10 s)"
+          ]
+        },
+        {
+          "duty": 140,
+          "dcr": [
+            140,
+            140,
+            140,
+            140,
+            140,
+            140,
+            140,
+            140,
+            140,
+            140,
+            140,
+            140
+          ],
+          "fans": {
+            "1": [
+              3102,
+              3106,
+              3098,
+              3098,
+              3106,
+              3093,
+              3089,
+              3098,
+              3102,
+              3093,
+              3098,
+              3102
+            ],
+            "2": [
+              2160,
+              2158,
+              2143,
+              2151,
+              2154,
+              2164,
+              2154,
+              2149,
+              2149,
+              2158,
+              2160,
+              2154
+            ],
+            "3": [
+              1645,
+              1656,
+              1645,
+              1644,
+              1657,
+              1645,
+              1657,
+              1644,
+              1642,
+              1658,
+              1661,
+              1658
+            ]
+          },
+          "own_rpm": 3097.6666666666665,
+          "due_s": [
+            5,
+            10,
+            15,
+            20,
+            25,
+            30,
+            35,
+            40,
+            45,
+            50,
+            55,
+            60
+          ],
+          "settle_s": 10,
+          "not_judged": [
+            "DCR 140 at 5 s (settle time 10 s)"
+          ]
+        }
+      ]
+    }
+  ]
+}

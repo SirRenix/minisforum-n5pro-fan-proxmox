@@ -163,8 +163,13 @@ func TakeModeB(h Header, id identity.Identity, sysRoot, procRoot, etcRoot string
 		for n := 1; n <= 4; n++ {
 			v := strconv.Itoa(r.Fan[n])
 			if r.Fan[n] < 0 {
-				v = "error"
-				m.Incomplete = append(m.Incomplete, fmt.Sprintf("fan%d_input unreadable", n))
+				// sr1 registers no fan4 (PCIe has no tach): a missing file is not a read error
+				if _, err := os.Stat(filepath.Join(r.Hwmon, fmt.Sprintf("fan%d_input", n))); os.IsNotExist(err) {
+					v = "absent"
+				} else {
+					v = "error"
+					m.Incomplete = append(m.Incomplete, fmt.Sprintf("fan%d_input unreadable", n))
+				}
 			}
 			fmt.Fprintf(&b, "fan%d_input=%s (%s)\n", n, v, orText(r.Label[n], "no label"))
 		}

@@ -24,7 +24,7 @@
 #   module parameters, independent temperatures, n5-fangov state).
 #
 # Writes nothing to /sys and nothing to the EC. Output:
-#   /root/n5-mw1/raw/f8a-snapshot-<label>-<UTC>.txt plus .sha256
+#   $F8A_OUT_DIR (default /root/f8a-raw)/f8a-snapshot-<label>-<UTC>.txt plus .sha256
 # Exit: 0 = complete; 3 = mode A incomplete (a research tool failed, or a
 # dump/I2EC/TACH section is missing or short; the file is still written);
 # 1 = refused or aborted; 2 = usage.

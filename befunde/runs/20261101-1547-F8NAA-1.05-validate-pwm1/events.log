@@ -1,0 +1,20 @@
+2026-11-01T15:47:37Z [t_s=8.067] operator confirmation typed (stdin tty, console flag false, local console true, remote: -, tmux: -)
+2026-11-01T15:47:37Z [t_s=8.069] start n5-ectest map pwm1: n5-ectest 0.1.0-mw2 (commit 88e2b9f0b861), driver minisforum_n5_it5571 0.2.1+sr1~rc3 srcversion D1E4D4D188041A61EC3D872; mode hardware
+2026-11-01T15:52:38Z [t_s=308.391] gate G1 PASS: none active; checked again at every sample, writer lock held
+2026-11-01T15:52:38Z [t_s=308.392] gate G2 PASS: no scrub, resilver, vzdump or proxmox-backup-client
+2026-11-01T15:52:38Z [t_s=308.393] gate G7 PASS: 
+2026-11-01T15:52:38Z [t_s=308.394] gate pwm PASS: minisforum_n5_it5571 at /sys/devices/platform/minisforum_n5_it5571 (srcversion D1E4D4D188041A61EC3D872)
+2026-11-01T15:52:38Z [t_s=308.394] gate G3 PASS: load1 0.30
+2026-11-01T15:52:38Z [t_s=308.395] gate G4 PASS: over 5m0s: [system (ec 0x04) 0.0 C (< 1 C) ambient (ec 0x06) 0.0 C (< 1 C) hdd 0.0 C (< 1 C)]
+2026-11-01T15:52:38Z [t_s=308.396] gate G5 PASS: confirmation typed (stdin tty), local console
+2026-11-01T15:52:38Z [t_s=308.397] gate G6 PARTIAL: duty registers recorded (first sample); no /sys/kernel/debug/minisforum_n5_it5571/ecram (driver 0.2.1+sr2 with debug_regs=1): the curve tables come from a mode-A snapshot (tools/f8a/f8a-snapshot.sh) taken after boot and before the module load, named in the run record; whether something wrote earlier in this boot is not visible
+2026-11-01T15:52:38Z [t_s=308.398] T1 pwm1: rest reference
+2026-11-01T15:53:38Z [t_s=368.511] guardian state written: /run/n5-ectest/restore.json (restore pwm1=auto, device minisforum_n5_it5571 at /sys/devices/platform/minisforum_n5_it5571 (srcversion D1E4D4D188041A61EC3D872))
+2026-11-01T15:53:38Z [t_s=368.519] pwm1 manual (driver sets 255) [n5-ectest 0.1.0-mw2, driver 0.2.1+sr1~rc3]
+2026-11-01T15:53:38Z [t_s=368.527] write pwm1=255 [n5-ectest 0.1.0-mw2, driver 0.2.1+sr1~rc3]
+2026-11-01T15:54:38Z [t_s=428.656] write pwm1=217 [n5-ectest 0.1.0-mw2, driver 0.2.1+sr1~rc3]
+2026-11-01T15:55:38Z [t_s=488.774] write pwm1=179 [n5-ectest 0.1.0-mw2, driver 0.2.1+sr1~rc3]
+2026-11-01T15:56:38Z [t_s=548.893] write pwm1=140 [n5-ectest 0.1.0-mw2, driver 0.2.1+sr1~rc3]
+2026-11-01T15:57:38Z [t_s=609.005] T1 complete
+2026-11-01T15:57:38Z [t_s=609.007] restore pwm1 after T1 ok [n5-ectest 0.1.0-mw2, driver 0.2.1+sr1~rc3]
+2026-11-01T15:57:38Z [t_s=609.008] finish: 122 sample(s), aborted ""

@@ -168,6 +168,12 @@ func TestModeB(t *testing.T) {
 	if f.I2EC[0x1803] != "55" || len(f.ECRAM) != 0 {
 		t.Fatalf("parse: %+v", f.I2EC)
 	}
+	// driver sr1 registers no fan4_input (PCIe has no tach): absent is not INCOMPLETE
+	h.Remove(h.HwmonRel() + "/fan4_input")
+	m = snapshot.TakeModeB(snapshot.Header{}, id, sysroot.Sys(), sysroot.Proc(), sysroot.Etc())
+	if len(m.Incomplete) != 0 || !strings.Contains(m.Text, "fan4_input=absent") {
+		t.Fatalf("absent fan4: %v", m.Incomplete)
+	}
 	// a fan read error makes the snapshot INCOMPLETE
 	h.Put(h.HwmonRel()+"/fan2_input", "garbage\n")
 	m = snapshot.TakeModeB(snapshot.Header{}, id, sysroot.Sys(), sysroot.Proc(), sysroot.Etc())

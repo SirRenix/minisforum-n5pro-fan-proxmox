@@ -1,0 +1,16 @@
+{
+  "tool": "n5-ectest",
+  "version": "0.1.0-mw2",
+  "pid": 88348,
+  "started": "2026-11-01T16:04:47Z",
+  "state": "active",
+  "device": {
+    "hwmon_name": "minisforum_n5_it5571",
+    "device_path": "/sys/devices/platform/minisforum_n5_it5571",
+    "srcversion": "D1E4D4D188041A61EC3D872"
+  },
+  "channels": {
+    "3": "140"
+  },
+  "bundle_dir": "/root/n5-mw2/runs/20261101-1604-F8NAA-1.05-validate-pwm3"
+}

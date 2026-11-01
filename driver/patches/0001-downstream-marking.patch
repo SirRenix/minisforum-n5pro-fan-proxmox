@@ -3,7 +3,7 @@ Description: Mark the downstream build: change notice, MODULE_VERSION, parameter
  SPDX line and header, pointing to driver/patches/.
  .
  MODULE_VERSION was "0.2.0" while the package is 0.2.1; it is now the DKMS
- PACKAGE_VERSION "0.2.1+sr1~rc3" (packaging/build-deb.sh checks this).
+ PACKAGE_VERSION "0.2.1+sr1" (packaging/build-deb.sh checks this).
  Resolves F6.
  .
  MODULE_PARM_DESC(force) said "Load read-only without a known Minisforum
@@ -58,4 +58,4 @@ Last-Update: 2026-10-17
  MODULE_DESCRIPTION("Minisforum N5 family IT5571 fan/temp hwmon driver; N5 Pro/Air support is experimental; not affiliated with Minisforum; use at your own risk");
  MODULE_LICENSE("GPL");
 -MODULE_VERSION("0.2.0");
-+MODULE_VERSION("0.2.1+sr1~rc3");
++MODULE_VERSION("0.2.1+sr1");

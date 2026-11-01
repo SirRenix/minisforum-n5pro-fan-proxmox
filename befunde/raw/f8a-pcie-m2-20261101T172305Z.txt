@@ -1,0 +1,368 @@
+
+=== identity ===
+tool: f8a 0.2.4
+date_utc: 2026-11-01T17:23:05Z
+uptime_s: 10386.54
+boot_id: 970722ce-0e47-4490-ad0a-85bc4b8e86f8
+kernel: 7.0.14-26-pve
+host: n5host
+dmi.product_name: N5 PRO
+dmi.board_name: F8NAA
+dmi.board_version: 1.0
+dmi.sys_vendor: Micro Computer (HK) Tech Limited
+dmi.bios_vendor: American Megatrends International, LLC.
+dmi.bios_version: 1.05
+dmi.bios_date: 03/31/2026
+dmi.bios_release: 5.35
+dmi.ec_firmware_release: 0.14
+
+=== lsmod (filtered) ===
+k10temp 16384 0 - Live 0xffffffffc0470000
+drivetemp 16384 0 - Live 0xffffffffc0468000
+nvme 65536 7 - Live 0xffffffffc0400000
+
+=== /proc/ioports 002e-002f/0062/0066/0068/006c ===
+(no entries: ports not reserved)
+super-io drivers loaded: none
+lockdown: [none] integrity confidentiality
+
+=== module parameters ===
+module not loaded
+modprobe.d / modules-load.d entries:
+/etc/modprobe.d/n5-mw2-blacklist.conf:blacklist minisforum_n5_it5571
+/usr/lib/modprobe.d/minisforum-n5-it5571.conf:options minisforum_n5_it5571 experimental_write=1
+/usr/lib/modules-load.d/minisforum-n5-it5571.conf:minisforum_n5_it5571
+(none)
+effective options (modprobe -c):
+options minisforum_n5_it5571 experimental_write=1
+
+=== independent temperatures (k10temp, nvme, drivetemp) ===
+Tctl=35.5 NVMe_max=40.8 HDD_max=37.0
+
+=== n5-fangov ===
+is-active: inactive
+is-enabled: disabled
+
+=== (a) module unloaded, snapshot pcie-before ===
+17:23:05 step a-unloaded ok: klog_hits=0 Tctl=35.7 NVMe_max=40.8 HDD_max=37.0
+17:23:05 f8a-snapshot 0.2.4 label=pcie-before mode=A
+board: N5 PRO / F8NAA (sys_vendor Micro Computer (HK) Tech Limited)
+firmware: BIOS 1.05 (03/31/2026), EC 0.14
+profile: reference (N5 PRO / F8NAA)
+mode A: driver module not loaded; research tools (userspace port I/O) are used
+research tools: /root/n5pro-ec/bin
+  ec_probe sha256 0995dcc6ba71cc1e71b7e1467ce72807540d1a5ae0d11bceae4c95311a7a11f6
+  n5_i2ec_read sha256 c19611fb8e7567ccd942fa9f6214b0d76e4f4342798cb171fbee58d56e821d67
+  n5_fan sha256 e7eff57bc72a482c3212275ff7afda6201c695f20033543c79ecd8edec289412
+
+=== identity ===
+tool: f8a 0.2.4
+date_utc: 2026-11-01T17:23:05Z
+uptime_s: 10386.67
+boot_id: 970722ce-0e47-4490-ad0a-85bc4b8e86f8
+kernel: 7.0.14-26-pve
+host: n5host
+dmi.product_name: N5 PRO
+dmi.board_name: F8NAA
+dmi.board_version: 1.0
+dmi.sys_vendor: Micro Computer (HK) Tech Limited
+dmi.bios_vendor: American Megatrends International, LLC.
+dmi.bios_version: 1.05
+dmi.bios_date: 03/31/2026
+dmi.bios_release: 5.35
+dmi.ec_firmware_release: 0.14
+
+=== lsmod (filtered) ===
+k10temp 16384 0 - Live 0xffffffffc0470000
+drivetemp 16384 0 - Live 0xffffffffc0468000
+nvme 65536 7 - Live 0xffffffffc0400000
+
+=== /proc/ioports 002e-002f/0062/0066/0068/006c ===
+(no entries: ports not reserved)
+super-io drivers loaded: none
+lockdown: [none] integrity confidentiality
+
+=== module parameters ===
+module not loaded
+modprobe.d / modules-load.d entries:
+/etc/modprobe.d/n5-mw2-blacklist.conf:blacklist minisforum_n5_it5571
+/usr/lib/modprobe.d/minisforum-n5-it5571.conf:options minisforum_n5_it5571 experimental_write=1
+/usr/lib/modules-load.d/minisforum-n5-it5571.conf:minisforum_n5_it5571
+(none)
+effective options (modprobe -c):
+options minisforum_n5_it5571 experimental_write=1
+
+=== independent temperatures (k10temp, nvme, drivetemp) ===
+Tctl=36.0 NVMe_max=40.8 HDD_max=37.0
+
+=== n5-fangov ===
+is-active: inactive
+is-enabled: disabled
+
+=== BEGIN EC_RAM 1 ===
+EC_SC 状态寄存器: 0x00 (IBF=0 OBF=0)
+EC RAM dump (256 bytes):
+      0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
+00: 00 00 00 0E 1F 18 14 00 00 22 00 00 00 00 00 00 
+10: 00 19 00 14 2D 19 17 37 2D 19 41 37 1B 4B 41 1E 
+20: 52 4B 21 57 52 22 64 57 00 00 00 00 00 00 02 00 
+30: 16 3C 00 1A 64 3C 1A 64 64 00 00 00 00 00 00 00 
+40: 01 05 00 00 00 03 00 00 00 00 00 00 00 00 00 00 
+50: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+60: 00 0C 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+70: 0C 22 00 10 64 22 10 64 64 0C 22 00 10 64 22 10 
+80: 64 64 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+90: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+A0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+B0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+C0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+D0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+E0: 00 00 00 00 0D 00 00 00 00 00 00 00 00 00 00 00 
+F0: 00 0A 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+
+非零字节数: 58/256
+=== END EC_RAM 1 ===
+
+=== BEGIN EC_RAM 2 ===
+EC_SC 状态寄存器: 0x00 (IBF=0 OBF=0)
+EC RAM dump (256 bytes):
+      0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
+00: 00 00 00 0E 1F 18 14 00 00 22 00 00 00 00 00 00 
+10: 00 19 00 14 2D 19 17 37 2D 19 41 37 1B 4B 41 1E 
+20: 52 4B 21 57 52 22 64 57 00 00 00 00 00 00 02 00 
+30: 16 3C 00 1A 64 3C 1A 64 64 00 00 00 00 00 00 00 
+40: 01 05 00 00 00 03 00 00 00 00 00 00 00 00 00 00 
+50: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+60: 00 0C 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+70: 0C 22 00 10 64 22 10 64 64 0C 22 00 10 64 22 10 
+80: 64 64 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+90: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+A0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+B0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+C0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+D0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+E0: 00 00 00 00 0D 00 00 00 00 00 00 00 00 00 00 00 
+F0: 00 0A 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+
+非零字节数: 58/256
+=== END EC_RAM 2 ===
+
+=== BEGIN I2EC ===
+1800: 00 ff 00 55 4b 54 55 00 00 00 00 06 00 00 00 00
+1810: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 3b 04
+1820: ea 03 00 02 00 00 00 02 00 00 00 48 00 00 00 00
+=== END I2EC ===
+
+=== TACH (n5_fan rpm) ===
+TACH1: 1989 RPM
+TACH2: 2151 RPM
+TACH3: 1146 RPM
+
+=== EC RAM dump 1 vs dump 2 (same snapshot) ===
+EC RAM bytes changed (temperature offsets 0x04 0x05 0x06 0x09 excluded):
+  (none)
+curve-table regions (TESTSPEC C1):
+  0x10-0x27: identical
+  0x30-0x38: identical
+  0x70-0x81: identical
+EC temperatures from dump 1: CPU(0x09)=34 System(0x04)=31 Board(0x05)=24 Ambient(0x06)=20
+
+=== independent temperatures (end) ===
+Tctl=36.2 NVMe_max=40.8 HDD_max=37.0
+17:23:07 snapshot done
+RESULT: complete
+raw log: /root/n5-mw1/raw/f8a-snapshot-pcie-before-20261101T172305Z.txt (+ .sha256)
+17:23:07 tach (research tool): TACH1: 1989 RPM; TACH2: 2151 RPM; TACH3: 1146 RPM
+
+=== (b) load with debug_regs=1, pwm4 manual 167 ===
+17:23:07 after load: pwm4_enable=2
+17:23:07 step b-loaded ok: klog_hits=0 Tctl=36.3 NVMe_max=40.8 HDD_max=37.0 fan1=1987 fan2=2151 fan3=1146
+17:23:07 dcr b0 after load: 1800: 00 ff 00 55 4b 54 55 00 00 00 00 06 00 00 00 00  (DCR5=00)
+17:23:07 pwm4_enable=1 written (driver sets 255 first)
+17:23:07 pwm4=167 written
+17:23:07 dcr b1 write +0s raw: 1800: 00 ff 00 55 4b 54 55 00 00 00 00 06 00 00 00 00  (DCR5=00)
+17:23:08 dcr b1 write settled +1.0s: 1800: 00 ff 00 55 4b 54 55 a7 00 00 00 06 00 00 00 00  (DCR5=a7)
+17:23:17 dcr b2 write +10s: 1800: 00 ff 00 55 4b 54 55 a7 00 00 00 06 00 00 00 00  (DCR5=a7)
+17:23:17 step b ok: klog_hits=0 Tctl=35.2 NVMe_max=40.8 HDD_max=37.0 fan1=1989 fan2=2151 fan3=1127
+
+=== (c) hand-back pwm4_enable=2 ===
+17:23:17 pwm4_enable=2 written (hand-back at 255, no 0x31)
+17:23:17 dcr c hand-back +0s raw: 1800: 00 ff 00 55 4b 54 55 a7 00 00 00 06 00 00 00 00  (DCR5=a7)
+17:23:18 dcr c hand-back +1s: 1800: 00 ff 00 55 4b 54 55 ff 00 00 00 06 00 00 00 00  (DCR5=ff)
+17:24:19 dcr c hand-back +60s: 1800: 00 ff 00 55 4b 54 55 ff 00 00 00 06 00 00 00 00  (DCR5=ff)
+17:28:23 dcr c hand-back +300s: 1800: 00 ff 00 55 4b 54 55 ff 00 00 00 06 00 00 00 00  (DCR5=ff)
+17:28:23 step c ok: klog_hits=0 Tctl=34.1 NVMe_max=43.8 HDD_max=38.0 fan1=1996 fan2=2171 fan3=1116
+
+=== (d) unload, snapshot pcie-after ===
+17:28:23 step d-unloaded ok: klog_hits=0 Tctl=34.3 NVMe_max=43.8 HDD_max=38.0
+17:28:23 f8a-snapshot 0.2.4 label=pcie-after mode=A
+board: N5 PRO / F8NAA (sys_vendor Micro Computer (HK) Tech Limited)
+firmware: BIOS 1.05 (03/31/2026), EC 0.14
+profile: reference (N5 PRO / F8NAA)
+mode A: driver module not loaded; research tools (userspace port I/O) are used
+research tools: /root/n5pro-ec/bin
+  ec_probe sha256 0995dcc6ba71cc1e71b7e1467ce72807540d1a5ae0d11bceae4c95311a7a11f6
+  n5_i2ec_read sha256 c19611fb8e7567ccd942fa9f6214b0d76e4f4342798cb171fbee58d56e821d67
+  n5_fan sha256 e7eff57bc72a482c3212275ff7afda6201c695f20033543c79ecd8edec289412
+
+=== identity ===
+tool: f8a 0.2.4
+date_utc: 2026-11-01T17:28:23Z
+uptime_s: 10704.42
+boot_id: 970722ce-0e47-4490-ad0a-85bc4b8e86f8
+kernel: 7.0.14-26-pve
+host: n5host
+dmi.product_name: N5 PRO
+dmi.board_name: F8NAA
+dmi.board_version: 1.0
+dmi.sys_vendor: Micro Computer (HK) Tech Limited
+dmi.bios_vendor: American Megatrends International, LLC.
+dmi.bios_version: 1.05
+dmi.bios_date: 03/31/2026
+dmi.bios_release: 5.35
+dmi.ec_firmware_release: 0.14
+
+=== lsmod (filtered) ===
+k10temp 16384 0 - Live 0xffffffffc0470000
+drivetemp 16384 0 - Live 0xffffffffc0468000
+nvme 65536 7 - Live 0xffffffffc0400000
+
+=== /proc/ioports 002e-002f/0062/0066/0068/006c ===
+(no entries: ports not reserved)
+super-io drivers loaded: none
+lockdown: [none] integrity confidentiality
+
+=== module parameters ===
+module not loaded
+modprobe.d / modules-load.d entries:
+/etc/modprobe.d/n5-mw2-blacklist.conf:blacklist minisforum_n5_it5571
+/usr/lib/modprobe.d/minisforum-n5-it5571.conf:options minisforum_n5_it5571 experimental_write=1
+/usr/lib/modules-load.d/minisforum-n5-it5571.conf:minisforum_n5_it5571
+(none)
+effective options (modprobe -c):
+options minisforum_n5_it5571 experimental_write=1
+
+=== independent temperatures (k10temp, nvme, drivetemp) ===
+Tctl=34.7 NVMe_max=43.8 HDD_max=38.0
+
+=== n5-fangov ===
+is-active: inactive
+is-enabled: disabled
+
+=== BEGIN EC_RAM 1 ===
+EC_SC 状态寄存器: 0x00 (IBF=0 OBF=0)
+EC RAM dump (256 bytes):
+      0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
+00: 00 00 00 0E 20 19 15 00 00 23 00 00 00 00 00 00 
+10: 00 19 00 14 2D 19 17 37 2D 19 41 37 1B 4B 41 1E 
+20: 52 4B 21 57 52 22 64 57 00 00 00 00 00 00 02 00 
+30: 16 3C 00 1A 64 3C 1A 64 64 00 00 00 00 00 00 00 
+40: 01 05 00 00 00 03 00 00 00 00 00 00 00 00 00 00 
+50: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+60: 00 0C 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+70: 0C 22 00 10 64 22 10 64 64 0C 22 00 10 64 22 10 
+80: 64 64 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+90: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+A0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+B0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+C0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+D0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+E0: 00 00 00 00 0D 00 00 00 00 00 00 00 00 00 00 00 
+F0: 00 0A 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+
+非零字节数: 58/256
+=== END EC_RAM 1 ===
+
+=== BEGIN EC_RAM 2 ===
+EC_SC 状态寄存器: 0x00 (IBF=0 OBF=0)
+EC RAM dump (256 bytes):
+      0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
+00: 00 00 00 0E 20 19 15 00 00 22 00 00 00 00 00 00 
+10: 00 19 00 14 2D 19 17 37 2D 19 41 37 1B 4B 41 1E 
+20: 52 4B 21 57 52 22 64 57 00 00 00 00 00 00 02 00 
+30: 16 3C 00 1A 64 3C 1A 64 64 00 00 00 00 00 00 00 
+40: 01 05 00 00 00 03 00 00 00 00 00 00 00 00 00 00 
+50: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+60: 00 0C 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+70: 0C 22 00 10 64 22 10 64 64 0C 22 00 10 64 22 10 
+80: 64 64 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+90: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+A0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+B0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+C0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+D0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+E0: 00 00 00 00 0D 00 00 00 00 00 00 00 00 00 00 00 
+F0: 00 0A 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+
+非零字节数: 58/256
+=== END EC_RAM 2 ===
+
+=== BEGIN I2EC ===
+1800: 00 ff 00 55 4b 54 55 ff 00 00 00 06 00 00 00 00
+1810: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 38 04
+1820: e4 03 00 02 00 00 00 02 00 00 00 48 00 00 00 00
+=== END I2EC ===
+
+=== TACH (n5_fan rpm) ===
+TACH1: 1992 RPM
+TACH2: 2164 RPM
+TACH3: 1112 RPM
+
+=== EC RAM dump 1 vs dump 2 (same snapshot) ===
+EC RAM bytes changed (temperature offsets 0x04 0x05 0x06 0x09 excluded):
+  (none)
+curve-table regions (TESTSPEC C1):
+  0x10-0x27: identical
+  0x30-0x38: identical
+  0x70-0x81: identical
+EC temperatures from dump 1: CPU(0x09)=35 System(0x04)=32 Board(0x05)=25 Ambient(0x06)=21
+
+=== independent temperatures (end) ===
+Tctl=35.3 NVMe_max=43.8 HDD_max=38.0
+17:28:25 snapshot done
+RESULT: complete
+raw log: /root/n5-mw1/raw/f8a-snapshot-pcie-after-20261101T172823Z.txt (+ .sha256)
+17:28:25 tach (research tool): TACH1: 1992 RPM; TACH2: 2164 RPM; TACH3: 1112 RPM
+17:28:25 sequence complete; (e) diff and series in the summary below
+
+=== restore ===
+final: module loaded=no
+
+=== summary ===
+DCR5 (I2EC 0x1807, PCIe) time series:
+  b0 after load                  00
+  b1 write +0s raw               00
+  b1 write settled +1.0s         a7
+  b2 write +10s                  a7
+  c hand-back +0s raw            a7
+  c hand-back +1s                ff
+  c hand-back +60s               ff
+  c hand-back +300s              ff
+written value: 167 = 0xa7; DCR5 before the run: see pcie-before I2EC 0x1807
+'+0s raw' = read right after the write, before the EC took it over (~0.2 s, MW1 Z1): logged, not judged;
+judged (TESTSPEC 0.4 F1): DCR5 = ff at c hand-back +1, +60, +300 s; b 'settled' logged only
+hand-back check (decision 2: pwm4_enable=2 -> DCR5 ff): ok at 3 points (n/a = data gap)
+--- f8a-snapshot.sh --diff (before vs after) ---
+diff A=f8a-snapshot-pcie-before-20261101T172305Z.txt
+     B=f8a-snapshot-pcie-after-20261101T172823Z.txt
+EC RAM bytes changed (temperature offsets 0x04 0x05 0x06 0x09 excluded):
+  (none)
+curve-table regions (TESTSPEC C1):
+  0x10-0x27: identical
+  0x30-0x38: identical
+  0x70-0x81: identical
+I2EC 0x1800-0x182F bytes changed (0x1803 DCR1 CPU, 0x1804 DCR2 SSD, 0x1805/0x1806 DCR3/4 HDD, 0x1807 DCR5 PCIe):
+  0x1807: 00 -> ff
+  0x181e: 3b -> 38
+  0x1820: ea -> e4
+C1 curve tables 0x10-0x27, 0x30-0x38, 0x70-0x81: identical
+NOTE: an EC RAM dump directly after the pwm4 write is impossible without running the
+research tools beside the loaded driver (forbidden, checklist C2). The after-dump follows
+the hand-back (pwm4_enable=2) and the unload; a curve change that the EC reverts on the
+hand-back would not be seen.
+NOTE: this run decides M2 (curve tables) and the driver hand-back (DCR5 ff), not M3: from
+driver 0.2.1+sr1~rc2 on, pwm4 sends no 0x31, so what DCR5 does after 0x31 needs the research
+tools with the module unloaded and a temperature step or a reboot (run card F2-F4).
+kernel-log hits since start: 0 (attributed to the driver: 0)
+max temps: Tctl=47.8 NVMe=43.8 HDD=38.0
+F1 run result: COMPLETE (sequence a-e done, data complete, hand-back DCR5 ff; read the C1 line and the DCR5 series above)

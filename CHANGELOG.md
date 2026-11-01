@@ -14,14 +14,17 @@ and reports under [`docs/`](docs/) and [`befunde/`](befunde/BEFUNDE.md).
 `n5-ectest` (`ectest/`) is versioned and tagged separately (`ectest/vX.Y.Z`); its entries
 are listed here until it has its own changelog.
 
-## [Unreleased] — 0.2.1+sr1
+## [0.2.1+sr1] — 2026-11-02
 
-First downstream revision of upstream `v0.2.1` (`feb6d9a`). Current pre-release: `0.2.1+sr1~rc3`.
-Built and statically checked (W=1, sparse, smatch, checkpatch on Proxmox kernel headers
-7.0.14-20-pve and 7.0.12-1-pve). `~rc2` tested on the reference host in maintenance window 1
-(2026-10-17, `befunde/BEFUNDE.md`) and in F8b run 2 (7 days, PASS); `~rc3` differs from `~rc2`
-only in comments and `MODULE_VERSION`. T1–T3 on hardware are still open. The hardware tests per
-patch are listed in each DEP-3 header and in [`docs/TESTSPEC.md`](docs/TESTSPEC.md).
+First downstream revision of upstream `v0.2.1` (`feb6d9a`; the driver source of upstream
+`v0.2.3` is byte-identical, checked 2026-11-01). Code equals `~rc3`; only `MODULE_VERSION` and
+the package version change. Built and statically checked (W=1, sparse, smatch, checkpatch on
+Proxmox kernel headers 7.0.14-20-pve and 7.0.12-1-pve). Tested on the reference host
+(N5 PRO / F8NAA, BIOS 1.05, EC 0.14): `~rc2` in maintenance window 1 (2026-10-17) and F8b run 2
+(7 days, PASS); `~rc3` in maintenance window 2a (2026-11-01): T1 pwm1 PASS, F1 PCIe hand-back
+COMPLETE, T1 pwm3 FAIL (airflow coupling, TESTSPEC 0.5 #30), T1 pwm2/pwm4 and T2/T3 not run
+([`befunde/BEFUNDE.md`](befunde/BEFUNDE.md), [`befunde/RESULTS.md`](befunde/RESULTS.md)).
+Hardware status of the N5 Pro stays `experimental`.
 
 ### Driver patches
 
@@ -88,6 +91,8 @@ sets `MODULE_VERSION` `0.2.1+sr1~rc3`. Code otherwise identical to `rc2`
   call), kernel lockdown (new, also per call). `--bin-dir`, fallback `<repo>/bin`; header
   with board, BIOS, EC firmware and profile; tool sha256 logged. README section "Snapshot on
   another N5 board"; 274 container tests.
+- f8a 0.2.5: output directory `/root/f8a-raw` (was `/root/n5-mw1/raw`), other directory with
+  `F8A_OUT_DIR=/path`.
 
 ### n5-ectest (`ectest/`, 0.1.0, not yet released)
 
@@ -119,6 +124,9 @@ sets `MODULE_VERSION` `0.2.1+sr1~rc3`. Code otherwise identical to `rc2`
   `source-table-sha256` (was `source-sha256`); in the identity JSON
   `source_table_sha256` (was `source_sha256`). Breaking for readers of the old field; no
   reader is known (review 2026-10-31). n5-fangov uses the same definition.
+- `snapshot` mode B: a missing `fan4_input` (driver sr1 registers no PCIe tach) is reported
+  as `absent`, no longer as unreadable with `RESULT: INCOMPLETE` (window 2a, 2026-11-01). A
+  read error of an existing tach file still makes the snapshot INCOMPLETE.
 
 ### Documentation
 

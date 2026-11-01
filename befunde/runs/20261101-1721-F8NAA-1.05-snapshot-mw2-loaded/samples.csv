@@ -1,0 +1,2 @@
+t_iso,t_s,phase,ch,written,dcr1,dcr2,dcr3,dcr4,dcr5,fan1,fan2,fan3,ec_cpu,ec_sys,ec_board,ec_amb,hdd_max,nvme_max,tctl,load1,room_t,room_rh
+2026-11-01T17:21:45Z,0.000,snapshot,0,,85,75,140,140,0,1989,2158,2246,37.0,29.0,24.0,20.0,37.0,40.9,39.1,0.77,,

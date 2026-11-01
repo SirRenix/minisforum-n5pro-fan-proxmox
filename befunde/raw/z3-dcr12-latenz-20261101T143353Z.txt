@@ -1,0 +1,73 @@
+Z3 2026-11-01T15:33:53+01:00 kernel 7.0.14-26-pve driver 0.2.1+sr1~rc3 srcversion D1E4D4D188041A61EC3D872
+== pwm1 start: pwm1_enable=2 DCR1/2=56/50
+pwm1_enable=1 (Treiber: 255)
+pwm1-enable1 +0ms DCR1/2=56/50 fan=2003/2246
+pwm1-enable1 +221ms DCR1/2=ff/50 fan=2154/2232
+pwm1-enable1 +15017ms DCR1/2=ff/50 (Ende)
+pwm1=180
+pwm1-write180 +0ms DCR1/2=ff/50 fan=5049/2236
+pwm1-write180 +220ms DCR1/2=b4/50 fan=5014/2236
+pwm1-write180 +15016ms DCR1/2=b4/50 (Ende)
+pwm1_enable=2 (Rueckgabe)
+pwm1-handback +0ms DCR1/2=b4/50 fan=3836/2241
+pwm1-handback +219ms DCR1/2=b0/50 fan=3796/2243
+pwm1-handback +447ms DCR1/2=ab/50 fan=3711/2236
+pwm1-handback +671ms DCR1/2=a7/50 fan=3648/2241
+pwm1-handback +895ms DCR1/2=a2/50 fan=3564/2234
+pwm1-handback +1122ms DCR1/2=9e/50 fan=3500/2246
+pwm1-handback +1344ms DCR1/2=9a/50 fan=3406/2232
+pwm1-handback +1569ms DCR1/2=95/50 fan=3322/2236
+pwm1-handback +1792ms DCR1/2=91/50 fan=3267/2239
+pwm1-handback +2014ms DCR1/2=8c/50 fan=3185/2243
+pwm1-handback +2237ms DCR1/2=88/50 fan=3093/2243
+pwm1-handback +2460ms DCR1/2=84/50 fan=3007/2239
+pwm1-handback +2685ms DCR1/2=7f/50 fan=2933/2241
+pwm1-handback +2906ms DCR1/2=7b/50 fan=2855/2239
+pwm1-handback +3128ms DCR1/2=76/50 fan=2771/2241
+pwm1-handback +3352ms DCR1/2=72/50 fan=2695/2243
+pwm1-handback +3576ms DCR1/2=6e/50 fan=2604/2239
+pwm1-handback +3800ms DCR1/2=69/50 fan=2521/2236
+pwm1-handback +4022ms DCR1/2=65/50 fan=2430/2239
+pwm1-handback +4246ms DCR1/2=60/50 fan=2321/2239
+pwm1-handback +4470ms DCR1/2=5c/50 fan=2239/2236
+pwm1-handback +4695ms DCR1/2=58/50 fan=2137/2236
+pwm1-handback +4923ms DCR1/2=56/50 fan=2045/2241
+pwm1-handback +15002ms DCR1/2=56/50 (Ende)
+== pwm2 start: pwm2_enable=2 DCR1/2=56/50
+pwm2_enable=1 (Treiber: 255)
+pwm2-enable1 +1ms DCR1/2=56/50 fan=2022/2239
+pwm2-enable1 +222ms DCR1/2=56/ff fan=2017/2498
+pwm2-enable1 +15033ms DCR1/2=56/ff (Ende)
+pwm2=180
+pwm2-write180 +0ms DCR1/2=56/ff fan=2011/4687
+pwm2-write180 +221ms DCR1/2=56/b4 fan=2015/4364
+pwm2-write180 +15016ms DCR1/2=56/b4 (Ende)
+pwm2_enable=2 (Rueckgabe)
+pwm2-handback +0ms DCR1/2=56/b3 fan=2017/3802
+pwm2-handback +221ms DCR1/2=56/af fan=2011/3782
+pwm2-handback +445ms DCR1/2=56/ab fan=2017/3737
+pwm2-handback +670ms DCR1/2=56/a6 fan=2020/3698
+pwm2-handback +895ms DCR1/2=56/a2 fan=2020/3636
+pwm2-handback +1118ms DCR1/2=56/9d fan=2005/3569
+pwm2-handback +1340ms DCR1/2=56/99 fan=2011/3517
+pwm2-handback +1563ms DCR1/2=56/95 fan=2015/3444
+pwm2-handback +1788ms DCR1/2=56/90 fan=2017/3406
+pwm2-handback +2010ms DCR1/2=56/8c fan=2011/3353
+pwm2-handback +2234ms DCR1/2=56/87 fan=2015/3281
+pwm2-handback +2457ms DCR1/2=56/83 fan=2026/3232
+pwm2-handback +2681ms DCR1/2=56/7f fan=2018/3147
+pwm2-handback +2904ms DCR1/2=56/7a fan=2015/3080
+pwm2-handback +3128ms DCR1/2=56/76 fan=2017/3032
+pwm2-handback +3348ms DCR1/2=56/72 fan=2015/2949
+pwm2-handback +3567ms DCR1/2=56/6d fan=2024/2898
+pwm2-handback +3785ms DCR1/2=56/69 fan=2009/2814
+pwm2-handback +4008ms DCR1/2=56/65 fan=2015/2750
+pwm2-handback +4228ms DCR1/2=56/60 fan=2024/2681
+pwm2-handback +4450ms DCR1/2=56/5c fan=2007/2591
+pwm2-handback +4673ms DCR1/2=56/57 fan=2018/2513
+pwm2-handback +4897ms DCR1/2=56/53 fan=2026/2455
+pwm2-handback +5121ms DCR1/2=56/4f fan=2022/2369
+pwm2-handback +5346ms DCR1/2=56/4b fan=2020/2296
+pwm2-handback +15024ms DCR1/2=56/4b (Ende)
+ende: enable 2/2 dcr 1800: 00 ff 00 56 4b 64 64 00 00 00 00 06 00 00 00 00
+dmesg: keine Treiber-Warnungen

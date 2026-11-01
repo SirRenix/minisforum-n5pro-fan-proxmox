@@ -474,8 +474,31 @@ leichter belastet als Lauf 1.
 Watcher-Rohdaten beider Läufe liegen anonymisiert mit `SHA256SUMS` unter `befunde/runs/`
 (abgelegt 31.10.2026, [`runs/README.md`](runs/README.md)).
 
-**Offen:** ein Lauf mit gepatchtem Treiber über einen 2. Sonntag (z. B. Beobachtungslauf
-n5-fangov 0.5.0, 08.11.).
+**Offen:** ein Lauf mit gepatchtem Treiber über einen 2. Sonntag. Nicht mehr geplant
+(Release ohne weiteren Beobachtungslauf, Entscheidung 01.11.).
+
+## Wartungsfenster 2a (01.11.2026)
+
+Treiber `0.2.1+sr1~rc3` (srcversion `D1E4D4D188041A61EC3D872`), Kernel `7.0.14-26-pve`,
+n5-ectest 0.1.0-mw2 (TESTSPEC 0.4), n5-fangov 0.5.0-rc4. Kaltstart vor Block A (≥ 30 s stromlos).
+Laufkarte `laufkarte-wartungsfenster-2.md` (nicht im Repo). Rohdaten `raw/*20261101*`, Bündel
+`runs/20261101-*` (je `.sha256`/`SHA256SUMS`, gegen die Originale auf `n5host` geprüft).
+
+| Punkt | Ergebnis | Beleg |
+|---|---|---|
+| Autoload bei Blacklist | Blacklist in `modprobe.d` reicht auch bei vorhandener `modules-load.d`-Datei (`deny-listed (by kmod)`, Modul nicht geladen) | Journal des Boots, nicht im Repo |
+| Kurventabellen nach Kaltstart | 0x10–0x27, 0x30–0x38, 0x70–0x81 byte-gleich mit 17.10. | `raw/f8a-snapshot-cold-20261101T143156Z.txt` |
+| Z3 DCR1/DCR2-Latenz (kein Verdikt) | Write → DCR nach ≤ 0,22 s; Rückgabe (`enable=2`) rampt ≈ 20 Stufen/s, 180 → Kurvenwert in 4,9 s (pwm1) / 5,3 s (pwm2) | `raw/z3-dcr12-latenz-20261101T143353Z.txt` |
+| T1 pwm1 | **PASS**; Zweitumsetzung (n5-fangov `validate`) gleiches Verdikt, DCR je Stufe gleich, Tacho-Mittel Δ ≤ 6 rpm (Regel-4-Bedingung #1) | `runs/20261101-1547-*`, `runs/20261101-1631-*` |
+| T1 pwm3 | **FAIL** „another tach follows“: fan2 max 2213 rpm bei pwm3 = 255 (Ruhe 2155; Mittel +43/+26/+20/+11 je Stufe), DCR2 im ganzen Lauf 75. Abgeleitet: Luftstromkopplung, keine Kanalverwechslung. DCR3 = DCR4 = Schreibwert in jedem bewerteten Sample | `runs/20261101-1604-*` |
+| T1 pwm2, pwm4 | **INCONCLUSIVE**, Gate G4: EC 0x04 wechselt im 5-min-Fenster zwischen 29 und 30 °C (Ganzzahl). Kein Trend | `runs/20261101-1557-*`, `-1617-*`, `-1637-*`, `-1702-*` |
+| T1 pwm1, erster Versuch | INCONCLUSIVE, G4: HDD +1 °C kurz nach dem Kaltstart | `runs/20261101-1512-*` |
+| F1 (PCIe-Rückgabe) | **COMPLETE**: DCR5 0xff an +1/+60/+300 s, Kurventabellen vor/nach identisch, 0 Kernel-Log-Treffer | `raw/f8a-pcie-m2-20261101T172305Z.txt` |
+| Snapshot mit Treiber (T6) | REPORTED; Kennzeichnung `INCOMPLETE (fan4_input unreadable)` ist ein Werkzeugfehler (PCIe ohne Tacho), Daten vollständig | `runs/20261101-1721-*` |
+
+Lücken in TESTSPEC 0.4, die dieses Fenster gezeigt hat (Korrektur in 0.5, ohne Nachläufe):
+G4 bei ganzzahligen EC-Werten, T1 wertet Luftstromkopplung als Kanalfehler, G3 absolut statt
+relativ zur Threadzahl. D3 (Abbruchtest) und T2/T3 nicht gelaufen.
 
 ## Für den GitHub-Issue an ltdstudio/minisforum-n5-it5571
 

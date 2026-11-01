@@ -34,7 +34,7 @@
 #   F8A_T_*       shortened waits; honoured only when F8A_ROOT is set.
 
 # shellcheck disable=SC2034  # globals are used by the sourcing scripts
-F8A_VERSION=0.2.4
+F8A_VERSION=0.2.5
 F8A_MODULE=minisforum_n5_it5571
 F8A_HWMON_NAME=minisforum_n5_it5571
 F8A_FANGOV_UNIT=n5-fangov.service
@@ -83,7 +83,7 @@ else
 fi
 F8A_SYS=$F8A_ROOT/sys
 F8A_PROC=$F8A_ROOT/proc
-F8A_OUT_DIR=$F8A_ROOT/root/n5-mw1/raw
+F8A_OUT_DIR=${F8A_OUT_DIR:-$F8A_ROOT/root/f8a-raw}
 F8A_DEBUGFS_DIR=$F8A_SYS/kernel/debug/$F8A_MODULE
 F8A_DRIVER_DIR=$F8A_SYS/bus/platform/drivers/$F8A_MODULE
 F8A_LOG=
@@ -810,7 +810,7 @@ f8a__host_sed() {
 
 f8a_log_start() {
     # f8a_log_start NAME LABEL - tee stdout+stderr (host name redacted) to
-    # /root/n5-mw1/raw/<name>-<label>-<UTC>.txt
+    # $F8A_OUT_DIR (default /root/f8a-raw)/<name>-<label>-<UTC>.txt
     local ts expr
     ts=$(date -u +%Y%m%dT%H%M%SZ)
     mkdir -p "$F8A_OUT_DIR"

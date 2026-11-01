@@ -26,7 +26,7 @@ export F8A_T_TACH_RETRY=0.1 F8A_T_WATCH=0.3
 # shellcheck source=fakek.sh
 . "$T/fakek.sh"
 
-RAW=$F8A_ROOT/root/n5-mw1/raw
+RAW=$F8A_ROOT/root/f8a-raw
 HOST=$(uname -n)
 PASS=0 FAILN=0
 OUT='' RC=0

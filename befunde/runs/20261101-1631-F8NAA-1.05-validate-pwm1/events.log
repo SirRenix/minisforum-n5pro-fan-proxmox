@@ -1,0 +1,15 @@
+2026-11-01T15:31:10Z operator confirmation typed at /dev/tty1 (console flag false, local console true, remote: -)
+2026-11-01T15:36:11Z gate G1 PASS: none active (systemd units, processes, open pwm files, pwm cache, writer-lock inode); checked again at every sample, writer lock held
+2026-11-01T15:36:11Z gate G2 PASS: no scrub, resilver, vzdump or proxmox-backup-client
+2026-11-01T15:36:11Z gate G3 PASS: load1 0.10
+2026-11-01T15:36:11Z gate G4 PASS: over 5m0s: [system (ec 0x04) 0.0 C (< 1 C) ambient (ec 0x06) 0.0 C (< 1 C) hdd 0.0 C (< 1 C) tctl 12.2 C (not a stability criterion: limit 85 C only, TESTSPEC 0.4 #20)]
+2026-11-01T15:36:11Z gate G5 PASS: confirmation typed at /dev/tty1, local console
+2026-11-01T15:36:11Z gate G6 PARTIAL: duty registers recorded (first sample); no /sys/kernel/debug/minisforum_n5_it5571/ecram (driver 0.2.1+sr2 with debug_regs=1): the curve tables come from a mode-A snapshot (tools/f8a/f8a-snapshot.sh) taken after boot and before the module was loaded - name it in the run record; whether something wrote earlier in this boot is not visible
+2026-11-01T15:36:11Z gate G7 PASS: N5 PRO/F8NAA, sys_vendor "Micro Computer (HK) Tech Limited", driver 0.2.1+sr1~rc3 force=N
+2026-11-01T15:36:11Z T1 pwm1: rest reference
+2026-11-01T15:37:11Z pwm1 manual (driver sets 255)
+2026-11-01T15:37:11Z write pwm1=255
+2026-11-01T15:38:11Z write pwm1=217
+2026-11-01T15:39:11Z write pwm1=179
+2026-11-01T15:40:11Z write pwm1=140
+2026-11-01T15:41:11Z restore pwm1 after T1 ok

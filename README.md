@@ -34,10 +34,9 @@ byte-identical copy of upstream `v0.2.1` (commit `feb6d9a`, checked against GitH
 CI and against its `SHA256SUMS` at build time), `driver/patches/` holds our patch series.
 Package `0.2.1-1` ships upstream unchanged. Packages from `0.2.1+sr1~rc1` on apply the
 series `0001`–`0007`; `modinfo -F version minisforum_n5_it5571` shows which one runs
-(`0.2.0` = upstream as shipped, `0.2.1+sr1…` = patched). The current pre-release is
-`sr1~rc3` (`rc1` plus the PCIe hand-back at 255 from `rc2`, below; `rc3` corrects
-only comments in `0006`, the code equals `rc2` apart from the version string); hardware
-validation on the N5 Pro is pending.
+(`0.2.0` = upstream as shipped, `0.2.1+sr1…` = patched). The current release is
+`sr1` (code of `rc3`: `rc1` plus the PCIe hand-back at 255 from `rc2`, below; `rc3` corrected
+only comments in `0006`); the N5 Pro stays `experimental` (results: `befunde/RESULTS.md`).
 Versions and tags: [`packaging/UPSTREAM`](packaging/UPSTREAM). The release workflow
 builds the package and tests the installation in Debian 13.
 
