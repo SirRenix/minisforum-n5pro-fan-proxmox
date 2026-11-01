@@ -81,8 +81,9 @@ jobs:
             refs/tags/ectest/v*) ver=${GITHUB_REF_NAME#ectest/v} ;;
             *) ver=0.1.0-dev ;;
           esac
+          commit=$(printf %.12s "$GITHUB_SHA")
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-            -ldflags="-s -w -X main.version=$ver -X main.commit=${GITHUB_SHA:0:12}" \
+            -ldflags="-s -w -X main.version=$ver -X main.commit=$commit" \
             -o dist/n5-ectest ./cmd/n5-ectest
           ./dist/n5-ectest version
           # tarball: binary, README (the units name it), systemd units
