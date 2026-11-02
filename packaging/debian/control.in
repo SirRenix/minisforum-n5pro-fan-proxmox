@@ -18,15 +18,16 @@ Description: IT5571 EC fan driver for the Minisforum N5 Pro (DKMS)
  satisfies the dependency but stops at its series).
  .
  Enables the PWM nodes of the experimental N5 Pro profile
- (experimental_write=1 in /usr/lib/modprobe.d/) and loads the module at
- every boot (/usr/lib/modules-load.d/). Loading writes nothing to the EC;
- only a regulator such as n5-fangov writes.
+ (experimental_write=1 in /usr/lib/modprobe.d/). udev loads the module at
+ boot on a matching board through its DMI alias; a blacklist line in
+ /etc/modprobe.d/ stops that. Loading writes nothing to the EC; only a
+ regulator such as n5-fangov writes.
  .
  Write gate: PWM writes only with DMI sys_vendor "Micro Computer (HK) Tech
  Limited" on the N5 PRO/F8NAA board (experimental_write=1) or the
- upstream-validated N5/F8NAA. The N5 Air and any system loaded with
- force=1 are read-only; read-only still sends EC read commands for the
- sensors.
+ upstream-validated N5/F8NAA. The N5 Air, the N5 PRO on board F8NAB and
+ any system loaded with force=1 are read-only; read-only still sends EC
+ read commands for the sensors.
  .
  Risk: with writes enabled a write goes straight to the fan output.
  0 stops a fan; the driver has no lower limit, no temperature check and no

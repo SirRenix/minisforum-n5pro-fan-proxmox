@@ -500,6 +500,20 @@ Lücken in TESTSPEC 0.4, die dieses Fenster gezeigt hat (Korrektur in 0.5, ohne 
 G4 bei ganzzahligen EC-Werten, T1 wertet Luftstromkopplung als Kanalfehler, G3 absolut statt
 relativ zur Threadzahl. D3 (Abbruchtest) und T2/T3 nicht gelaufen.
 
+## Build `0.2.1+sr2` (02.11.2026, ohne Hardware)
+
+Treiber `0.2.1+sr1` + `0008` (DMI `N5 PRO`/`F8NAB` read-only), Paket ohne `modules-load.d`,
+postinst `modprobe -b`. Gebaut gegen `7.0.14-26-pve` und `7.0.12-1-pve` im Container auf dem
+Build-Host; Referenzhost nur gelesen. Protokoll `raw/sr2-build-20261102.txt`.
+
+| Punkt | Ergebnis | Beleg |
+|---|---|---|
+| Statische Prüfung | plain, W=1, sparse, smatch ohne Meldung (beide Kernel); checkpatch 0/0, `--strict` 6 CHECKs wie sr1; srcversion `CDDEDE26904251994A0DE35` | Abschnitte F1–F7 |
+| Delta zu sr1 | nur Änderungsvermerk, Kopfkommentar, Profil + DMI-Eintrag F8NAB, Probe-Fehlertext, `MODULE_VERSION` | Abschnitt D |
+| Alias-Load ohne `modules-load.d` | DMI-Modalias des Referenzhosts passt weiter auf zwei Aliase (`svn…pn*N5PRO*:rn*F8NAA*`, `pn*N5*:rn*F8NAA*`) → udev lädt beim Boot. Nicht per Neustart geprüft | Abschnitt A |
+| `modprobe -b` (#50) | echtes kmod: gesperrtes Modul → Exit 0, nicht geladen; per Name → Ladeversuch. postinst prüft deshalb `lsmod` und meldet die Sperre | T1 |
+| `test-deb.sh` | PASS (inkl. Blacklist-Fall, keine `modules-load.d`-Datei im Paket) | T1 |
+
 ## Für den GitHub-Issue an ltdstudio/minisforum-n5-it5571
 
 - [x] Distribution + Kernel: Proxmox VE 9.2.3 / Debian 13, `7.0.12-1-pve`

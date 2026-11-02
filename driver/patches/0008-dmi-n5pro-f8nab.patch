@@ -1,0 +1,80 @@
+Description: Bind N5 PRO / F8NAB read-only
+ Two users report an N5 Pro whose DMI board name is F8NAB instead of
+ F8NAA (product "N5 PRO", BIOS 1.04; audit-20261016 BACKLOG #52, #53).
+ Without a table entry the module does not bind there unless force=1,
+ and udev does not load it (no matching DMI alias).
+ .
+ New profile "Minisforum N5 Pro / F8NAB" and DMI entry product "N5 PRO",
+ board "F8NAB", without sys_vendor in the match, as the N5 Air entries
+ (the vendor string of that board is not measured). The profile is not
+ in the downstream write allowlist (0002), so the board is read-only
+ also with experimental_write=1 as set by the package: no PWM nodes,
+ nothing touched, no write at unbind or shutdown; sensor reads still
+ send EC read commands. Write access for F8NAB needs raw data from such
+ a board first (#52). The probe error text lists the new board.
+ .
+ Not taken from the reporters' fork (#53): the global enable_write
+ parameter and its semantics.
+ .
+ Tested: build W=1, sparse, smatch, checkpatch (befunde/raw/
+ sr2-build-20261102.txt); modinfo alias contains pnN5PRO and rnF8NAB.
+ Not tested on an F8NAB board (none available).
+Author: SirRenix <7069603+SirRenix@users.noreply.github.com>
+Origin: vendor
+Forwarded: no
+Last-Update: 2026-11-02
+---
+--- a/driver-prototype/minisforum_n5_it5571.c
++++ b/driver-prototype/minisforum_n5_it5571.c
+@@ -30,7 +30,8 @@
+  * a board in the downstream write allowlist (N5 Pro/F8NAA). Every other
+  * system, force=1 included, is read-only: no PWM writes, but sensor reads
+  * still send EC read commands. debug_regs=1 takes effect only on a matched
+- * board with that vendor.
++ * board with that vendor. N5 PRO/F8NAB binds by product and board name
++ * (strings from community reports, vendor not measured) and is read-only.
+  */
+ 
+ #include <linux/bitops.h>
+@@ -792,6 +793,16 @@
+ 	.write_allowlist = true,
+ };
+ 
++/*
++ * N5 PRO on board F8NAB: product/board strings reported by two users,
++ * not measured here. Not in the write allowlist, so it is read-only even
++ * with experimental_write=1 until raw data from such a board exists.
++ */
++static struct n5_board_profile n5_pro_f8nab = {
++	.name = "Minisforum N5 Pro / F8NAB",
++	.validated = false,
++};
++
+ static struct n5_board_profile n5_air_f8nab = {
+ 	.name = "Minisforum N5 Air / F8NAB",
+ 	.validated = false,
+@@ -821,6 +832,15 @@
+ 		.driver_data = &n5_pro_f8naa,
+ 	},
+ 	{
++		/* No vendor in the match, as the N5 Air entries. */
++		.ident = "Minisforum N5 Pro / F8NAB (read-only)",
++		.matches = {
++			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "N5 PRO"),
++			DMI_EXACT_MATCH(DMI_BOARD_NAME, "F8NAB"),
++		},
++		.driver_data = &n5_pro_f8nab,
++	},
++	{
+ 		.ident = "Minisforum N5 Air / F8NAB (experimental)",
+ 		.matches = {
+ 			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "N5A"),
+@@ -925,7 +945,7 @@
+ 		profile = match->driver_data;
+ 	if (!profile && !force)
+ 		return dev_err_probe(&pdev->dev, -ENODEV,
+-				     "unsupported system; expected N5/F8NAA, N5 PRO/F8NAA or N5A/F8NAB\n");
++				     "unsupported system; expected N5/F8NAA, N5 PRO/F8NAA, N5 PRO/F8NAB or N5A/F8NAB\n");
+ 
+ 	/*
+ 	 * devres releases in reverse order: debugfs, hwmon (waits for running

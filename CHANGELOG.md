@@ -14,6 +14,38 @@ and reports under [`docs/`](docs/) and [`befunde/`](befunde/BEFUNDE.md).
 `n5-ectest` (`ectest/`) is versioned and tagged separately (`ectest/vX.Y.Z`); its entries
 are listed here until it has its own changelog.
 
+## [0.2.1+sr2] — unreleased
+
+Second downstream revision of upstream `v0.2.1` (`feb6d9a`): `sr1` plus one driver patch and
+two packaging changes. Built and statically checked (W=1, sparse, smatch, checkpatch on
+Proxmox kernel headers 7.0.14-26-pve and 7.0.12-1-pve, `befunde/raw/sr2-build-20261102.txt`);
+`packaging/test/test-deb.sh` PASS. No hardware test: on the reference host (N5 PRO / F8NAA)
+the driver code is that of `sr1` apart from the DMI table, the probe error text and the
+version string. Hardware status of the N5 Pro stays `experimental`.
+
+### Driver patches
+
+- `0008` DMI entry `N5 PRO` / `F8NAB` (product and board name as reported by two users in
+  upstream issue #7; no `sys_vendor` in the match, as the N5 Air entries). The profile is not
+  in the write allowlist (0002): the board binds without `force=1` and stays read-only, also
+  with `experimental_write=1`. Write access needs raw data from such a board first
+  (audit-20261016 #52, #53).
+- `0001` `MODULE_VERSION` `0.2.1+sr2`, change-notice date 2026-11-02; `0002` only its context
+  line for that date.
+
+### Packaging
+
+- `/usr/lib/modules-load.d/minisforum-n5-it5571.conf` is no longer shipped; dpkg removes it on
+  the upgrade. udev loads the module at boot through its DMI alias on every board in the
+  table; the file loaded it on every host, also without a matching board, and a blacklist
+  stopped both anyway (measured 2026-11-01, #37).
+- postinst loads with `modprobe -b`, so a `blacklist minisforum_n5_it5571` in
+  `/etc/modprobe.d/` is honoured (#50). kmod exits 0 for a blacklisted module without loading
+  it, so postinst takes the result from `lsmod` and reports a blacklist as such; the
+  regulator is then not started. Before, `modprobe` by name loaded a blacklisted module.
+- `test-deb.sh`: no `modules-load.d` file in the package; blacklist case with the stub; the
+  real kmod checked for `modprobe -b` (exit 0, not loaded) and by name (insert attempted).
+
 ## [0.2.1+sr1] — 2026-11-02
 
 First downstream revision of upstream `v0.2.1` (`feb6d9a`; the driver source of upstream

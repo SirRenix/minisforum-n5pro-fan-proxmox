@@ -90,7 +90,7 @@ fi
 P="$W/pkg"
 S="$P/usr/src/$PKG-$VER"
 DOC="$P/usr/share/doc/$PKG-dkms"
-install -d "$S" "$P/usr/lib/modprobe.d" "$P/usr/lib/modules-load.d" "$DOC" "$P/DEBIAN"
+install -d "$S" "$P/usr/lib/modprobe.d" "$DOC" "$P/DEBIAN"
 install -m 0644 "$B/driver-prototype/$MOD.c" "$B/driver-prototype/Makefile" "$S/"
 sed "s/^PACKAGE_VERSION=.*/PACKAGE_VERSION=\"$VER\"/" "$ROOT/deploy/dkms.conf" >"$S/dkms.conf"
 echo "$UPSTREAM_COMMIT" >"$S/UPSTREAM_COMMIT"
@@ -101,7 +101,6 @@ else
 fi
 chmod 0644 "$S/dkms.conf" "$S/UPSTREAM_COMMIT" "$S/PATCHES"
 install -m 0644 "$ROOT/deploy/$PKG.modprobe.conf" "$P/usr/lib/modprobe.d/$PKG.conf"
-install -m 0644 "$ROOT/deploy/$PKG.modules-load.conf" "$P/usr/lib/modules-load.d/$PKG.conf"
 install -m 0644 "$ROOT/packaging/debian/copyright" "$DOC/copyright"
 
 for s in postinst prerm; do

@@ -3,9 +3,10 @@
 # tools): a hand installation of 0.2.0 (deploy/install.sh as of 09/2026) is
 # taken over, the module is built for the installed headers, an active
 # regulator is stopped before 'dkms remove' and started after the load
-# (stub systemctl); a stale restart record, an already loaded module, an
-# early postinst failure and an aborted upgrade (new preinst fails) are
-# covered; removal cleans up. Run as root in debian:trixie from the repo
+# (stub systemctl); a stale restart record, a blacklisted module (load
+# with modprobe -b, also checked against the real kmod), an already loaded
+# module, an early postinst failure and an aborted upgrade (new preinst
+# fails) are covered; no modules-load.d file is shipped; removal cleans up. Run as root in debian:trixie from the repo
 # root, after build-deb.sh.
 set -euo pipefail
 PKG=minisforum-n5-it5571
@@ -33,7 +34,10 @@ install -m 0644 packaging/test/legacy-modules-load.conf /etc/modules-load.d/$PKG
 dkms status
 
 echo "--- apt install the package"
-apt-get install -y "./$DEB" 2>&1 | grep -E "^$PKG|Setting up" || true
+out=$(apt-get install -y "./$DEB" 2>&1 | grep -E "^$PKG|Setting up" || true)
+echo "$out"
+echo "$out" | grep -q "/usr/lib/modules-load.d" && fail "postinst names a /usr/lib/modules-load.d file the package does not ship"
+echo "$out" | grep -q "removed the hand-installed /etc/modules-load.d/$PKG.conf; udev loads" || fail "hand-installed modules-load.d copy not reported as removed"
 st=$(dkms status -m $PKG)
 echo "$st"
 echo "$st" | grep -q "$PKG/$VER, $K, .*: installed" || fail "not installed for $K"
@@ -42,7 +46,7 @@ echo "$st" | grep -q "$PKG/0.2.0" && fail "hand installation 0.2.0 still registe
 [ -e /etc/modprobe.d/$PKG.conf ] && fail "legacy /etc/modprobe.d copy left behind"
 [ -e /etc/modules-load.d/$PKG.conf ] && fail "legacy /etc/modules-load.d copy left behind"
 grep -q 'experimental_write=1' /usr/lib/modprobe.d/$PKG.conf || fail "modprobe option missing"
-grep -qx "$PKG" /usr/lib/modules-load.d/$PKG.conf 2>/dev/null || grep -qx 'minisforum_n5_it5571' /usr/lib/modules-load.d/$PKG.conf || fail "modules-load entry missing"
+[ -e /usr/lib/modules-load.d/$PKG.conf ] && fail "package ships /usr/lib/modules-load.d/$PKG.conf (udev loads by DMI alias, #37)"
 modinfo -k "$K" minisforum_n5_it5571 | grep -E '^(filename|version):'
 [ "$(cat /usr/src/$PKG-$VER/UPSTREAM_COMMIT)" = "$UPSTREAM_COMMIT" ] || fail "UPSTREAM_COMMIT"
 if [ -z "$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' driver/patches/series)" ]; then
@@ -54,11 +58,24 @@ if [ -z "$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' driver/patches/series)" ]; th
 	done
 fi
 
-echo "--- stubs: systemctl, dkms and modprobe log their calls (update order, E7)"
+echo "--- real kmod: modprobe -b honours a blacklist and exits 0 without loading; by name it ignores it (#50)"
+echo 'blacklist minisforum_n5_it5571' >/etc/modprobe.d/zz-test-blacklist.conf
+modprobe -c | grep -qx 'blacklist minisforum_n5_it5571' || fail "modprobe -c does not list the blacklist"
+modprobe -b -S "$K" minisforum_n5_it5571 || fail "modprobe -b of a blacklisted module did not exit 0"
+lsmod | grep -q '^minisforum_n5_it5571 ' && fail "modprobe -b loaded a blacklisted module"
+modprobe -S "$K" minisforum_n5_it5571 2>/dev/null && fail "modprobe by name succeeded in the container (expected an insert attempt and its failure)"
+echo "modprobe -b: exit 0, not loaded; by name: insert attempted (fails here, no N5 board / no CAP_SYS_MODULE)"
+rm -f /etc/modprobe.d/zz-test-blacklist.conf
+
+echo "--- stubs: systemctl, dkms, modprobe and lsmod log their calls (update order, E7)"
 # no systemd in the container: a stub systemctl keeps fake unit states in
-# $UNITS_DIR; dkms and modprobe are wrapped to log the order. modprobe of the
-# module itself succeeds without loading anything (no N5 Pro here).
+# $UNITS_DIR; dkms and modprobe are wrapped to log the order. modprobe -b of
+# the module "loads" it by creating $LOADED, which the lsmod stub reports
+# (no N5 board here); with $BLOCKED it behaves as kmod with a blacklist:
+# exit 0, nothing loaded.
 CALLS=/tmp/e7-calls
+LOADED=/tmp/e7-loaded
+BLOCKED=/tmp/e7-blacklisted
 UNITS_DIR=/tmp/e7-units
 STATE=/run/$PKG-dkms.restart
 REAL_DKMS=$(command -v dkms)
@@ -86,10 +103,20 @@ EOF
 cat >/usr/local/sbin/modprobe <<EOF
 #!/bin/sh
 echo "modprobe \$*" >>$CALLS
-[ "\$*" = minisforum_n5_it5571 ] && exit 0
+[ "\$*" = minisforum_n5_it5571 ] && { echo "stub: modprobe by name" >&2; exit 1; }
+if [ "\$*" = "-b minisforum_n5_it5571" ]; then
+	[ -e $BLOCKED ] || touch $LOADED
+	exit 0
+fi
 exec $REAL_MODPROBE "\$@"
 EOF
-chmod 0755 /usr/local/sbin/systemctl /usr/local/sbin/dkms /usr/local/sbin/modprobe
+cat >/usr/local/sbin/lsmod <<EOF
+#!/bin/sh
+echo "Module                  Size  Used by"
+[ -e $LOADED ] && echo "minisforum_n5_it5571   16384  0"
+exit 0
+EOF
+chmod 0755 /usr/local/sbin/systemctl /usr/local/sbin/dkms /usr/local/sbin/modprobe /usr/local/sbin/lsmod
 # line of the first/last call matching an ERE, 0 if none
 first() { grep -nE "$1" "$CALLS" | head -1 | cut -d: -f1 | grep . || echo 0; }
 last() { grep -nE "$1" "$CALLS" | tail -1 | cut -d: -f1 | grep . || echo 0; }
@@ -97,6 +124,7 @@ last() { grep -nE "$1" "$CALLS" | tail -1 | cut -d: -f1 | grep . || echo 0; }
 echo "--- an edited /etc copy is kept on reinstall; an active n5-fangov is stopped and started around it"
 echo 'options minisforum_n5_it5571 experimental_write=1 force=0' >/etc/modprobe.d/$PKG.conf
 : >"$CALLS"
+rm -f "$LOADED" "$BLOCKED"
 touch "$UNITS_DIR/n5-fangov.service"
 apt-get "${STUBPATH[@]}" install -y --reinstall "./$DEB" 2>&1 | grep -E "^$PKG" || true
 [ -e /etc/modprobe.d/$PKG.conf ] || fail "edited /etc copy removed"
@@ -105,7 +133,7 @@ cat "$CALLS"
 stop=$(first '^systemctl stop n5-fangov\.service$')
 rm_=$(first "^dkms remove -m $PKG ")
 inst=$(last "^dkms install -m $PKG ")
-load=$(last '^modprobe minisforum_n5_it5571$')
+load=$(last '^modprobe -b minisforum_n5_it5571$')
 start=$(first '^systemctl start n5-fangov\.service$')
 echo "order: stop=$stop remove=$rm_ install=$inst load=$load start=$start"
 [ "$stop" -gt 0 ] || fail "n5-fangov not stopped on upgrade"
@@ -133,19 +161,28 @@ apt-get "${STUBPATH[@]}" install -y --reinstall "./$DEB" 2>&1 | grep -E "^$PKG" 
 grep -qE '^systemctl start ' "$CALLS" && fail "stale $STATE started a regulator"
 [ -e "$STATE" ] && fail "$STATE left behind"
 
+echo "--- blacklisted (modprobe -b exits 0, nothing loaded): reported as blacklisted, regulator not started"
+echo 'blacklist minisforum_n5_it5571' >/etc/modprobe.d/zz-test-blacklist.conf
+rm -f "$LOADED"
+touch "$BLOCKED" "$UNITS_DIR/n5-fangov.service"
+: >"$CALLS"
+out=$(apt-get "${STUBPATH[@]}" install -y --reinstall "./$DEB" 2>&1 | grep -E "^$PKG" || true)
+echo "$out"
+grep -q '^modprobe -b minisforum_n5_it5571$' "$CALLS" || fail "postinst did not call modprobe -b"
+echo "$out" | grep -q "blacklisted" || fail "blacklist not reported"
+echo "$out" | grep -q "module loaded" && fail "reported as loaded although blacklisted"
+grep -q '^systemctl start ' "$CALLS" && fail "regulator started without a loaded module"
+[ -e "$STATE" ] && fail "$STATE left behind (blacklisted)"
+rm -f "$BLOCKED" /etc/modprobe.d/zz-test-blacklist.conf
+
 echo "--- module already loaded (reference host case): no modprobe of the module, regulator started again"
-cat >/usr/local/sbin/lsmod <<EOF
-#!/bin/sh
-echo "Module                  Size  Used by"
-echo "minisforum_n5_it5571   16384  0"
-EOF
-chmod 0755 /usr/local/sbin/lsmod
+touch "$LOADED"
 : >"$CALLS"
 touch "$UNITS_DIR/n5-fangov.service"
 out=$(apt-get "${STUBPATH[@]}" install -y --reinstall "./$DEB" 2>&1 | grep -E "^$PKG" || true)
 echo "$out"
 echo "$out" | grep -q "module already loaded" || fail "already-loaded branch not taken"
-grep -q '^modprobe minisforum_n5_it5571$' "$CALLS" && fail "module loaded again although lsmod lists it"
+grep -qE '^modprobe (-b )?minisforum_n5_it5571$' "$CALLS" && fail "module loaded again although lsmod lists it"
 [ "$(first '^systemctl start n5-fangov\.service$')" -gt "$(last "^dkms install -m $PKG ")" ] || fail "n5-fangov not started after the build (already loaded)"
 [ -e "$UNITS_DIR/n5-fangov.service" ] || fail "n5-fangov not active (already loaded)"
 
@@ -185,7 +222,7 @@ ls /lib/modules/"$K"/updates/dkms/minisforum_n5_it5571.ko* >/dev/null 2>&1 || fa
 [ "$(first "^dkms remove -m $PKG ")" -gt 0 ] || fail "the old prerm did not run dkms remove (scenario not reached)"
 [ "$(first '^systemctl start n5-fangov\.service$')" -gt "$(last "^dkms install -m $PKG ")" ] || fail "n5-fangov not started after the rebuild"
 [ -e "$STATE" ] && fail "$STATE left behind after abort-upgrade"
-rm -f /usr/local/sbin/lsmod
+rm -f "$LOADED"
 
 echo "--- remove; an active legacy n5-fand is stopped before dkms remove and stays stopped"
 rm -f "$UNITS_DIR"/*
