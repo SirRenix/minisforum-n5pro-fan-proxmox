@@ -4,6 +4,10 @@ Patches here are **drafts**: not in `driver/patches/series`, not built by
 `packaging/build-deb.sh`, not in any package. The build ignores this folder
 (it only checks `driver/patches/`).
 
+Numbering: the draft numbers below date from before sr2. Since `0.2.1+sr2`,
+`driver/patches/0008-dmi-n5pro-f8nab.patch` is the released `0008`; a draft adopted later
+gets the next free number and is rebased onto the sr2 series.
+
 | Patch | Purpose | Status |
 |---|---|---|
 | `0008-debugfs-ecram.patch` | read-only debugfs file `ecram`: EC RAM 0x00-0xff through the driver's locked EC read path | draft 2026-10-16, revised after review (r2); build/static analysis clean, never run on hardware. Operator decision 2026-10-17: regenerated on rc2/rc3 only when sr2 starts, not before |

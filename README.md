@@ -20,8 +20,10 @@ The package pulls `dkms` and the kernel header meta-package — on Proxmox VE
 `proxmox-default-kernel`; on plain Debian `linux-headers-amd64` — builds the module for
 every kernel with headers and rebuilds it for each new kernel. A host that has only
 `proxmox-headers-<series>` gets no headers for the next series: `apt install proxmox-default-headers`. It sets `experimental_write=1` (without it the
-`pwm*` nodes stay hidden; risk: [Write access](#write-access-and-its-risk)) in `/usr/lib/modprobe.d/` and loads the module at boot via
-`/usr/lib/modules-load.d/` ([Autoload](#autoload)); a file of the same name in `/etc/` overrides either.
+`pwm*` nodes stay hidden; risk: [Write access](#write-access-and-its-risk)) in `/usr/lib/modprobe.d/`;
+a file of the same name in `/etc/` overrides it. udev loads the module at boot through its DMI
+alias ([Autoload](#autoload)); up to sr1 the package also shipped a
+`/usr/lib/modules-load.d/` file, which sr2 drops (dpkg removes it on the upgrade).
 Loading writes nothing to the EC; `pwm*_enable` then reads `2`, a value the driver
 assumes, not one it read from the EC ([Attributes](#hwmon-attributes)). Only a regulator
 writes. A hand installation from `deploy/install.sh` is taken over.
@@ -33,16 +35,19 @@ The driver source lives in [`driver/`](driver/README.md): `driver/upstream/` is 
 byte-identical copy of upstream `v0.2.1` (commit `feb6d9a`, checked against GitHub in
 CI and against its `SHA256SUMS` at build time), `driver/patches/` holds our patch series.
 Package `0.2.1-1` ships upstream unchanged. Packages from `0.2.1+sr1~rc1` on apply the
-series `0001`–`0007`; `modinfo -F version minisforum_n5_it5571` shows which one runs
-(`0.2.0` = upstream as shipped, `0.2.1+sr1…` = patched). The current release is
-`sr1` (code of `rc3`: `rc1` plus the PCIe hand-back at 255 from `rc2`, below; `rc3` corrected
-only comments in `0006`); the N5 Pro stays `experimental` (results: `befunde/RESULTS.md`).
+series `0001`–`0007`, from `0.2.1+sr2` on `0001`–`0008`; `modinfo -F version minisforum_n5_it5571`
+shows which one runs (`0.2.0` = upstream as shipped, `0.2.1+srN…` = patched). The current
+release is `sr2`: `sr1` (code of `rc3`: `rc1` plus the PCIe hand-back at 255 from `rc2`, below;
+`rc3` corrected only comments in `0006`) plus the read-only `N5 PRO` / `F8NAB` entry (0008)
+and two packaging changes ([CHANGELOG](CHANGELOG.md)); the N5 Pro stays `experimental`
+(results: `befunde/RESULTS.md`).
 Versions and tags: [`packaging/UPSTREAM`](packaging/UPSTREAM). The release workflow
 builds the package and tests the installation in Debian 13.
 
 Unless marked otherwise, the driver behaviour below is the same in upstream `0.2.1`
-and in `sr1`. "0.2.1:" marks upstream behaviour that `sr1` changes; "sr1" marks the
-patched behaviour (patch number in brackets, `driver/patches/`).
+and in `sr1`/`sr2`. "0.2.1:" marks upstream behaviour that `sr1` changes; "sr1" marks the
+patched behaviour (patch number in brackets, `driver/patches/`), which `sr2` keeps; "sr2"
+marks what only `sr2` changes.
 
 ## Supported hardware
 
@@ -51,7 +56,7 @@ patched behaviour (patch number in brackets, `driver/patches/`).
 | `N5 PRO` / `F8NAA` | 1.05 / 0.14 | tested on one host, validation in progress ([`docs/TESTSPEC.md`](docs/TESTSPEC.md), [`befunde/`](befunde/BEFUNDE.md)) | yes (package sets `experimental_write=1`); sr1: only with `sys_vendor` `Micro Computer (HK) Tech Limited`, which the DMI entry itself requires (0002) |
 | `N5` / `F8NAA` | upstream: EC firmware V0.14 | validated upstream (Unraid 7.3.2, Linux 6.18); not tested here | 0.2.1: yes, validated profile writes without any option; sr1: only if `sys_vendor` is `Micro Computer (HK) Tech Limited` – the N5's vendor string is **not measured**, on a mismatch the N5 binds read-only (0002) |
 | `N5A` or `N5 AIR` / `F8NAB` | – | experimental, read-only in this downstream | 0.2.1: **yes**, the package option is global; sr1: no (0002) |
-| `N5 PRO` / `F8NAB` | – | experimental, read-only in this downstream | 0.2.1: no DMI entry, loads only with `force=1` (then writable, see below); sr1: `force=1` binds read-only (0002) |
+| `N5 PRO` / `F8NAB` | community reports: BIOS 1.04 | experimental, read-only in this downstream; DMI strings from two users ([upstream #7](https://github.com/ltdstudio/minisforum-n5-it5571/issues/7)), not tested here | 0.2.1: no DMI entry, loads only with `force=1` (then writable, see below); sr1: `force=1` binds read-only (0002); sr2: DMI entry, binds without `force`, read-only also with `experimental_write=1` (0008) |
 | anything else | – | not supported | 0.2.1: with `force=1` writable; sr1: no |
 
 The channel map and the command set belong to the board firmware, not to the IT5571
@@ -60,9 +65,9 @@ sr1 (0002) allows writes only with `sys_vendor` `Micro Computer (HK) Tech Limite
 and either the upstream-validated `N5` / `F8NAA` profile (no option needed) or
 `N5 PRO` / `F8NAA` with `experimental_write=1`. The `N5 PRO` DMI entry also matches
 that vendor, so an `N5 PRO` / `F8NAA` board from another vendor binds only with
-`force=1`, and then read-only. The `N5` and `N5 Air` entries match without vendor
-(their vendor string is not measured): on a vendor mismatch they bind read-only.
-N5 Air and `force=1` are always read-only. Read-only means no PWM write: every
+`force=1`, and then read-only. The `N5` and `N5 Air` entries (sr2: also `N5 PRO` /
+`F8NAB`, 0008) match without vendor (their vendor string is not measured): on a vendor
+mismatch they bind read-only. N5 Air, `N5 PRO` / `F8NAB` and `force=1` are always read-only. Read-only means no PWM write: every
 temperature or fan read still sends EC read commands (0x80 to 0x66; 0xd5 plus
 subcommand to 0x6c/0x68). Other vendors' boards with this EC are not excluded in
 principle, but they need their own validation and a patch; the package does not
@@ -123,12 +128,14 @@ With writes enabled:
 - The module carries DMI aliases from `MODULE_DEVICE_TABLE`:
   `dmi*:pn*N5*:rn*F8NAA*:`, `dmi*:pn*N5PRO*:rn*F8NAA*:` (sr1:
   `dmi*:svn*MicroComputer(HK)TechLimited*:pn*N5PRO*:rn*F8NAA*:`), `dmi*:pn*N5A*:rn*F8NAB*:`,
-  `dmi*:pn*N5AIR*:rn*F8NAB*:` (`modinfo minisforum_n5_it5571`). They are glob patterns
+  `dmi*:pn*N5AIR*:rn*F8NAB*:`, sr2 also `dmi*:pn*N5PRO*:rn*F8NAB*:` (0008)
+  (`modinfo minisforum_n5_it5571`). They are glob patterns
   over the DMI modalias (spaces removed): udev loads the module on any system whose
   product name contains `N5` and whose board name contains `F8NAA` or `F8NAB`.
-- The package also loads it at every boot via `/usr/lib/modules-load.d/`, on every
-  host, matching or not. On an N5 / N5 Pro this is redundant to the alias load:
-  removing or emptying that file does **not** stop the module from loading.
+- Up to sr1 the package also loaded it at every boot via `/usr/lib/modules-load.d/`, on
+  every host, matching or not. On an N5 / N5 Pro that was redundant to the alias load
+  (measured 2026-11-01: with the file and a blacklist the module stays unloaded, without
+  the blacklist udev loads it anyway). sr2 no longer ships the file.
 - The gate is the probe: exact match on product and board name. Without a match and
   without `force=1` the probe fails with `-ENODEV` ("unsupported system" in the kernel
   log); the module stays loaded, reserves no port, registers no hwmon device and does
@@ -137,7 +144,9 @@ With writes enabled:
 - Disable autoload: only `blacklist minisforum_n5_it5571` in `/etc/modprobe.d/` does
   it. It stops the alias load and the boot load (`systemd-modules-load` honours the kmod
   blacklist, systemd 257: "Module '…' is deny-listed (by kmod)"); only a manual
-  `modprobe minisforum_n5_it5571` still loads it. An empty
+  `modprobe minisforum_n5_it5571` still loads it. The package postinst loads with
+  `modprobe -b` (sr2), so it honours the blacklist; up to sr1 it loaded by name and
+  ignored it. An empty
   `/etc/modules-load.d/minisforum-n5-it5571.conf` on top of the blacklist only removes
   the boot load attempt and its log line; on its own it disables nothing.
 

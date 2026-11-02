@@ -33,7 +33,7 @@ Nutzerbericht im Upstream-Issue, nicht geprüft. `validated` und `tested` setzen
 | N5 | F8NAA | * | * | experimental | upstream | 2026-10-09 | upstream validated (Treiberautor, BIOS 1.04), nicht durch uns geprüft, kein TESTSPEC-Lauf; Treiber-Flag `validated` = Schreib-Gate |
 | N5A | F8NAB | * | * | experimental | upstream | 2026-10-09 | N5 Air; read-only (keine Schreibfreigabe ab Treiber 0.2.1+sr1) |
 | N5 AIR | F8NAB | * | * | experimental | upstream | 2026-10-09 | N5 Air, alternativer DMI-String; read-only (keine Schreibfreigabe ab Treiber 0.2.1+sr1) |
-| N5 PRO | F8NAB | * | * | experimental | Bericht | 2026-11-01 | Upstream-Issues #6/#8; #7 (2026-11-01): zwei Nutzer melden Schreibbetrieb pwm1–3 mit Fork-Treiber (BIOS 1.04), nicht nach TESTSPEC; in unserer DMI-Tabelle nicht enthalten, bindet nur mit force=1 und dann read-only |
+| N5 PRO | F8NAB | * | * | experimental | Bericht | 2026-11-02 | Upstream-Issues #6/#8; #7 (2026-11-01): zwei Nutzer melden Schreibbetrieb pwm1–3 mit Fork-Treiber (BIOS 1.04), nicht nach TESTSPEC; ab Treiber 0.2.1+sr2 DMI-Eintrag (bindet ohne force), read-only, Schreibfreigabe erst mit Rohdaten |
 <!-- hwstatus:end -->
 
 ## TESTSPEC-Läufe

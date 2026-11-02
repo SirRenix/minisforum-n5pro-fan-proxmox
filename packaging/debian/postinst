@@ -73,11 +73,18 @@ adopt_hand_install() {
 		# shellcheck disable=SC2086 # split "path sha256" on purpose
 		set -- $pair
 		[ -f "$1" ] || continue
+		case "$1" in
+		*/modules-load.d/*) instead="udev loads the module through its DMI alias" ;;
+		*) instead="/usr/lib${1#/etc} applies" ;;
+		esac
 		if [ "$(sha256sum "$1" | cut -d' ' -f1)" = "$2" ]; then
 			rm -f "$1"
-			say "removed the hand-installed $1; /usr/lib${1#/etc} applies"
+			say "removed the hand-installed $1; $instead"
 		else
-			say "keeping $1 (edited); it overrides /usr/lib${1#/etc}"
+			case "$1" in
+			*/modules-load.d/*) say "keeping $1 (edited); redundant to the DMI alias load" ;;
+			*) say "keeping $1 (edited); it overrides /usr/lib${1#/etc}" ;;
+			esac
 		fi
 	done
 }
@@ -125,11 +132,16 @@ configure)
 	if loaded; then
 		say "module already loaded; the new build takes effect after 'systemctl stop n5-fangov; modprobe -r $MOD; modprobe $MOD; systemctl start n5-fangov' or the next boot"
 		restart_regulators 1
-	elif modprobe $MOD 2>/dev/null; then
+	# -b: a modprobe.d blacklist is honoured; kmod then exits 0 without
+	# loading, so success is taken from lsmod, not from the exit code
+	elif modprobe -b $MOD 2>/dev/null && loaded; then
 		say "module loaded"
 		restart_regulators 1
+	elif modprobe -c 2>/dev/null | grep -qx "blacklist $MOD"; then
+		say "module not loaded: blacklisted in modprobe.d (remove that line to load it at boot)"
+		restart_regulators 0
 	else
-		say "module not loaded now (no matching N5 Pro, or no permission here); it loads at boot via /usr/lib/modules-load.d/$PKG.conf"
+		say "module not loaded now (no matching N5 board, or no permission here); on a matching board udev loads it at boot through its DMI alias"
 		restart_regulators 0
 	fi
 	;;
