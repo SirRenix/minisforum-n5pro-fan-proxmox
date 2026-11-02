@@ -1,0 +1,31 @@
+P3 / B1 worst case, minisforum_n5_it5571.c sha256 E8676ED3820C3DB72B6F9821F0A0AF12245EB6290380817D390952E67CB25A74 (upstream feb6d9a)
+Derived from code only (no host access). 2026-10-09.
+
+Status poll n5_wait_status (93-104): N5_WAIT_LOOPS=5000 (45), per loop 1x inb + usleep_range(20,50) (98,100).
+  timeout min  = 5000 * 20 us = 100 ms   (+ inb time)
+  timeout max  = 5000 * 50 us = 250 ms   + 5000 inb (~1 us LPC each, ~5 ms) = ~255 ms
+  (usleep_range upper bound is the hrtimer deadline; scheduling latency can add to it, not bounded by the driver)
+  -> > 100 ms per status poll even at the minimum sleep.
+Drain n5_drain_output (106-116): max 16 iterations, 2 inb each, no sleep -> negligible (< 0.1 ms).
+
+Waits per primitive (W = one n5_wait_status):
+  n5_pmc2_begin  (119-135): drain + 3 W
+  n5_pmc2_read   (138-152): begin + 1 W (OBF)            = 4 W
+  n5_pmc2_write  (155-165): begin + 1 W (IBF)            = 4 W
+  n5_pmc2_action (168-171): begin                        = 3 W
+  n5_ec_read_locked (174-195): drain + 3 W
+Every W aborts the transaction on timeout, so the worst case is every W succeeding just
+before the limit (~255 ms each); the last W may also time out - same bound.
+
+Per sysfs access (W count -> worst case at 255 ms/W):
+  tempN_input            : 1 ec_read                      =  3 W ->  0.77 s
+  fan1..3_input          : up to 4 attempts x 3 pmc2_read = 48 W -> 12.24 s (then -EAGAIN) (210-226)
+  fan4_input             : 0 W (constant 0, 205-208)
+  fanN_min r/w, pwmN r, pwmN_enable r : cache only, 0 W
+  pwm1 / pwm4 write      : 4 pmc2_write + 1 action        = 19 W ->  4.85 s (239-244, 254-259)
+  pwm2 / pwm3 write      : 1 pmc2_write + 1 action        =  7 W ->  1.79 s (246-251)
+  pwmN_enable=0, or =1 from !=1 : as pwmN write            19 / 7 W
+  pwmN_enable=2          : 1 action                        =  3 W ->  0.77 s (266-273)
+  remove()               : up to 4 actions                 = 12 W ->  3.06 s (628-635)
+Maximum per sysfs access: fan1..3_input 48 W ~ 12.2 s; maximum write: pwm1/pwm4 19 W ~ 4.8 s.
+All loops are bounded by constants; no unbounded wait in the driver code.

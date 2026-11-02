@@ -1,0 +1,62 @@
+#!/bin/bash
+# n5vw-failmail UNIT - OnFailure= handler of the n5vw-* services (K8).
+#
+# Mails "[n5-validation] ALERT K8 Dienst <unit> fehlgeschlagen" with the unit
+# status and its last journal lines. At most one mail per unit per
+# ALERT_COOLDOWN; failures in between are counted and reported with the next
+# mail. Deliberately no "set -e" and no dependency on the data directory
+# (which may be the reason for the failure): rate-limit state lives in the
+# unit's RuntimeDirectory (/run/n5vw-failmail).
+set -uo pipefail
+
+unit=${1:-unbekannt}
+BIN_DIR=$(dirname "$(readlink -f "$0")")
+MAIL_TO=root ALERT_COOLDOWN=3600 RUN_ID='?' HOST=${HOSTNAME%%.*} DRY_RUN=${N5VW_DRY_RUN:-0}
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=n5vw-lib.sh
+if . "$BIN_DIR/n5vw-lib.sh"; then vw_load_config || true; fi
+
+sdir=${RUNTIME_DIRECTORY:-/run/n5vw-failmail}
+mkdir -p "$sdir" 2>/dev/null || true
+safe=${unit//[^A-Za-z0-9@._-]/_}
+now=$EPOCHSECONDS
+last=0; supp=0
+{ read -r last < "$sdir/$safe.last"; } 2>/dev/null || last=0
+{ read -r supp < "$sdir/$safe.suppressed"; } 2>/dev/null || supp=0
+case "$last" in ''|*[!0-9]*) last=0 ;; esac
+case "$supp" in ''|*[!0-9]*) supp=0 ;; esac
+
+if [ $((now - last)) -lt "$ALERT_COOLDOWN" ]; then
+    printf '%s\n' $((supp + 1)) > "$sdir/$safe.suppressed" 2>/dev/null || true
+    printf '<5>n5vw-failmail: %s failed again, mail suppressed (cooldown)\n' "$unit" >&2
+    exit 0
+fi
+
+subj="[n5-validation] ALERT K8 Dienst $unit fehlgeschlagen"
+if [ "$supp" -gt 0 ]; then subj="$subj (+$supp weitere)"; fi
+body=$(
+    printf 'Lauf: %s auf %s\n' "$RUN_ID" "$HOST"
+    printf 'Der Watcher-Dienst %s ist fehlgeschlagen.\n' "$unit"
+    if [ "$supp" -gt 0 ]; then
+        printf 'Weitere Fehlschlaege seit der letzten Meldung (unterdrueckt): %s\n' "$supp"
+    fi
+    printf 'Solange der Fehler besteht, ist die Beobachtung ganz oder teilweise blind.\n\n'
+    systemctl show "$unit" -p Result -p ExecMainStatus -p ExecMainExitTimestamp -p NRestarts 2>/dev/null || true
+    printf '\n'
+    systemctl status "$unit" --no-pager -n 0 2>/dev/null | head -n 8 || true
+    printf '\nLetzte Journalzeilen:\n'
+    journalctl -u "$unit" -n 30 -o short-iso --no-pager -q 2>/dev/null | tail -n 30 || true
+    printf '\nStand: /usr/local/lib/n5-validation/status.sh\n'
+)
+msg=$(printf 'To: %s\nFrom: root@%s\nSubject: %s\nMIME-Version: 1.0\nContent-Type: text/plain; charset=utf-8\nContent-Transfer-Encoding: 8bit\n\n%s\n' \
+    "$MAIL_TO" "$HOST" "$subj" "$body")
+if [ "$DRY_RUN" = 1 ]; then
+    printf '===== DRY-RUN MAIL (not sent) =====\n%s\n===== END MAIL =====\n' "$msg"
+elif printf '%s\n' "$msg" | /usr/sbin/sendmail "$MAIL_TO" 2>/dev/null; then
+    printf '<5>n5vw-failmail: mail sent: %s\n' "$subj" >&2
+else
+    printf '<3>n5vw-failmail: sendmail failed for %s\n' "$unit" >&2
+    exit 1
+fi
+printf '%s\n' "$now" > "$sdir/$safe.last" 2>/dev/null || true
+printf '0\n' > "$sdir/$safe.suppressed" 2>/dev/null || true

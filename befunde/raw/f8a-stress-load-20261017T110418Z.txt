@@ -1,0 +1,121 @@
+
+=== identity ===
+tool: f8a 0.2.1
+date_utc: 2026-10-17T11:04:18Z
+uptime_s: 2231.79
+boot_id: 69c8f898-2fd7-41fc-b5ee-760d5f963f95
+kernel: 7.0.14-20-pve
+host: n5host
+dmi.product_name: N5 PRO
+dmi.board_name: F8NAA
+dmi.board_version: 1.0
+dmi.sys_vendor: Micro Computer (HK) Tech Limited
+dmi.bios_vendor: American Megatrends International, LLC.
+dmi.bios_version: 1.05
+dmi.bios_date: 03/31/2026
+dmi.bios_release: 5.35
+dmi.ec_firmware_release: 0.14
+
+=== lsmod (filtered) ===
+minisforum_n5_it5571 28672 0 - Live 0xffffffffc0785000 (OE)
+k10temp 16384 0 - Live 0xffffffffc07aa000
+drivetemp 16384 0 - Live 0xffffffffc0616000
+nvme 65536 7 - Live 0xffffffffc0603000
+
+=== /proc/ioports 002e-002f/0062/0066/0068/006c ===
+  0062-0062 : minisforum_n5_it5571
+  0066-0066 : minisforum_n5_it5571
+  0068-0068 : minisforum_n5_it5571
+  006c-006c : minisforum_n5_it5571
+
+=== module parameters ===
+debug_regs=Y
+experimental_write=Y
+force=N
+modprobe.d / modules-load.d entries:
+/usr/lib/modprobe.d/minisforum-n5-it5571.conf:options minisforum_n5_it5571 experimental_write=1
+/usr/lib/modules-load.d/minisforum-n5-it5571.conf:minisforum_n5_it5571
+(none)
+effective options (modprobe -c):
+options minisforum_n5_it5571 experimental_write=1
+
+=== independent temperatures (k10temp, nvme, drivetemp) ===
+Tctl=37.3 NVMe_max=42.8 HDD_max=39.0
+
+=== n5-fangov ===
+is-active: inactive
+is-enabled: disabled
+
+=== stress load, 50 cycles, device minisforum_n5_it5571 ===
+11:04:18 start: dcr 1800: 00 ff 00 55 4b 58 57 00 00 00 00 06 00 00 00 00, fan1=1990 fan2=2158 fan3=1284
+11:04:20 cycle 1/50: pwm1..4_enable=2 2 2 2 fan1=3587 fan2=3692 fan3=1278 dcr=[1800: 00 ff 00 c6 fd 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=43.8 NVMe_max=42.8 HDD_max=39.0 writer_err=none
+11:04:23 cycle 2/50: pwm1..4_enable=2 2 2 2 fan1=4060 fan2=3763 fan3=1273 dcr=[1800: 00 ff 00 93 93 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=42.6 NVMe_max=42.8 HDD_max=39.0 writer_err=ENOENT=2
+11:04:25 cycle 3/50: pwm1..4_enable=2 2 2 2 fan1=4037 fan2=3267 fan3=1273 dcr=[1800: 00 ff 00 fd fd 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=38.2 NVMe_max=42.8 HDD_max=39.0 writer_err=ENOENT=2
+11:04:27 cycle 4/50: pwm1..4_enable=2 2 2 2 fan1=4000 fan2=3472 fan3=1273 dcr=[1800: 00 ff 00 c5 c5 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=36.1 NVMe_max=42.8 HDD_max=39.0 writer_err=ENOENT=2
+11:04:29 cycle 5/50: pwm1..4_enable=2 2 2 2 fan1=4007 fan2=3587 fan3=1264 dcr=[1800: 00 ff 00 93 93 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=35.8 NVMe_max=42.8 HDD_max=39.0 writer_err=ENOENT=2
+11:04:32 cycle 6/50: pwm1..4_enable=2 2 2 2 fan1=3970 fan2=3483 fan3=1264 dcr=[1800: 00 ff 00 fd fd 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=36.1 NVMe_max=42.8 HDD_max=39.0 writer_err=ENOENT=2
+11:04:34 cycle 7/50: pwm1..4_enable=2 2 2 2 fan1=4068 fan2=3789 fan3=1264 dcr=[1800: 00 ff 00 c6 c6 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=37.7 NVMe_max=42.8 HDD_max=39.0 writer_err=ENOENT=2
+11:04:36 cycle 8/50: pwm1..4_enable=2 2 2 2 fan1=4076 fan2=3913 fan3=1274 dcr=[1800: 00 ff 00 94 94 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=35.7 NVMe_max=42.8 HDD_max=39.0 writer_err=ENOENT=2
+11:04:38 cycle 9/50: pwm1..4_enable=2 2 2 2 fan1=3978 fan2=3581 fan3=1274 dcr=[1800: 00 ff 00 61 61 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=35.7 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=2
+11:04:40 cycle 10/50: pwm1..4_enable=2 2 2 2 fan1=4076 fan2=3949 fan3=1273 dcr=[1800: 00 ff 00 c5 c5 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=38.3 NVMe_max=42.8 HDD_max=39.0 writer_err=ENOENT=2
+11:04:43 cycle 11/50: pwm1..4_enable=2 2 2 2 fan1=4045 fan2=3564 fan3=1272 dcr=[1800: 00 ff 00 62 62 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=37.3 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=2
+11:04:45 cycle 12/50: pwm1..4_enable=2 2 2 2 fan1=3985 fan2=3599 fan3=1272 dcr=[1800: 00 ff 00 fd fd 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=36.6 NVMe_max=42.8 HDD_max=39.0 writer_err=ENOENT=2
+11:04:47 cycle 13/50: pwm1..4_enable=2 2 2 2 fan1=4130 fan2=3941 fan3=1273 dcr=[1800: 00 ff 00 c5 c5 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=35.2 NVMe_max=42.8 HDD_max=39.0 writer_err=ENOENT=2
+11:04:49 cycle 14/50: pwm1..4_enable=2 2 2 2 fan1=4022 fan2=3782 fan3=1274 dcr=[1800: 00 ff 00 62 62 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=47.8 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=2
+11:04:51 cycle 15/50: pwm1..4_enable=2 2 2 2 fan1=4022 fan2=3623 fan3=1274 dcr=[1800: 00 ff 00 fd fd 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=40.0 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=2
+11:04:54 cycle 16/50: pwm1..4_enable=2 2 2 2 fan1=4099 fan2=3906 fan3=1266 dcr=[1800: 00 ff 00 c5 c5 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=38.0 NVMe_max=42.8 HDD_max=39.0 writer_err=ENOENT=2
+11:04:56 cycle 17/50: pwm1..4_enable=2 2 2 2 fan1=4068 fan2=3724 fan3=1266 dcr=[1800: 00 ff 00 93 93 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=35.6 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=2
+11:04:58 cycle 18/50: pwm1..4_enable=2 2 2 2 fan1=4068 fan2=3927 fan3=1266 dcr=[1800: 00 ff 00 c5 fc 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=36.6 NVMe_max=42.8 HDD_max=39.0 writer_err=ENOENT=2
+11:05:00 cycle 19/50: pwm1..4_enable=2 2 2 2 fan1=4083 fan2=3906 fan3=1269 dcr=[1800: 00 ff 00 94 94 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=36.0 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=2
+11:05:03 cycle 20/50: pwm1..4_enable=2 2 2 2 fan1=4053 fan2=3546 fan3=1269 dcr=[1800: 00 ff 00 61 61 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=38.6 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=2
+11:05:05 cycle 21/50: pwm1..4_enable=2 2 2 2 fan1=3985 fan2=3506 fan3=1273 dcr=[1800: 00 ff 00 fd fd 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=36.8 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=2
+11:05:07 cycle 22/50: pwm1..4_enable=2 2 2 2 fan1=4107 fan2=3809 fan3=1271 dcr=[1800: 00 ff 00 c4 c4 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=36.6 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=4
+11:05:09 cycle 23/50: pwm1..4_enable=2 2 2 2 fan1=3993 fan2=3353 fan3=1271 dcr=[1800: 00 ff 00 62 62 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=41.1 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=4
+11:05:12 cycle 24/50: pwm1..4_enable=2 2 2 2 fan1=4076 fan2=3885 fan3=1275 dcr=[1800: 00 ff 00 fb fb 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=37.0 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=4
+11:05:14 cycle 25/50: pwm1..4_enable=2 2 2 2 fan1=3985 fan2=3599 fan3=1272 dcr=[1800: 00 ff 00 93 93 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=36.7 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=4
+11:05:16 cycle 26/50: pwm1..4_enable=2 2 2 2 fan1=4030 fan2=3558 fan3=1272 dcr=[1800: 00 ff 00 fb fb 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=37.7 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=4
+11:05:18 cycle 27/50: pwm1..4_enable=2 2 2 2 fan1=4037 fan2=3717 fan3=1263 dcr=[1800: 00 ff 00 93 93 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=40.8 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=4
+11:05:21 cycle 28/50: pwm1..4_enable=2 2 2 2 fan1=3985 fan2=3477 fan3=1263 dcr=[1800: 00 ff 00 62 62 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=43.0 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=4
+11:05:23 cycle 29/50: pwm1..4_enable=2 2 2 2 fan1=4000 fan2=3317 fan3=1263 dcr=[1800: 00 ff 00 fd fd 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=39.3 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=4
+11:05:25 cycle 30/50: pwm1..4_enable=2 2 2 2 fan1=4099 fan2=3816 fan3=1269 dcr=[1800: 00 ff 00 c4 c4 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=36.7 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=6
+11:05:27 cycle 31/50: pwm1..4_enable=2 2 2 2 fan1=3941 fan2=3267 fan3=1269 dcr=[1800: 00 ff 00 61 61 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=35.0 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=8
+11:05:30 cycle 32/50: pwm1..4_enable=2 2 2 2 fan1=4007 fan2=3829 fan3=1272 dcr=[1800: 00 ff 00 c4 c4 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=35.0 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=8
+11:05:32 cycle 33/50: pwm1..4_enable=2 2 2 2 fan1=3956 fan2=3106 fan3=1270 dcr=[1800: 00 ff 00 61 61 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=34.7 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=8
+11:05:34 cycle 34/50: pwm1..4_enable=2 2 2 2 fan1=4022 fan2=3569 fan3=1270 dcr=[1800: 00 ff 00 c6 c6 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=36.5 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=8
+11:05:36 cycle 35/50: pwm1..4_enable=2 2 2 2 fan1=4060 fan2=3569 fan3=1270 dcr=[1800: 00 ff 00 61 93 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=34.6 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=10
+11:05:39 cycle 36/50: pwm1..4_enable=2 2 2 2 fan1=4015 fan2=3401 fan3=1271 dcr=[1800: 00 ff 00 fc fc 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=34.6 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=11
+11:05:41 cycle 37/50: pwm1..4_enable=2 2 2 2 fan1=4045 fan2=3605 fan3=1271 dcr=[1800: 00 ff 00 61 93 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=36.6 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=13
+11:05:43 cycle 38/50: pwm1..4_enable=2 2 2 2 fan1=4015 fan2=3593 fan3=1271 dcr=[1800: 00 ff 00 fc fc 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=38.6 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=17
+11:05:45 cycle 39/50: pwm1..4_enable=2 2 2 2 fan1=4091 fan2=3743 fan3=1271 dcr=[1800: 00 ff 00 94 94 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=36.3 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=17
+11:05:48 cycle 40/50: pwm1..4_enable=2 2 2 2 fan1=4037 fan2=3444 fan3=1264 dcr=[1800: 00 ff 00 62 62 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=34.7 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=17
+11:05:50 cycle 41/50: pwm1..4_enable=2 2 2 2 fan1=3956 fan2=3286 fan3=1265 dcr=[1800: 00 ff 00 fc fc 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=46.0 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=17
+11:05:52 cycle 42/50: pwm1..4_enable=2 2 2 2 fan1=4091 fan2=3605 fan3=1265 dcr=[1800: 00 ff 00 c6 c6 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=37.8 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=17
+11:05:54 cycle 43/50: pwm1..4_enable=2 2 2 2 fan1=4083 fan2=3743 fan3=1270 dcr=[1800: 00 ff 00 94 94 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=36.7 NVMe_max=42.8 HDD_max=39.0 writer_err=ENOENT=17
+11:05:56 cycle 44/50: pwm1..4_enable=2 2 2 2 fan1=4060 fan2=3417 fan3=1272 dcr=[1800: 00 ff 00 62 62 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=34.8 NVMe_max=42.8 HDD_max=39.0 writer_err=ENOENT=17
+11:05:59 cycle 45/50: pwm1..4_enable=2 2 2 2 fan1=4053 fan2=3692 fan3=1272 dcr=[1800: 00 ff 00 fd fd 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=34.6 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=19
+11:06:01 cycle 46/50: pwm1..4_enable=2 2 2 2 fan1=4099 fan2=3769 fan3=1272 dcr=[1800: 00 ff 00 93 93 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=35.0 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=19
+11:06:03 cycle 47/50: pwm1..4_enable=2 2 2 2 fan1=3993 fan2=3084 fan3=1272 dcr=[1800: 00 ff 00 60 60 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=37.7 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=19
+11:06:05 cycle 48/50: pwm1..4_enable=2 2 2 2 fan1=4053 fan2=3920 fan3=1272 dcr=[1800: 00 ff 00 c6 c6 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=35.8 NVMe_max=42.8 HDD_max=39.0 writer_err=ENOENT=19
+11:06:08 cycle 49/50: pwm1..4_enable=2 2 2 2 fan1=4045 fan2=3743 fan3=1272 dcr=[1800: 00 ff 00 93 93 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=36.1 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=23
+11:06:10 cycle 50/50: pwm1..4_enable=2 2 2 2 fan1=4022 fan2=3636 fan3=1272 dcr=[1800: 00 ff 00 fd fd 58 57 00 00 00 00 06 00 00 00 00] klog_hits=0 Tctl=39.5 NVMe_max=41.8 HDD_max=39.0 writer_err=ENOENT=23
+11:06:10 all 50 cycles done
+
+
+=== restore ===
+final pwm1_enable=2
+final pwm2_enable=2
+final pwm3_enable=2
+final pwm4_enable=2
+final dcr: 1800: 00 ff 00 f9 f9 58 57 00 00 00 00 06 00 00 00 00
+final tach: fan1=4236 fan2=4338 fan3=1272
+
+=== summary ===
+mode: load  device: minisforum_n5_it5571
+cycles done: 50/50
+writer ok: 3469  errors by errno: ENOENT=23
+writer rounds without hwmon dir: 26
+reader ok: 9225  errors by errno: ENOENT=3 ENODEV=17
+kernel-log hits: 0 (attributed to the driver: 0) in 50 cycles (pattern: Oops|BUG:|kernel BUG|WARNING:|Call Trace|general protection|hung_task|blocked for more than|soft lockup|LOCKUP|rcu.*stall|EC timeout|Unknown symbol|minisforum.*(fail|error|timeout|timed out|not created|not set to)|\[minisforum_n5_it5571\])
+max temps: Tctl=56.2 NVMe=42.8 HDD=39.0
+F8a step result (load): PASS (50 cycles, 0 kernel-log hits, pwm1..4_enable=2 and fan1..3 > 0 rpm after every reload)
+NOTE: the teardown race window is exercised, not proven absent.

@@ -1,0 +1,237 @@
+Description: Optional read-only debugfs dump of the EC PWM registers
+ pwmN/pwmN_enable are a driver cache (D4); whether the EC really holds a
+ written duty could only be checked with the userspace tool n5_i2ec_read,
+ which uses ioperm() and bypasses the driver lock (C2). This adds a
+ validation view inside the driver.
+ .
+ New module parameter debug_regs (bool, 0444, default N). With N there is
+ no debugfs entry and no Super-I/O access at all. With Y, and only on a
+ matched board profile whose DMI sys_vendor is the measured "Micro
+ Computer (HK) Tech Limited", the probe creates
+ <debugfs>/minisforum_n5_it5571/dcr (mode 0400, seq_file, read only, no
+ write/ioctl/mmap). On a force-loaded unknown system or a vendor mismatch
+ debug_regs=1 is ignored with a warning: every read writes the Super-I/O
+ index and the I2EC address registers, which must not happen on
+ unidentified hardware (delta review N1, same class as A2). A failed
+ debugfs_create_dir/file (debugfs=off, -EEXIST) is logged and leaves no
+ entry. Reading the file returns I2EC 0x1800-0x180f (0x1801 CTR,
+ 0x1802-0x1809 DCR0-7) in the format of "n5_i2ec_read 0x1800 16".
+ .
+ Access: the same port sequence as upstream research-tools/n5_i2ec_read.c
+ (feb6d9a, blob 1de90e3): Super-I/O index 0x2e/data 0x2f, depth-2
+ registers D2ADR 0x2e/D2DAT 0x2f, I2EC address 0x11 (high), 0x10 (low),
+ data 0x12. Upstream uses no Super-I/O enter/exit key sequence for this
+ EC and none is added: the sequence is the one used on the reference host
+ for all I2EC snapshots, an unmeasured key sequence would be new port
+ writes (including SIO register 0x02). The ports are taken with
+ request_muxed_region(0x2e, 2) for every read and released afterwards,
+ under data->lock. There are no status waits (I2EC is direct), so no wait
+ bound is needed; one read is 16 x 12 port accesses. Address and length
+ are compile-time constants; there is no function that writes the I2EC
+ data register (G3). After a read the Super-I/O index points to D2DAT and
+ the I2EC address to 0x180f, as with the upstream tool (accepted, a reset
+ would be another unmeasured port write).
+ .
+ Kernel lockdown (integrity or confidentiality) does not block this file:
+ debugfs lets 0400 files without write/ioctl/mmap through
+ (v7.0 fs/debugfs/file.c, debugfs_locked_down()).
+ .
+ Resolves D4 (live value available for validation), makes B9 possible
+ (read-back after write, by the tester; B9 stays N/A for the driver, which
+ does not read back automatically). B6: request_muxed_region is used; the
+ missing enter/exit sequence is a justified deviation (see above). G5 met
+ (parameter off by default, file read-only, vendor-gated). G3 stays PASS.
+ debug_regs must never be set in modprobe.d (validation only).
+ .
+ Tested: build/static analysis as 0001; modinfo lists debug_regs. Not
+ tested on hardware: dcr output vs. n5_i2ec_read 0x1800 16 (n5-fangov
+ stopped, module loaded with debug_regs=1), /proc/ioports during a read.
+Author: SirRenix <7069603+SirRenix@users.noreply.github.com>
+Origin: vendor
+Forwarded: not-needed
+Last-Update: 2026-10-09
+---
+--- a/driver-prototype/minisforum_n5_it5571.c
++++ b/driver-prototype/minisforum_n5_it5571.c
+@@ -29,9 +29,11 @@
+  * either the upstream-validated N5 profile or, with experimental_write=1,
+  * a board in the downstream write allowlist (N5 Pro/F8NAA). Every other
+  * system, force=1 included, is read-only: no PWM writes, but sensor reads
+- * still send EC read commands.
++ * still send EC read commands. debug_regs=1 takes effect only on a matched
++ * board with that vendor.
+  */
+ 
++#include <linux/debugfs.h>
+ #include <linux/delay.h>
+ #include <linux/dmi.h>
+ #include <linux/errno.h>
+@@ -41,6 +43,7 @@
+ #include <linux/module.h>
+ #include <linux/mutex.h>
+ #include <linux/platform_device.h>
++#include <linux/seq_file.h>
+ #include <linux/string.h>
+ #include <linux/types.h>
+ 
+@@ -66,6 +69,22 @@
+  */
+ #define N5_SYS_VENDOR           "Micro Computer (HK) Tech Limited"
+ 
++/*
++ * Optional read-only debugfs view of the EC PWM register block through the
++ * IT5571 I2EC interface (Super-I/O depth-2 registers), same access sequence
++ * as upstream research-tools/n5_i2ec_read.c. 0x1801 CTR, 0x1802-0x1809
++ * DCR0-7. There is no function that writes the I2EC data register.
++ */
++#define N5_SIO_INDEX            0x2e
++#define N5_SIO_DATA             0x2f
++#define N5_SIO_D2ADR            0x2e
++#define N5_SIO_D2DAT            0x2f
++#define N5_I2EC_ADDR_LOW        0x10
++#define N5_I2EC_ADDR_HIGH       0x11
++#define N5_I2EC_DATA            0x12
++#define N5_I2EC_PWM_BASE        0x1800
++#define N5_I2EC_PWM_LEN         16
++
+ static bool force;
+ module_param(force, bool, 0444);
+ MODULE_PARM_DESC(force,
+@@ -76,6 +95,11 @@
+ MODULE_PARM_DESC(experimental_write,
+ 		 "Enable PWM writes on boards in the downstream write allowlist; experimental, may leave fans at a fixed duty");
+ 
++static bool debug_regs;
++module_param(debug_regs, bool, 0444);
++MODULE_PARM_DESC(debug_regs,
++		 "Read-only debugfs dump of EC PWM registers I2EC 0x1800-0x180f (validation only; off: no debugfs, no Super-I/O access)");
++
+ struct n5_board_profile {
+ 	const char *name;
+ 	bool validated;
+@@ -85,6 +109,7 @@
+ 
+ struct n5_data {
+ 	struct device *hwmon_dev;
++	struct dentry *debugfs;
+ 	struct mutex lock;
+ 	long fan_min[N5_FAN_CHANNELS];
+ 	u8 pwm[N5_PWM_CHANNELS];
+@@ -293,6 +318,98 @@
+ 	return n5_pmc2_action(auto_command[channel]);
+ }
+ 
++/* Caller holds data->lock and the muxed region N5_SIO_INDEX/N5_SIO_DATA. */
++static void n5_i2ec_set_address(u16 address)
++{
++	outb(N5_SIO_D2ADR, N5_SIO_INDEX);
++	outb(N5_I2EC_ADDR_HIGH, N5_SIO_DATA);
++	outb(N5_SIO_D2DAT, N5_SIO_INDEX);
++	outb(address >> 8, N5_SIO_DATA);
++	outb(N5_SIO_D2ADR, N5_SIO_INDEX);
++	outb(N5_I2EC_ADDR_LOW, N5_SIO_DATA);
++	outb(N5_SIO_D2DAT, N5_SIO_INDEX);
++	outb(address & 0xff, N5_SIO_DATA);
++}
++
++/* Caller holds data->lock and the muxed region N5_SIO_INDEX/N5_SIO_DATA. */
++static u8 n5_i2ec_read(u16 address)
++{
++	n5_i2ec_set_address(address);
++	outb(N5_SIO_D2ADR, N5_SIO_INDEX);
++	outb(N5_I2EC_DATA, N5_SIO_DATA);
++	outb(N5_SIO_D2DAT, N5_SIO_INDEX);
++	return inb(N5_SIO_DATA);
++}
++
++static int n5_dcr_show(struct seq_file *s, void *unused)
++{
++	struct n5_data *data = s->private;
++	u8 regs[N5_I2EC_PWM_LEN];
++	int i;
++
++	mutex_lock(&data->lock);
++	if (!request_muxed_region(N5_SIO_INDEX, 2, N5_DRIVER_NAME)) {
++		mutex_unlock(&data->lock);
++		return -EBUSY;
++	}
++	for (i = 0; i < N5_I2EC_PWM_LEN; i++)
++		regs[i] = n5_i2ec_read(N5_I2EC_PWM_BASE + i);
++	release_region(N5_SIO_INDEX, 2);
++	mutex_unlock(&data->lock);
++
++	/* Same format as research-tools/n5_i2ec_read 0x1800 16. */
++	seq_printf(s, "%04x:", N5_I2EC_PWM_BASE);
++	for (i = 0; i < N5_I2EC_PWM_LEN; i++)
++		seq_printf(s, " %02x", regs[i]);
++	seq_putc(s, '\n');
++	return 0;
++}
++DEFINE_SHOW_ATTRIBUTE(n5_dcr);
++
++/*
++ * debug_regs=1: create <debugfs>/minisforum_n5_it5571/dcr (0400). Only on a
++ * matched board with the measured DMI sys_vendor: every read writes the
++ * Super-I/O index and the I2EC address registers, which must not happen on
++ * unidentified hardware (force=1). data->debugfs stays NULL when nothing
++ * was created.
++ */
++static void n5_debugfs_init(struct device *dev, struct n5_data *data,
++			    const struct n5_board_profile *profile)
++{
++	struct dentry *dir, *file;
++
++	if (!debug_regs)
++		return;
++	if (!profile) {
++		dev_warn(dev, "debug_regs=1 ignored: unknown system (force=1)\n");
++		return;
++	}
++	if (!dmi_match(DMI_SYS_VENDOR, N5_SYS_VENDOR)) {
++		dev_warn(dev, "debug_regs=1 ignored: DMI sys_vendor is not \"%s\"\n",
++			 N5_SYS_VENDOR);
++		return;
++	}
++
++	dir = debugfs_create_dir(N5_DRIVER_NAME, NULL);
++	if (IS_ERR(dir)) {
++		dev_warn(dev, "debug_regs=1: debugfs directory not created (%pe)\n",
++			 dir);
++		return;
++	}
++	/* Read-only (0400); no write interface of any kind. */
++	file = debugfs_create_file("dcr", 0400, dir, data, &n5_dcr_fops);
++	if (IS_ERR(file)) {
++		debugfs_remove_recursive(dir);
++		dev_warn(dev, "debug_regs=1: debugfs file dcr not created (%pe)\n",
++			 file);
++		return;
++	}
++	data->debugfs = dir;
++	dev_info(dev,
++		 "debug_regs=1: read-only EC PWM register dump in debugfs %s/dcr\n",
++		 N5_DRIVER_NAME);
++}
++
+ static umode_t n5_is_visible(const void *drvdata,
+ 			     enum hwmon_sensor_types type, u32 attr,
+ 			     int channel)
+@@ -650,6 +767,8 @@
+ 		return PTR_ERR(data->hwmon_dev);
+ 	}
+ 
++	n5_debugfs_init(&pdev->dev, data, profile);
++
+ 	if (profile && data->write_enabled && profile->validated) {
+ 		dev_info(&pdev->dev, "%s: validated profile; PWM writes enabled\n",
+ 			 profile->name);
+@@ -679,6 +798,9 @@
+ 	struct n5_data *data = platform_get_drvdata(pdev);
+ 	int i;
+ 
++	/* Waits for open readers; afterwards no Super-I/O access is possible. */
++	debugfs_remove_recursive(data->debugfs);
++
+ 	/* Restore only channels this module actually attempted to modify. */
+ 	mutex_lock(&data->lock);
+ 	for (i = 0; i < N5_PWM_CHANNELS; i++) {

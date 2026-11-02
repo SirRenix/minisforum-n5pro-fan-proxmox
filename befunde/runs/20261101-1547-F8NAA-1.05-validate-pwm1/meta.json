@@ -1,0 +1,249 @@
+{
+  "aborted": "",
+  "boot_type": "cold",
+  "channel": 1,
+  "command": "map",
+  "ec_ram_tables": {},
+  "finished": "2026-11-01T15:57:38Z",
+  "gates": [
+    {
+      "id": "G1",
+      "condition": "no other pwm writer: units and processes n5-fangov, n5-fand, fancontrol, fan2go, coolercontrold, thinkfan; processes f8a-pcie.sh, f8a-stress.sh; no pwm file held open; writer lock held and in place; pwm cache unchanged by others",
+      "result": "PASS",
+      "detail": "none active; checked again at every sample, writer lock held"
+    },
+    {
+      "id": "G2",
+      "condition": "no scrub/resilver/backup",
+      "result": "PASS",
+      "detail": "no scrub, resilver, vzdump or proxmox-backup-client"
+    },
+    {
+      "id": "G7",
+      "condition": "board, vendor and driver state allow writes (TESTSPEC 0.4 G7): N5 PRO/F8NAA in the write table, measured sys_vendor, driver +sr1, force=N, dcr readable, not in a container",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "pwm",
+      "condition": "pwm1 exposed by the driver",
+      "result": "PASS",
+      "detail": "minisforum_n5_it5571 at /sys/devices/platform/minisforum_n5_it5571 (srcversion D1E4D4D188041A61EC3D872)"
+    },
+    {
+      "id": "G3",
+      "condition": "load average (1 min) \u003c 1.0",
+      "result": "PASS",
+      "detail": "load1 0.30"
+    },
+    {
+      "id": "G4",
+      "condition": "over 5 min: EC 0x04 (system), EC 0x06 (ambient) and HDD temperature each change \u003c 1 C; every abort-limit sensor (Tctl, NVMe, HDD) readable; Tctl is a safety limit only",
+      "result": "PASS",
+      "detail": "over 5m0s: [system (ec 0x04) 0.0 C (\u003c 1 C) ambient (ec 0x06) 0.0 C (\u003c 1 C) hdd 0.0 C (\u003c 1 C)]"
+    },
+    {
+      "id": "G5",
+      "condition": "operator at the device",
+      "result": "PASS",
+      "detail": "confirmation typed (stdin tty), local console"
+    },
+    {
+      "id": "G6",
+      "condition": "register snapshot before the first write: duty registers and EC RAM curve tables 0x10-0x27, 0x30-0x38, 0x70-0x81",
+      "result": "PARTIAL",
+      "detail": "duty registers recorded (first sample); no /sys/kernel/debug/minisforum_n5_it5571/ecram (driver 0.2.1+sr2 with debug_regs=1): the curve tables come from a mode-A snapshot (tools/f8a/f8a-snapshot.sh) taken after boot and before the module load, named in the run record; whether something wrote earlier in this boot is not visible"
+    }
+  ],
+  "identity": {
+    "dmi": {
+      "product_name": "N5 PRO",
+      "board_name": "F8NAA",
+      "board_version": "1.0",
+      "sys_vendor": "Micro Computer (HK) Tech Limited",
+      "bios_version": "1.05",
+      "bios_date": "03/31/2026",
+      "bios_release": "5.35",
+      "ec_firmware_release": "0.14"
+    },
+    "kernel": "7.0.14-26-pve",
+    "kernel_version": "#1 SMP PREEMPT_DYNAMIC PMX 7.0.14-26 (2026-10-22T18:45Z)",
+    "kernel_taint": "12289",
+    "boot_id": "970722ce-0e47-4490-ad0a-85bc4b8e86f8",
+    "uptime_s": 4650.41,
+    "driver": {
+      "loaded": true,
+      "version": "0.2.1+sr1~rc3",
+      "srcversion": "D1E4D4D188041A61EC3D872",
+      "taint": "OE",
+      "parameters": {
+        "debug_regs": "Y",
+        "experimental_write": "Y",
+        "force": "N"
+      },
+      "hwmon_path": "/sys/class/hwmon/hwmon14",
+      "hwmon_attrs": [
+        "fan1_input",
+        "fan1_label",
+        "fan2_input",
+        "fan2_label",
+        "fan3_input",
+        "fan3_label",
+        "name",
+        "pwm1",
+        "pwm1_enable",
+        "pwm2",
+        "pwm2_enable",
+        "pwm3",
+        "pwm3_enable",
+        "pwm4",
+        "pwm4_enable",
+        "temp1_input",
+        "temp1_label",
+        "temp2_input",
+        "temp2_label",
+        "temp3_input",
+        "temp3_label",
+        "temp4_input",
+        "temp4_label",
+        "uevent"
+      ],
+      "pwm_visible": true,
+      "dcr_path": "/sys/kernel/debug/minisforum_n5_it5571/dcr"
+    },
+    "dkms_package_version": "0.2.1+sr1~rc3-1",
+    "dcr": {
+      "path": "/sys/kernel/debug/minisforum_n5_it5571/dcr",
+      "dump": "1800: 00 ff 00 56 4b 64 64 00 00 00 00 06 00 00 00 00",
+      "channels": {
+        "pwm1": 86,
+        "pwm2": 75,
+        "pwm3": 100,
+        "pwm4": 0
+      }
+    },
+    "os": {
+      "id": "debian",
+      "version_id": "13"
+    },
+    "lockdown": "none",
+    "container": "",
+    "container_evidence": "no container= in the environment of pid 1, no /run/systemd/container",
+    "hw_status": {
+      "status": "experimental",
+      "key": "N5 PRO / F8NAA / BIOS 1.05 / EC 0.14",
+      "entry": {
+        "product": "N5 PRO",
+        "board": "F8NAA",
+        "bios": "1.05",
+        "ec": "0.14",
+        "status": "experimental",
+        "origin": "own",
+        "date": "2026-10-17",
+        "note": "TESTSPEC-Lauf unvollständig (Wartungsfenster 1 am 2026-10-17: T1 nicht gelaufen, Gate G4; BEFUNDE.md); F8b-Baseline 2026-10-08–15 PASS; Kanalzuordnung am 2026-09-14 vor TESTSPEC gemessen (BEFUNDE.md Phase 6)"
+      },
+      "reason": "experimental on the reference device"
+    },
+    "hw_status_table": {
+      "source": "befunde/RESULTS.md (github.com/SirRenix/minisforum-n5pro-fan-proxmox)",
+      "source_table_sha256": "64b7c7ec874ce9492ca85b2a1d9246690095d8268c6f868bfeb4670e6d508bb5",
+      "generated": "2026-10-17"
+    }
+  },
+  "limit_sensors": {
+    "hdd": true,
+    "nvme": true,
+    "tctl": true
+  },
+  "mode": "hardware",
+  "provenance": {
+    "tool": "n5-ectest",
+    "version": "0.1.0-mw2",
+    "commit": "88e2b9f0b861",
+    "binary_sha256": "d6c191a574da7fd455758664764db82a5eac04530df0b0d9b95ee116ef8f6774",
+    "go_version": "go1.26.10",
+    "driver": {
+      "module": "minisforum_n5_it5571",
+      "version": "0.2.1+sr1~rc3",
+      "srcversion": "D1E4D4D188041A61EC3D872",
+      "parameters": {
+        "debug_regs": "Y",
+        "experimental_write": "Y",
+        "force": "N"
+      },
+      "dkms_package_version": "0.2.1+sr1~rc3-1",
+      "taint": "OE"
+    },
+    "kernel": {
+      "release": "7.0.14-26-pve",
+      "version": "#1 SMP PREEMPT_DYNAMIC PMX 7.0.14-26 (2026-10-22T18:45Z)",
+      "taint": "12289"
+    },
+    "dmi": {
+      "product_name": "N5 PRO",
+      "board_name": "F8NAA",
+      "board_version": "1.0",
+      "sys_vendor": "Micro Computer (HK) Tech Limited",
+      "bios_version": "1.05",
+      "bios_date": "03/31/2026",
+      "bios_release": "5.35",
+      "ec_firmware_release": "0.14"
+    },
+    "os": {
+      "id": "debian",
+      "version_id": "13"
+    },
+    "lockdown": "none",
+    "container": "",
+    "boot_type": "cold",
+    "uptime_s": 4650.41,
+    "boot_id": "970722ce-0e47-4490-ad0a-85bc4b8e86f8",
+    "spec_version": "0.4",
+    "spec_deviations": [
+      "conditions of TESTSPEC 0.4 §1 rule 4 open: #1 D4 cross-check of n5-ectest against a second implementation (§9) and #4 report reproducing a hand evaluation of the first T4/T5 log not done yet"
+    ]
+  },
+  "redaction": [
+    "host name (full and short) -\u003e n5host (kernel, DMI and driver strings stay)",
+    "DMI serial numbers and UUID: never collected; \"serial: X\" values -\u003e [serial]",
+    "MAC addresses -\u003e [mac]",
+    "IPv4 addresses -\u003e [ipv4], IPv6 addresses -\u003e [ipv6]",
+    "mail addresses -\u003e [mail] (systemd instance units stay)",
+    "user names: never recorded; the user part of home directory paths -\u003e /home/[user]",
+    "SSH_* variables: only whether they are set, never their values"
+  ],
+  "restore_failed": [],
+  "restore_value_sources": {
+    "1": "n5-fangov built-in stop value (config unreadable)"
+  },
+  "restore_values": {
+    "1": "auto"
+  },
+  "restore_warnings": [
+    "/etc/n5-fangov/config.toml unreadable (toml: line 62 (last key \"channel.stop\"): incompatible types: TOML value has type int64; destination has type string): n5-fangov built-in stop values used"
+  ],
+  "session": {
+    "console_flag": false,
+    "local_console": true,
+    "remote": [],
+    "stdin": "tty",
+    "tmux": ""
+  },
+  "settle_s": 10,
+  "spec_deviations": [
+    "conditions of TESTSPEC 0.4 §1 rule 4 open: #1 D4 cross-check of n5-ectest against a second implementation (§9) and #4 report reproducing a hand evaluation of the first T4/T5 log not done yet"
+  ],
+  "spec_version": "0.4",
+  "started": "2026-11-01T15:47:29Z",
+  "timing": {
+    "due_tolerance_s": 0.5,
+    "gate_window_s": 300,
+    "handback_observe_s": 1020,
+    "hold_s": 60,
+    "observe_s": 900,
+    "repeat": 3,
+    "sample_s": 5
+  },
+  "tool": "n5-ectest",
+  "tool_version": "0.1.0-mw2"
+}

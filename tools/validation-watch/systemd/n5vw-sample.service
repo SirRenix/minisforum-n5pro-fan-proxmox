@@ -1,0 +1,22 @@
+[Unit]
+Description=n5-validation: sample EC/hwmon sensors (read-only, F8b)
+Documentation=file:///usr/local/lib/n5-validation/README.md
+ConditionPathExists=/etc/n5-validation.conf
+OnFailure=n5vw-failmail@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/n5-validation/n5vw-sample
+TimeoutStartSec=25
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=64M
+CPUQuota=10%
+ProtectSystem=strict
+PrivateTmp=yes
+NoNewPrivileges=yes
+# PID1 start/stop lines every 30 s would outweigh the CSV in the journal;
+# errors (<=warning) stay visible
+LogLevelMax=notice
+# data directory: ReadWritePaths= + RequiresMountsFor= in the drop-in
+# n5vw-sample.service.d/data-root.conf written by install.sh

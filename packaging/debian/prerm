@@ -1,10 +1,49 @@
 #!/bin/sh
-# prerm of minisforum-n5-it5571-dkms: unregister this version from DKMS
-# (every kernel). A loaded module stays loaded until it is unloaded or the
-# host reboots.
+# prerm of minisforum-n5-it5571-dkms: stop an active regulator (n5-fangov,
+# legacy n5-fand), then unregister this version from DKMS (every kernel). A
+# loaded module stays loaded until it is unloaded or the host reboots.
+# On upgrade the stopped units are recorded in $STATE; the new postinst
+# starts them again once its module is built and loaded.
 set -e
 PKG=minisforum-n5-it5571
 VER=@VERSION@
+STATE=/run/$PKG-dkms.restart
+UNITS="n5-fangov.service n5-fand.service"
+
+say() { echo "$PKG: $*"; }
+
+# stop_regulators <record>: stop every active unit of $UNITS; with record=1
+# append it to $STATE
+stop_regulators() {
+	command -v systemctl >/dev/null 2>&1 || return 0
+	for u in $UNITS; do
+		systemctl is-active --quiet "$u" 2>/dev/null || continue
+		if [ "$1" = 1 ]; then
+			grep -qxF "$u" "$STATE" 2>/dev/null || echo "$u" >>"$STATE"
+		fi
+		if systemctl stop "$u"; then
+			say "stopped $u (its stop failsafe applies until it runs again)"
+		else
+			say "WARNING: could not stop $u" >&2
+		fi
+	done
+}
+
+case "$1" in
+remove)
+	# a record left by an interrupted earlier sequence must not start a
+	# regulator later
+	rm -f "$STATE"
+	stop_regulators 0
+	;;
+upgrade|deconfigure)
+	# record only what runs now: a stale record of an interrupted earlier
+	# sequence would start a regulator the operator stopped on purpose
+	: >"$STATE"
+	stop_regulators 1
+	[ -s "$STATE" ] || rm -f "$STATE"
+	;;
+esac
 
 case "$1" in
 remove|upgrade|deconfigure)
@@ -12,7 +51,7 @@ remove|upgrade|deconfigure)
 		dkms remove -m $PKG -v $VER --all >/dev/null 2>&1 || true
 	fi
 	if [ "$1" = remove ]; then
-		echo "$PKG: module files removed; a loaded module stays until reboot. Without the driver the fans run on the BIOS curve after the next boot."
+		say "module files removed; a loaded module stays until reboot. Without the driver the fans run on the BIOS curve after the next boot. A regulator stopped here stays stopped."
 	fi
 	;;
 esac

@@ -1,0 +1,20 @@
+[Unit]
+Description=n5-validation: daily report mail (F8b)
+Documentation=file:///usr/local/lib/n5-validation/README.md
+ConditionPathExists=/etc/n5-validation.conf
+OnFailure=n5vw-failmail@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/n5-validation/n5vw-report --daily
+TimeoutStartSec=180
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=64M
+CPUQuota=10%
+ProtectSystem=strict
+PrivateTmp=yes
+NoNewPrivileges=yes
+ReadWritePaths=/var/spool/postfix
+# data directory: ReadWritePaths= + RequiresMountsFor= in the drop-in
+# n5vw-report.service.d/data-root.conf written by install.sh

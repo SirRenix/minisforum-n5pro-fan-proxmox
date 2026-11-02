@@ -1,0 +1,1375 @@
+P9 draft build 2026-10-16 (UTC 18:15:57-18:17:11): (A) rc3 = series 0001-0007
+with driver/patches-draft/rc3/0006-shutdown.patch (audit-20261016 BACKLOG #27,
+comment text only), (B) draft driver/patches-draft/0009-hwmon-read-cache.patch
+(BACKLOG #28, c-review rc2 DOS-001) on rc2 + 0008. Build/static analysis against
+proxmox-headers-7.0.14-20-pve and 7.0.12-1-pve, userspace harness. Not in series,
+not packaged, no DKMS build. No hardware involved; n5host not touched.
+Docker build host = builder; container debian:trixie image 913f6706df59 (same
+image as rc2-build-20261016.txt), hostname builder-ct, inputs mounted read-only
+at /in. Script /in/run.sh and harness sources: appendix at the end of this file.
+sparse 37156835, smatch 5189e3fb (same commits as H8). Container and work dir
+removed afterwards (cleanup script, see end); the debian:trixie image kept.
+
+Inputs: driver/patches/* unchanged (sha256 in S1). 0008 as drafted (999eb0e9...)
+was made on rc1 and does not apply to rc2 (B1: hunk 1 = header date already in
+rc2's 0001, last hunk = MODULE_VERSION context sr1~rc1). For B, 0008 was rebased
+onto rc2 as a plain diff (0008-rebased-rc2.patch, sha256 1840d25b...; its changed
+lines equal the draft's except those two, B1). The 0008 draft file itself was
+not changed.
+
+Result:
+- A: series with rc3 0006 applies with patch --fuzz=0 and with git apply
+  (identical result). Patched source sha256
+  8948ec45a52de11abca30b42143cde129a0a6a540832187920c565b355ab036a
+  (rc2: 48f47ff8...). Delta rc2 -> rc3: 8 comment lines replaced inside the
+  n5_shutdown comment; every changed line is a comment line; sources with
+  comments stripped (gcc -fpreprocessed -dD -E -P) byte-identical; srcversion
+  E9CF5951A3238F3B9930797 identical to rc2 (modpost hashes the source without
+  comments) on both kernels. MODULE_VERSION stays 0.2.1+sr1~rc2.
+  Section A4 (object compare) is INVALID: the .plain.o copies were deleted by
+  the following "make clean", so both disassemblies were empty; the line
+  "disassembly identical" there proves nothing. Not repeated; the nocomment
+  compare and srcversion above carry the claim.
+- B: 0009 applies with --fuzz=0 (no offset) and git apply --check on
+  rc2+0008r; also on rc3+0008r (result differs from rc2+0008r+0009 only in
+  comment lines). Patched source sha256
+  c811befba9f06106764b17f752ca625c73b6e121ac51f9ad557c0ddb3d8b00be, modinfo
+  version 0.2.1+sr2~rc1 (set by 0008), srcversion 14208792D282DBB30FCF9F5
+  (both kernels). rc2+0008r alone: 0920c7da..., srcversion 13F98D5B52F4D6B24F7DF24.
+- plain, W=1: no compiler message for rc2, rc3, rc2+0008r, rc2+0008r+0009 on
+  both kernels. sparse C=2, smatch C=2: no message for rc3 and
+  rc2+0008r+0009 on both kernels (rc2/0008r: plain and W=1 only here; their
+  sparse/smatch runs are in rc2-build/p8-ecram-build-r2). Negative control:
+  sparse and smatch both report the known defects (this run).
+- checkpatch --no-tree -f: 0 errors, 0 warnings for all four sources;
+  --strict: 6 CHECKs each, same count as rc2 (none added). checkpatch on the
+  patch files: only the 2 DEP-3 header errors (diff content/commit separator,
+  informational as in P8).
+- Harness h9 (fake EC, read cache) on rc2+0008r+0009: 50 pass, 0 fail, also
+  with ASan/UBSan. Negative control h9 on rc2+0008r (no cache): 13 FAIL,
+  exactly the cache/killable checks. H8 harness (pwm/pwm_enable, restore,
+  .shutdown, PCIe hand-back) on rc2+0008r+0009 and on rc3: 55 pass, 0 fail
+  (unchanged from rc2).
+Not done: hardware test of either draft; DKMS/package build.
+
+
+
+################################################################################
+### S0 container and tools
+
+$ date -u; cat /etc/debian_version; uname -m; nproc; hostname
+Fri Oct 16 18:15:57 UTC 2026
+13.7
+x86_64
+4
+builder-ct
+[exit 0]
+
+$ apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git patch build-essential bc bison flex libelf-dev libssl-dev kmod perl python3 libsqlite3-dev sqlite3 libdbd-sqlite3-perl libtry-tiny-perl pkg-config xz-utils zstd binutils libasan8 libubsan1 >/dev/null 2>&1 && echo tools ok
+tools ok
+[exit 0]
+
+$ curl -fsSL -o /usr/share/keyrings/proxmox-archive-keyring.gpg https://enterprise.proxmox.com/debian/proxmox-archive-keyring-trixie.gpg && [ "$(sha256sum </usr/share/keyrings/proxmox-archive-keyring.gpg | cut -d" " -f1)" = 136673be77aba35dcce385b28737689ad64fd785a797e57897589aed08db6e45 ] && echo "keyring sha256 as in P2"
+keyring sha256 as in P2
+[exit 0]
+
+$ printf "Types: deb\nURIs: http://download.proxmox.com/debian/pve\nSuites: trixie\nComponents: pve-no-subscription\nSigned-By: /usr/share/keyrings/proxmox-archive-keyring.gpg\n" >/etc/apt/sources.list.d/proxmox.sources && apt-get update -qq && apt-get install -y -qq --no-install-recommends proxmox-headers-7.0.14-20-pve proxmox-headers-7.0.12-1-pve >/dev/null 2>&1 && echo headers ok
+headers ok
+[exit 0]
+
+$ dpkg-query -W proxmox-headers-7.0.14-20-pve proxmox-headers-7.0.12-1-pve gcc-14 binutils perl
+binutils	2.44-3
+gcc-14	14.2.0-19
+perl	5.40.1-6+deb13u1
+proxmox-headers-7.0.12-1-pve	7.0.12-1
+proxmox-headers-7.0.14-20-pve	7.0.14-20
+[exit 0]
+
+$ git clone -q https://git.kernel.org/pub/scm/devel/sparse/sparse.git /opt/sparse && git -C /opt/sparse checkout -q 37156835e3d725b6d750f000be33ba3814bb2310 && cd /opt/sparse && make -j$(nproc) PREFIX=/usr/local >/tmp/sparse-build.log 2>&1 && make PREFIX=/usr/local install >/dev/null 2>&1; sparse --version; git -C /opt/sparse log -1 --format="%H %cd" --date=iso
+v0.6.5-rc1
+37156835e3d725b6d750f000be33ba3814bb2310 2025-12-18 02:38:24 -0500
+[exit 0]
+
+$ (git clone -q https://repo.or.cz/smatch.git /opt/smatch || git clone -q https://github.com/error27/smatch.git /opt/smatch) && git -C /opt/smatch checkout -q 5189e3fb018b783a26dcb45c02c114c1d1aad290 && cd /opt/smatch && make -j$(nproc) >/tmp/smatch-build.log 2>&1; ls -l /opt/smatch/smatch | cut -c1-10; git -C /opt/smatch log -1 --format="%H %cd" --date=iso
+-rwxr-xr-x
+5189e3fb018b783a26dcb45c02c114c1d1aad290 2026-05-05 13:45:43 +0300
+[exit 0]
+
+
+################################################################################
+### S1 inputs
+
+$ cd /in && sha256sum driver/patches/*.patch driver/patches/series driver/patches-draft/0008-debugfs-ecram.patch driver/patches-draft/rc3/0006-shutdown.patch driver/patches-draft/0009-hwmon-read-cache.patch 0008-rebased-rc2.patch h9/* h8/harness.c && (cd driver/upstream && sha256sum -c SHA256SUMS)
+2f05c8148b47837dea6d941bf3250d8729015e8cb8271503e0cc3fe6d29817dd  driver/patches/0001-downstream-marking.patch
+5cb9d301d3e58c58dd59fa597ce175d2da4b472488e0e7d39e9513bef59a8742  driver/patches/0002-write-allowlist.patch
+04101e351c71344d6dea3f7ad2076531e9d37afd518c9d1e499f98988928e304  driver/patches/0003-debugfs-dcr.patch
+1eb3cc8aee84e322d7622eb66359239782b30d502dc523fc18db1d56622ede20  driver/patches/0004-remove-ordering.patch
+810908ad87a6914ee417534f968fdb4c01e005e4563729732e56eb6ae562be7c  driver/patches/0005-timeout-budget.patch
+bf0acb7bb4ea1da06cfe1deadf938014c591f97bc137a597b716368b760bea6b  driver/patches/0006-shutdown.patch
+3695b6024e76b196a4c519a1c68e5c5a33533f748f0675f5451b7b4985f7c8b3  driver/patches/0007-abi-fixes.patch
+5dc43756cb750e3373ed66f4abcfbb71deb06e4fc09e2512f22fd264e2e33619  driver/patches/series
+999eb0e9721719abf7d05e7c23863b623ec83af41c8193f20cc80b293a39dc96  driver/patches-draft/0008-debugfs-ecram.patch
+e6ff865697727e73ef8a2d84ed8ffcaedce907339201d519987fcd7dd54ebe20  driver/patches-draft/rc3/0006-shutdown.patch
+189751a9771d07bc52c3b9a3cda204006e254a6d05ba4dbca324003b8b456dc7  driver/patches-draft/0009-hwmon-read-cache.patch
+1840d25bcf16befbbf7a5b006a14425e9587575cc31aa914952e4fc80479f3af  0008-rebased-rc2.patch
+4bcc521a655d7de3dbd9f67d2653cfe86c442f856a83ed46dd2066c111f58c37  h9/h9.c
+92880ccd1f1d579b3a297c44ae6d8000ed3a19b3c7ab8c1923f69a6321ee6867  h9/stubs.h
+1ee9b34b89a9cb40bb83f2d06d5e97e1735d81be71c9822ba38891c327e836c2  h9/stubs9.h
+e3289eae612858ce540c1dfe80ab97354f965014dae75c5462137f3b4174325b  h8/harness.c
+LICENSE: OK
+LICENSES/GPL-2.0: OK
+LICENSES/KERNEL-COPYING: OK
+driver-prototype/Makefile: OK
+driver-prototype/minisforum_n5_it5571.c: OK
+[exit 0]
+
+$ LC_ALL=C grep -nP "[^\x00-\x7f]|\r" /in/driver/patches-draft/rc3/0006-shutdown.patch /in/driver/patches-draft/0009-hwmon-read-cache.patch || echo "rc3 0006 and 0009: ASCII only, no CR"
+rc3 0006 and 0009: ASCII only, no CR
+[exit 0]
+
+
+################################################################################
+### A1 rc2 (series as is) and rc3 (series with patches-draft/rc3/0006), patch --fuzz=0
+
+$ mkdir -p /work && cp -a /in/driver/upstream /work/rc2 && series /work/rc2 '' && sha256sum /work/rc2/driver-prototype/minisforum_n5_it5571.c | grep -q 48f47ff8c9adfb325422aefcb7caf85541788ad70dcd43a4e409483eecf07eef && echo 'rc2 source == 48f47ff8c9adfb325422aefcb7caf85541788ad70dcd43a4e409483eecf07eef'
+rc2 source == 48f47ff8c9adfb325422aefcb7caf85541788ad70dcd43a4e409483eecf07eef
+[exit 0]
+
+$ cp -a /in/driver/upstream /work/rc3 && cd /work/rc3 && for p in $(grep -v '^#' /in/driver/patches/series | sed '/^$/d'); do f=/in/driver/patches/$p; [ $p = 0006-shutdown.patch ] && f=/in/driver/patches-draft/rc3/$p; echo "== $f"; $PA < $f || exit 1; done; sha256sum driver-prototype/minisforum_n5_it5571.c driver-prototype/Makefile
+== /in/driver/patches/0001-downstream-marking.patch
+patching file driver-prototype/minisforum_n5_it5571.c
+== /in/driver/patches/0002-write-allowlist.patch
+patching file driver-prototype/minisforum_n5_it5571.c
+== /in/driver/patches/0003-debugfs-dcr.patch
+patching file driver-prototype/minisforum_n5_it5571.c
+== /in/driver/patches/0004-remove-ordering.patch
+patching file driver-prototype/minisforum_n5_it5571.c
+== /in/driver/patches/0005-timeout-budget.patch
+patching file driver-prototype/minisforum_n5_it5571.c
+== /in/driver/patches-draft/rc3/0006-shutdown.patch
+patching file driver-prototype/minisforum_n5_it5571.c
+== /in/driver/patches/0007-abi-fixes.patch
+patching file driver-prototype/minisforum_n5_it5571.c
+8948ec45a52de11abca30b42143cde129a0a6a540832187920c565b355ab036a  driver-prototype/minisforum_n5_it5571.c
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  driver-prototype/Makefile
+[exit 0]
+
+
+################################################################################
+### A2 rc3 with git apply (fresh copy, no fuzz)
+
+$ cp -a /in/driver/upstream /work/ga && cd /work/ga && git init -q . && for p in $(grep -v '^#' /in/driver/patches/series | sed '/^$/d'); do f=/in/driver/patches/$p; [ $p = 0006-shutdown.patch ] && f=/in/driver/patches-draft/rc3/$p; git apply --check $f && git apply $f || exit 1; done; cmp driver-prototype/minisforum_n5_it5571.c /work/rc3/driver-prototype/minisforum_n5_it5571.c && echo 'git apply result == patch result'
+git apply result == patch result
+[exit 0]
+
+
+################################################################################
+### A3 delta rc2 -> rc3 (expect comment lines only)
+
+$ cd /work && diff -u rc2/driver-prototype/minisforum_n5_it5571.c rc3/driver-prototype/minisforum_n5_it5571.c
+--- rc2/driver-prototype/minisforum_n5_it5571.c	2026-10-16 18:16:40.461803805 +0000
++++ rc3/driver-prototype/minisforum_n5_it5571.c	2026-10-16 18:16:40.469803749 +0000
+@@ -1019,14 +1019,14 @@
+ /*
+  * Reboot/poweroff, only for channels this module touched: CPU and SSD go
+  * back to EC automatic mode, which regulates them. HDD and PCIe are set to
+- * 255 instead: on BIOS 1.05 the EC does not regulate them after the auto
+- * command (HDD measured at a fixed 0x57, PCIe keeps its last duty), which
+- * would undercut the regulator's fail-safe for the next boot if the module
+- * is not loaded again. PCIe handed back with pwm4_enable=2 stays touched
+- * (0004) and gets 255 here again. A failed step leaves the channel as it is
+- * (no fallback to the auto command, which could lower the duty). Sets the
+- * dead flag: later accesses return -ENODEV and the devres restore does
+- * nothing.
++ * 255 instead. PCIe keeps its last duty after the auto command. HDD, as a
++ * precaution: the EC regulates it to a target RPM from EC 0x06 (ambient),
++ * not disk temperature (derived from EC firmware, befunde M5). Either may
++ * undercut the regulator's fail-safe for the next boot if the module is not
++ * loaded again. PCIe handed back with pwm4_enable=2 stays touched (0004)
++ * and gets 255 here again. A failed step leaves the channel as it is (no
++ * fallback to the auto command, which could lower the duty). Sets the dead
++ * flag: later accesses return -ENODEV and the devres restore does nothing.
+  */
+ static void n5_shutdown(struct platform_device *pdev)
+ {
+[exit 1]
+
+$ cd /work && diff -u rc2/driver-prototype/minisforum_n5_it5571.c rc3/driver-prototype/minisforum_n5_it5571.c | grep '^[-+]' | grep -v '^\(---\|+++\) ' | grep -v '^[-+] \*' || echo 'every changed line is a comment line (" * ...")'
+every changed line is a comment line (" * ...")
+[exit 0]
+
+$ cd /work && for v in rc2 rc3; do gcc -fpreprocessed -dD -E -P rc${v#rc}/driver-prototype/minisforum_n5_it5571.c > $v.nocomment.c; done; sha256sum rc2.nocomment.c rc3.nocomment.c; cmp rc2.nocomment.c rc3.nocomment.c && echo 'sources without comments identical'
+0bfaf2c83f481068618020ce5aee1bef933cc439edf7212eed76a7fc2b89b17b  rc2.nocomment.c
+0bfaf2c83f481068618020ce5aee1bef933cc439edf7212eed76a7fc2b89b17b  rc3.nocomment.c
+sources without comments identical
+[exit 0]
+
+$ cd /work && cmp /in/driver/patches/0006-shutdown.patch /in/driver/patches-draft/rc3/0006-shutdown.patch; diff /in/driver/patches/0006-shutdown.patch /in/driver/patches-draft/rc3/0006-shutdown.patch
+/in/driver/patches/0006-shutdown.patch /in/driver/patches-draft/rc3/0006-shutdown.patch differ: char 517, line 10
+10,13c10,15
+<  - HDD (pwm3) and PCIe (pwm4): 255. On BIOS 1.05 the EC does not regulate
+<    these after the auto command (0x2b: HDD measured at a fixed 0x57
+<    without reaction to load; 0x31: PCIe keeps its last duty, befunde
+<    BEFUNDE.md). Returning them to "automatic" would undercut the
+---
+>  - HDD (pwm3) and PCIe (pwm4): 255. PCIe: after its auto command (0x31)
+>    the EC keeps the last duty (befunde BEFUNDE.md). HDD, as a precaution:
+>    after 0x2b the EC regulates the group to a target RPM chosen from EC
+>    0x06 (ambient: < 34 C 1200 rpm, 34-99 C 1600 rpm), not from the disk
+>    temperatures (derived from EC firmware 0.14, befunde M5; the measured
+>    values fit). Returning them to "automatic" could undercut the
+38a41,46
+>  .
+>  rc3 (audit-20261016 BACKLOG #27): header and code comment no longer say
+>  that the EC does not regulate HDD after 0x2b ("fixed 0x57"); that
+>  statement was corrected in befunde BEFUNDE.md on 2026-10-08/09 (M5).
+>  HDD 255 at shutdown is kept as a precaution. Comment text only; the
+>  code, the PCIe reasoning and the line count are unchanged.
+73,80c81,88
+< + * 255 instead: on BIOS 1.05 the EC does not regulate them after the auto
+< + * command (HDD measured at a fixed 0x57, PCIe keeps its last duty), which
+< + * would undercut the regulator's fail-safe for the next boot if the module
+< + * is not loaded again. PCIe handed back with pwm4_enable=2 stays touched
+< + * (0004) and gets 255 here again. A failed step leaves the channel as it is
+< + * (no fallback to the auto command, which could lower the duty). Sets the
+< + * dead flag: later accesses return -ENODEV and the devres restore does
+< + * nothing.
+---
+> + * 255 instead. PCIe keeps its last duty after the auto command. HDD, as a
+> + * precaution: the EC regulates it to a target RPM from EC 0x06 (ambient),
+> + * not disk temperature (derived from EC firmware, befunde M5). Either may
+> + * undercut the regulator's fail-safe for the next boot if the module is not
+> + * loaded again. PCIe handed back with pwm4_enable=2 stays touched (0004)
+> + * and gets 255 here again. A failed step leaves the channel as it is (no
+> + * fallback to the auto command, which could lower the duty). Sets the dead
+> + * flag: later accesses return -ENODEV and the devres restore does nothing.
+[exit 1]
+
+
+################################################################################
+### B1 rc2 + 0008: draft file as is (made on rc1) and rebased onto rc2
+
+$ cp -a /work/rc2 /work/p8o && cd /work/p8o && $PA --dry-run < /in/driver/patches-draft/0008-debugfs-ecram.patch
+checking file driver-prototype/minisforum_n5_it5571.c
+Reversed (or previously applied) patch detected!  Skipping patch.
+11 out of 11 hunks ignored
+[exit 1]
+
+$ cd /work && diff <(grep '^[-+]' /in/driver/patches-draft/0008-debugfs-ecram.patch | grep -v '^\(---\|+++\) ') <(grep '^[-+]' /in/0008-rebased-rc2.patch | grep -v '^\(---\|+++\) ') ; echo '(changed lines: draft 0008 vs. rebased 0008; expected: only the date hunk, which rc2 0001 already has, and the old MODULE_VERSION context)'
+1,3d0
+< ---
+< - * Modified 2026-10-09 by SirRenix for the Debian/Proxmox DKMS package
+< + * Modified 2026-10-16 by SirRenix for the Debian/Proxmox DKMS package
+143c140
+< -MODULE_VERSION("0.2.1+sr1~rc1");
+---
+> -MODULE_VERSION("0.2.1+sr1~rc2");
+(changed lines: draft 0008 vs. rebased 0008; expected: only the date hunk, which rc2 0001 already has, and the old MODULE_VERSION context)
+[exit 0]
+
+$ cp -a /work/rc2 /work/p8 && cd /work/p8 && $PA < /in/0008-rebased-rc2.patch && sha256sum driver-prototype/minisforum_n5_it5571.c
+patching file driver-prototype/minisforum_n5_it5571.c
+0920c7da67194aaba614fec4cbdad267313fe78f4d28c62f9e5716d63016569b  driver-prototype/minisforum_n5_it5571.c
+[exit 0]
+
+
+################################################################################
+### B2 + draft 0009 (patch --fuzz=0), also on rc3 + 0008
+
+$ cp -a /work/p8 /work/p9 && cd /work/p9 && $PA < /in/driver/patches-draft/0009-hwmon-read-cache.patch && sha256sum driver-prototype/minisforum_n5_it5571.c
+patching file driver-prototype/minisforum_n5_it5571.c
+c811befba9f06106764b17f752ca625c73b6e121ac51f9ad557c0ddb3d8b00be  driver-prototype/minisforum_n5_it5571.c
+[exit 0]
+
+$ cp -a /work/rc3 /work/r3p9 && cd /work/r3p9 && $PA -s < /in/0008-rebased-rc2.patch && $PA < /in/driver/patches-draft/0009-hwmon-read-cache.patch && sha256sum driver-prototype/minisforum_n5_it5571.c
+patching file driver-prototype/minisforum_n5_it5571.c
+90a7fa503039620a00a1eb335edfec4a421a47d45dd1e1443f155c9b94676784  driver-prototype/minisforum_n5_it5571.c
+[exit 0]
+
+$ cd /work && diff -u p9/driver-prototype/minisforum_n5_it5571.c r3p9/driver-prototype/minisforum_n5_it5571.c | grep '^[-+]' | grep -v '^\(---\|+++\) ' | grep -v '^[-+] \*' || echo 'rc3+0008+0009 differs from rc2+0008+0009 only in comment lines'
+rc3+0008+0009 differs from rc2+0008+0009 only in comment lines
+[exit 0]
+
+$ cd /work && cp -a p8 ga9 && cd ga9 && git init -q . && git apply --check /in/driver/patches-draft/0009-hwmon-read-cache.patch && echo 'git apply --check 0009 on rc2+0008: ok'
+git apply --check 0009 on rc2+0008: ok
+[exit 0]
+
+$ LC_ALL=C grep -nP '[^\x00-\x7f]|\r' /work/p9/driver-prototype/minisforum_n5_it5571.c || echo 'p9 source: ASCII only, no CR'
+p9 source: ASCII only, no CR
+[exit 0]
+
+
+################################################################################
+### F4/F5 plain + W=1 build, rc2, 7.0.14-20-pve
+
+$ mkdir -p /work/b/rc2-7.0.14-20-pve && cp /work/rc2/driver-prototype/minisforum_n5_it5571.c /work/rc2/driver-prototype/Makefile /work/b/rc2-7.0.14-20-pve/ && cd /work/b/rc2-7.0.14-20-pve && make -C /lib/modules/7.0.14-20-pve/build M=$PWD modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/b/rc2-7.0.14-20-pve && cp minisforum_n5_it5571.o minisforum_n5_it5571.plain.o && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.14-20-pve/build M=$PWD W=1 modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/b/rc2-7.0.14-20-pve && for f in -Wextra -Wmissing-prototypes -Wmissing-declarations; do printf '%s in .o.cmd: %s\n' "$f" "$(grep -c -- "$f" .minisforum_n5_it5571.o.cmd)"; done; /usr/sbin/modinfo ./minisforum_n5_it5571.ko | grep -E '^(version|srcversion|vermagic)'
+-Wextra in .o.cmd: 1
+-Wmissing-prototypes in .o.cmd: 1
+-Wmissing-declarations in .o.cmd: 1
+version:        0.2.1+sr1~rc2
+srcversion:     E9CF5951A3238F3B9930797
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+[exit 0]
+
+
+################################################################################
+### F4/F5 plain + W=1 build, rc2, 7.0.12-1-pve
+
+$ mkdir -p /work/b/rc2-7.0.12-1-pve && cp /work/rc2/driver-prototype/minisforum_n5_it5571.c /work/rc2/driver-prototype/Makefile /work/b/rc2-7.0.12-1-pve/ && cd /work/b/rc2-7.0.12-1-pve && make -C /lib/modules/7.0.12-1-pve/build M=$PWD modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/b/rc2-7.0.12-1-pve && cp minisforum_n5_it5571.o minisforum_n5_it5571.plain.o && make -C /lib/modules/7.0.12-1-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.12-1-pve/build M=$PWD W=1 modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/b/rc2-7.0.12-1-pve && for f in -Wextra -Wmissing-prototypes -Wmissing-declarations; do printf '%s in .o.cmd: %s\n' "$f" "$(grep -c -- "$f" .minisforum_n5_it5571.o.cmd)"; done; /usr/sbin/modinfo ./minisforum_n5_it5571.ko | grep -E '^(version|srcversion|vermagic)'
+-Wextra in .o.cmd: 1
+-Wmissing-prototypes in .o.cmd: 1
+-Wmissing-declarations in .o.cmd: 1
+version:        0.2.1+sr1~rc2
+srcversion:     E9CF5951A3238F3B9930797
+vermagic:       7.0.12-1-pve SMP preempt mod_unload modversions 
+[exit 0]
+
+
+################################################################################
+### F4/F5 plain + W=1 build, rc3, 7.0.14-20-pve
+
+$ mkdir -p /work/b/rc3-7.0.14-20-pve && cp /work/rc3/driver-prototype/minisforum_n5_it5571.c /work/rc3/driver-prototype/Makefile /work/b/rc3-7.0.14-20-pve/ && cd /work/b/rc3-7.0.14-20-pve && make -C /lib/modules/7.0.14-20-pve/build M=$PWD modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/b/rc3-7.0.14-20-pve && cp minisforum_n5_it5571.o minisforum_n5_it5571.plain.o && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.14-20-pve/build M=$PWD W=1 modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/b/rc3-7.0.14-20-pve && for f in -Wextra -Wmissing-prototypes -Wmissing-declarations; do printf '%s in .o.cmd: %s\n' "$f" "$(grep -c -- "$f" .minisforum_n5_it5571.o.cmd)"; done; /usr/sbin/modinfo ./minisforum_n5_it5571.ko | grep -E '^(version|srcversion|vermagic)'
+-Wextra in .o.cmd: 1
+-Wmissing-prototypes in .o.cmd: 1
+-Wmissing-declarations in .o.cmd: 1
+version:        0.2.1+sr1~rc2
+srcversion:     E9CF5951A3238F3B9930797
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+[exit 0]
+
+
+################################################################################
+### F2 sparse C=2, rc3, 7.0.14-20-pve
+
+$ cd /work/b/rc3-7.0.14-20-pve && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.14-20-pve/build M=$PWD C=2 modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+
+################################################################################
+### F3 smatch C=2, rc3, 7.0.14-20-pve
+
+$ cd /work/b/rc3-7.0.14-20-pve && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.14-20-pve/build M=$PWD C=2 CHECK='/opt/smatch/smatch -p=kernel' modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+
+################################################################################
+### F4/F5 plain + W=1 build, rc3, 7.0.12-1-pve
+
+$ mkdir -p /work/b/rc3-7.0.12-1-pve && cp /work/rc3/driver-prototype/minisforum_n5_it5571.c /work/rc3/driver-prototype/Makefile /work/b/rc3-7.0.12-1-pve/ && cd /work/b/rc3-7.0.12-1-pve && make -C /lib/modules/7.0.12-1-pve/build M=$PWD modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/b/rc3-7.0.12-1-pve && cp minisforum_n5_it5571.o minisforum_n5_it5571.plain.o && make -C /lib/modules/7.0.12-1-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.12-1-pve/build M=$PWD W=1 modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/b/rc3-7.0.12-1-pve && for f in -Wextra -Wmissing-prototypes -Wmissing-declarations; do printf '%s in .o.cmd: %s\n' "$f" "$(grep -c -- "$f" .minisforum_n5_it5571.o.cmd)"; done; /usr/sbin/modinfo ./minisforum_n5_it5571.ko | grep -E '^(version|srcversion|vermagic)'
+-Wextra in .o.cmd: 1
+-Wmissing-prototypes in .o.cmd: 1
+-Wmissing-declarations in .o.cmd: 1
+version:        0.2.1+sr1~rc2
+srcversion:     E9CF5951A3238F3B9930797
+vermagic:       7.0.12-1-pve SMP preempt mod_unload modversions 
+[exit 0]
+
+
+################################################################################
+### F2 sparse C=2, rc3, 7.0.12-1-pve
+
+$ cd /work/b/rc3-7.0.12-1-pve && make -C /lib/modules/7.0.12-1-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.12-1-pve/build M=$PWD C=2 modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+
+################################################################################
+### F3 smatch C=2, rc3, 7.0.12-1-pve
+
+$ cd /work/b/rc3-7.0.12-1-pve && make -C /lib/modules/7.0.12-1-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.12-1-pve/build M=$PWD C=2 CHECK='/opt/smatch/smatch -p=kernel' modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+
+################################################################################
+### F4/F5 plain + W=1 build, p8, 7.0.14-20-pve
+
+$ mkdir -p /work/b/p8-7.0.14-20-pve && cp /work/p8/driver-prototype/minisforum_n5_it5571.c /work/p8/driver-prototype/Makefile /work/b/p8-7.0.14-20-pve/ && cd /work/b/p8-7.0.14-20-pve && make -C /lib/modules/7.0.14-20-pve/build M=$PWD modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/b/p8-7.0.14-20-pve && cp minisforum_n5_it5571.o minisforum_n5_it5571.plain.o && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.14-20-pve/build M=$PWD W=1 modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/b/p8-7.0.14-20-pve && for f in -Wextra -Wmissing-prototypes -Wmissing-declarations; do printf '%s in .o.cmd: %s\n' "$f" "$(grep -c -- "$f" .minisforum_n5_it5571.o.cmd)"; done; /usr/sbin/modinfo ./minisforum_n5_it5571.ko | grep -E '^(version|srcversion|vermagic)'
+-Wextra in .o.cmd: 1
+-Wmissing-prototypes in .o.cmd: 1
+-Wmissing-declarations in .o.cmd: 1
+version:        0.2.1+sr2~rc1
+srcversion:     13F98D5B52F4D6B24F7DF24
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+[exit 0]
+
+
+################################################################################
+### F4/F5 plain + W=1 build, p8, 7.0.12-1-pve
+
+$ mkdir -p /work/b/p8-7.0.12-1-pve && cp /work/p8/driver-prototype/minisforum_n5_it5571.c /work/p8/driver-prototype/Makefile /work/b/p8-7.0.12-1-pve/ && cd /work/b/p8-7.0.12-1-pve && make -C /lib/modules/7.0.12-1-pve/build M=$PWD modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/b/p8-7.0.12-1-pve && cp minisforum_n5_it5571.o minisforum_n5_it5571.plain.o && make -C /lib/modules/7.0.12-1-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.12-1-pve/build M=$PWD W=1 modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/b/p8-7.0.12-1-pve && for f in -Wextra -Wmissing-prototypes -Wmissing-declarations; do printf '%s in .o.cmd: %s\n' "$f" "$(grep -c -- "$f" .minisforum_n5_it5571.o.cmd)"; done; /usr/sbin/modinfo ./minisforum_n5_it5571.ko | grep -E '^(version|srcversion|vermagic)'
+-Wextra in .o.cmd: 1
+-Wmissing-prototypes in .o.cmd: 1
+-Wmissing-declarations in .o.cmd: 1
+version:        0.2.1+sr2~rc1
+srcversion:     13F98D5B52F4D6B24F7DF24
+vermagic:       7.0.12-1-pve SMP preempt mod_unload modversions 
+[exit 0]
+
+
+################################################################################
+### F4/F5 plain + W=1 build, p9, 7.0.14-20-pve
+
+$ mkdir -p /work/b/p9-7.0.14-20-pve && cp /work/p9/driver-prototype/minisforum_n5_it5571.c /work/p9/driver-prototype/Makefile /work/b/p9-7.0.14-20-pve/ && cd /work/b/p9-7.0.14-20-pve && make -C /lib/modules/7.0.14-20-pve/build M=$PWD modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/b/p9-7.0.14-20-pve && cp minisforum_n5_it5571.o minisforum_n5_it5571.plain.o && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.14-20-pve/build M=$PWD W=1 modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/b/p9-7.0.14-20-pve && for f in -Wextra -Wmissing-prototypes -Wmissing-declarations; do printf '%s in .o.cmd: %s\n' "$f" "$(grep -c -- "$f" .minisforum_n5_it5571.o.cmd)"; done; /usr/sbin/modinfo ./minisforum_n5_it5571.ko | grep -E '^(version|srcversion|vermagic)'
+-Wextra in .o.cmd: 1
+-Wmissing-prototypes in .o.cmd: 1
+-Wmissing-declarations in .o.cmd: 1
+version:        0.2.1+sr2~rc1
+srcversion:     14208792D282DBB30FCF9F5
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+[exit 0]
+
+
+################################################################################
+### F2 sparse C=2, p9, 7.0.14-20-pve
+
+$ cd /work/b/p9-7.0.14-20-pve && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.14-20-pve/build M=$PWD C=2 modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+
+################################################################################
+### F3 smatch C=2, p9, 7.0.14-20-pve
+
+$ cd /work/b/p9-7.0.14-20-pve && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.14-20-pve/build M=$PWD C=2 CHECK='/opt/smatch/smatch -p=kernel' modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+
+################################################################################
+### F4/F5 plain + W=1 build, p9, 7.0.12-1-pve
+
+$ mkdir -p /work/b/p9-7.0.12-1-pve && cp /work/p9/driver-prototype/minisforum_n5_it5571.c /work/p9/driver-prototype/Makefile /work/b/p9-7.0.12-1-pve/ && cd /work/b/p9-7.0.12-1-pve && make -C /lib/modules/7.0.12-1-pve/build M=$PWD modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/b/p9-7.0.12-1-pve && cp minisforum_n5_it5571.o minisforum_n5_it5571.plain.o && make -C /lib/modules/7.0.12-1-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.12-1-pve/build M=$PWD W=1 modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+$ cd /work/b/p9-7.0.12-1-pve && for f in -Wextra -Wmissing-prototypes -Wmissing-declarations; do printf '%s in .o.cmd: %s\n' "$f" "$(grep -c -- "$f" .minisforum_n5_it5571.o.cmd)"; done; /usr/sbin/modinfo ./minisforum_n5_it5571.ko | grep -E '^(version|srcversion|vermagic)'
+-Wextra in .o.cmd: 1
+-Wmissing-prototypes in .o.cmd: 1
+-Wmissing-declarations in .o.cmd: 1
+version:        0.2.1+sr2~rc1
+srcversion:     14208792D282DBB30FCF9F5
+vermagic:       7.0.12-1-pve SMP preempt mod_unload modversions 
+[exit 0]
+
+
+################################################################################
+### F2 sparse C=2, p9, 7.0.12-1-pve
+
+$ cd /work/b/p9-7.0.12-1-pve && make -C /lib/modules/7.0.12-1-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.12-1-pve/build M=$PWD C=2 modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+
+################################################################################
+### F3 smatch C=2, p9, 7.0.12-1-pve
+
+$ cd /work/b/p9-7.0.12-1-pve && make -C /lib/modules/7.0.12-1-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.12-1-pve/build M=$PWD C=2 CHECK='/opt/smatch/smatch -p=kernel' modules 2>&1 | grep -vE '^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+  CC [M]  minisforum_n5_it5571.o
+  CHECK   minisforum_n5_it5571.c
+  MODPOST Module.symvers
+  CC [M]  minisforum_n5_it5571.mod.o
+  CC [M]  .module-common.o
+  LD [M]  minisforum_n5_it5571.ko
+[exit 0]
+
+
+################################################################################
+### A4 object code rc2 vs rc3 (plain build, same kernel)
+
+$ cd /work/b && cmp rc2-7.0.14-20-pve/minisforum_n5_it5571.plain.o rc3-7.0.14-20-pve/minisforum_n5_it5571.plain.o && echo '7.0.14-20-pve: rc2 and rc3 objects byte-identical' || { objdump -d --no-show-raw-insn rc2-7.0.14-20-pve/minisforum_n5_it5571.plain.o | tail -n +3 > a.dis; objdump -d --no-show-raw-insn rc3-7.0.14-20-pve/minisforum_n5_it5571.plain.o | tail -n +3 > b.dis; cmp a.dis b.dis && echo '7.0.14-20-pve: disassembly identical'; }
+cmp: rc2-7.0.14-20-pve/minisforum_n5_it5571.plain.o: No such file or directory
+objdump: 'rc2-7.0.14-20-pve/minisforum_n5_it5571.plain.o': No such file
+objdump: 'rc3-7.0.14-20-pve/minisforum_n5_it5571.plain.o': No such file
+7.0.14-20-pve: disassembly identical
+[exit 0]
+
+$ cd /work/b && cmp rc2-7.0.12-1-pve/minisforum_n5_it5571.plain.o rc3-7.0.12-1-pve/minisforum_n5_it5571.plain.o && echo '7.0.12-1-pve: rc2 and rc3 objects byte-identical' || { objdump -d --no-show-raw-insn rc2-7.0.12-1-pve/minisforum_n5_it5571.plain.o | tail -n +3 > a.dis; objdump -d --no-show-raw-insn rc3-7.0.12-1-pve/minisforum_n5_it5571.plain.o | tail -n +3 > b.dis; cmp a.dis b.dis && echo '7.0.12-1-pve: disassembly identical'; }
+cmp: rc2-7.0.12-1-pve/minisforum_n5_it5571.plain.o: No such file or directory
+objdump: 'rc2-7.0.12-1-pve/minisforum_n5_it5571.plain.o': No such file
+objdump: 'rc3-7.0.12-1-pve/minisforum_n5_it5571.plain.o': No such file
+7.0.12-1-pve: disassembly identical
+[exit 0]
+
+
+################################################################################
+### F1 checkpatch
+
+$ sha256sum /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl /lib/modules/7.0.12-1-pve/build/scripts/checkpatch.pl
+6e7abb5d613b8916f162db09d4442fbd444f31d2402022b641e9ecfcc3279323  /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl
+6e7abb5d613b8916f162db09d4442fbd444f31d2402022b641e9ecfcc3279323  /lib/modules/7.0.12-1-pve/build/scripts/checkpatch.pl
+[exit 0]
+
+$ cd /work/rc2/driver-prototype && perl /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl --no-tree -f minisforum_n5_it5571.c | tail -n 2; perl /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl --no-tree --strict -f minisforum_n5_it5571.c | grep -E '^total'; echo '(rc2; --strict informational)'
+
+minisforum_n5_it5571.c has no obvious style problems and is ready for submission.
+total: 0 errors, 0 warnings, 6 checks, 1106 lines checked
+(rc2; --strict informational)
+[exit 0]
+
+$ cd /work/rc3/driver-prototype && perl /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl --no-tree -f minisforum_n5_it5571.c | tail -n 2; perl /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl --no-tree --strict -f minisforum_n5_it5571.c | grep -E '^total'; echo '(rc3; --strict informational)'
+
+minisforum_n5_it5571.c has no obvious style problems and is ready for submission.
+total: 0 errors, 0 warnings, 6 checks, 1106 lines checked
+(rc3; --strict informational)
+[exit 0]
+
+$ cd /work/p8/driver-prototype && perl /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl --no-tree -f minisforum_n5_it5571.c | tail -n 2; perl /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl --no-tree --strict -f minisforum_n5_it5571.c | grep -E '^total'; echo '(p8; --strict informational)'
+
+minisforum_n5_it5571.c has no obvious style problems and is ready for submission.
+total: 0 errors, 0 warnings, 6 checks, 1221 lines checked
+(p8; --strict informational)
+[exit 0]
+
+$ cd /work/p9/driver-prototype && perl /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl --no-tree -f minisforum_n5_it5571.c | tail -n 2; perl /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl --no-tree --strict -f minisforum_n5_it5571.c | grep -E '^total'; echo '(p9; --strict informational)'
+
+minisforum_n5_it5571.c has no obvious style problems and is ready for submission.
+total: 0 errors, 0 warnings, 6 checks, 1268 lines checked
+(p9; --strict informational)
+[exit 0]
+
+$ cd /work && perl /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl --no-tree --strict --ignore FILE_PATH_CHANGES,SPDX_LICENSE_TAG,MISSING_SIGN_OFF,COMMIT_MESSAGE,COMMIT_LOG_LONG_LINE,EMAIL_SUBJECT,GIT_COMMIT_ID /in/driver/patches-draft/0009-hwmon-read-cache.patch | grep -vE '^$' | tail -n 20; echo '(strict on the 0009 patch file: code part; DEP-3 header is not a commit message)'
+ERROR: Avoid using diff content in the commit message - patch(1) might not work
+#79: 
+--- a/driver-prototype/minisforum_n5_it5571.c
+ERROR: Invalid commit separator - some tools may have problems applying this
+#79: 
+--- a/driver-prototype/minisforum_n5_it5571.c
+total: 2 errors, 0 warnings, 0 checks, 98 lines checked
+NOTE: For some of the reported defects, checkpatch may be able to
+      mechanically convert to the typical style using --fix or --fix-inplace.
+/in/driver/patches-draft/0009-hwmon-read-cache.patch has style problems, please review.
+NOTE: Ignored message types: COMMIT_LOG_LONG_LINE COMMIT_MESSAGE EMAIL_SUBJECT FILE_PATH_CHANGES GIT_COMMIT_ID MISSING_SIGN_OFF SPDX_LICENSE_TAG
+NOTE: If any of the errors are false positives, please report
+      them to the maintainer, see CHECKPATCH in MAINTAINERS.
+(strict on the 0009 patch file: code part; DEP-3 header is not a commit message)
+[exit 0]
+
+$ cd /work && perl /lib/modules/7.0.14-20-pve/build/scripts/checkpatch.pl --no-tree --strict --ignore FILE_PATH_CHANGES,SPDX_LICENSE_TAG,MISSING_SIGN_OFF,COMMIT_MESSAGE,COMMIT_LOG_LONG_LINE,EMAIL_SUBJECT,GIT_COMMIT_ID /in/driver/patches-draft/rc3/0006-shutdown.patch | grep -vE '^$' | tail -n 20; echo '(strict on the rc3 0006 patch file)'
+ERROR: Avoid using diff content in the commit message - patch(1) might not work
+#52: 
+--- a/driver-prototype/minisforum_n5_it5571.c
+ERROR: Invalid commit separator - some tools may have problems applying this
+#52: 
+--- a/driver-prototype/minisforum_n5_it5571.c
+total: 2 errors, 0 warnings, 0 checks, 80 lines checked
+NOTE: For some of the reported defects, checkpatch may be able to
+      mechanically convert to the typical style using --fix or --fix-inplace.
+/in/driver/patches-draft/rc3/0006-shutdown.patch has style problems, please review.
+NOTE: Ignored message types: COMMIT_LOG_LONG_LINE COMMIT_MESSAGE EMAIL_SUBJECT FILE_PATH_CHANGES GIT_COMMIT_ID MISSING_SIGN_OFF SPDX_LICENSE_TAG
+NOTE: If any of the errors are false positives, please report
+      them to the maintainer, see CHECKPATCH in MAINTAINERS.
+(strict on the rc3 0006 patch file)
+[exit 0]
+
+
+################################################################################
+### H1 harness h9 (read cache) on rc2+0008+0009 (expect all PASS)
+
+$ mkdir -p /work/h9 && cd /work/h9 && cp /in/h9/* . && sed '/^#include <linux\//d' /work/p9/driver-prototype/minisforum_n5_it5571.c > drv9.c && gcc -O0 -g -Wall -Wextra -Wno-unused-function -Wno-unused-parameter -Wno-sign-compare -Wno-missing-field-initializers -DDRV='"drv9.c"' h9.c -o h9 && ./h9
+== C1 temp1: first read from EC, second from cache, refresh after 1 s
+PASS  C1 probe does no port I/O
+PASS  C1 temp1 = 45000
+PASS  C1 one EC read
+PASS  C1 999 ms later: cached 45000
+PASS  C1 cache hit: no port I/O
+PASS  C1 1001 ms later: refreshed 50000
+PASS  C1 refresh: one EC read
+== C2 per input: temp2 not served from temp1, fan1 own cache
+PASS  C2 temp2 = 33000
+PASS  C2 temp2 did its own EC read
+PASS  C2 fan1 = 2000
+PASS  C2 fan1: 3 PMC2 reads (high, low, high)
+PASS  C2 fan1 cached 2000
+PASS  C2 fan1 cache hit: no port I/O
+PASS  C2 fan2 = 2200 (own refresh)
+PASS  C2 fan1 refreshed 2100
+== C3 flood: 10000 reads of fan1 and temp1 within 1 s
+PASS  C3 all values correct
+PASS  C3 fan1: one refresh (3 PMC2 reads)
+PASS  C3 temp1: one refresh (1 EC read)
+== C4 errors are not cached
+PASS  C4 stuck EC: temp1 -ETIMEDOUT
+PASS  C4 within access budget (<= 1.02 s)
+PASS  C4 stale value not served after failed refresh
+PASS  C4 EC back: next read goes to the EC (47000)
+PASS  C4 fan1 stuck -> -ETIMEDOUT
+PASS  C4 fan1 retried at once
+== C6 sentinels: cached raw, still -ENODATA
+PASS  C6 temp3 0xff -> -ENODATA
+PASS  C6 temp3 again -> -ENODATA from cache
+PASS  C6 fan3 0xffff -> -ENODATA
+PASS  C6 fan3 again -> -ENODATA from cache
+PASS  C6 fan3 0 rpm is a value (0)
+== C7 killable: a killed reader gets -EINTR, no I/O, no state
+PASS  C7 temp1 -EINTR
+PASS  C7 fan1 -EINTR
+PASS  C7 no port I/O
+PASS  C7 lock free afterwards
+== C8 pwm path unchanged: write, cached pwm read, fan cache not invalidated
+PASS  C8 fan1 refresh
+PASS  C8 pwm1_enable=1 ok
+PASS  C8 pwm1=128 ok
+PASS  C8 pwm writes reached the EC
+PASS  C8 pwm1 reads 128
+PASS  C8 fan1 still cached (2100) within 1 s after the write
+PASS  C8 fan1 1500 after 1 s
+== C9 dead: after .shutdown cached reads give -ENODEV, no I/O
+PASS  C9 temp1 cached before shutdown
+PASS  C9 temp1 -ENODEV
+PASS  C9 fan1 -ENODEV
+PASS  C9 no port I/O after shutdown
+== C10 rebind: cache starts empty
+PASS  C10 temp1 read goes to the EC
+PASS  C10 unbind: no I/O (nothing touched)
+PASS  C10 read after unbind -> -ENODEV
+== global
+PASS  every port I/O under data->lock
+PASS  every port I/O inside reserved regions
+PASS  no mutex misuse
+RESULT 50 pass, 0 fail
+[exit 0]
+
+$ cd /work/h9 && gcc -O0 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -Wno-unused-function -DDRV='"drv9.c"' h9.c -o h9s && ASAN_OPTIONS=detect_leaks=0 ./h9s 2>&1 | grep -E 'RESULT|ERROR|runtime error'
+RESULT 50 pass, 0 fail
+[exit 0]
+
+
+################################################################################
+### H2 negative control: h9 on rc2+0008 without 0009 (expect FAIL on cache checks)
+
+$ cd /work/h9 && sed '/^#include <linux\//d' /work/p8/driver-prototype/minisforum_n5_it5571.c > drv8.c && gcc -O0 -g -Wall -Wno-unused-function -DDRV='"drv8.c"' h9.c -o h8n && ./h8n | grep -E '^(FAIL|RESULT)'
+FAIL  C1 999 ms later: cached 45000  (line 243)
+FAIL  C1 cache hit: no port I/O  (line 244)
+FAIL  C1 refresh: one EC read  (line 247)
+FAIL  C2 fan1 cached 2000  (line 258)
+FAIL  C2 fan1 cache hit: no port I/O  (line 259)
+FAIL  C3 fan1: one refresh (3 PMC2 reads)  (line 276)
+FAIL  C3 temp1: one refresh (1 EC read)  (line 277)
+FAIL  C6 temp3 again -> -ENODATA from cache  (line 303)
+FAIL  C6 fan3 again -> -ENODATA from cache  (line 307)
+FAIL  C7 temp1 -EINTR  (line 317)
+FAIL  C7 fan1 -EINTR  (line 318)
+FAIL  C7 no port I/O  (line 319)
+FAIL  C8 fan1 still cached (2100) within 1 s after the write  (line 331)
+RESULT 37 pass, 13 fail
+[exit 0]
+
+
+################################################################################
+### H3 H8 harness (pwm/pwm_enable/restore/.shutdown, PCIe hand-back) on rc2+0008+0009 and rc3 (expect all PASS, unchanged from rc2)
+
+$ cd /work/h9 && sed 's/^#include "stubs.h"/#include "stubs9.h"\nint h_kill;/' /in/h8/harness.c > h8harness.c && gcc -O0 -g -Wall -Wno-unused-function -DDRV='"drv9.c"' h8harness.c -o h8p9 && ./h8p9 | grep -E '^(FAIL|RESULT)'
+RESULT 55 pass, 0 fail
+[exit 0]
+
+$ cd /work/h9 && sed '/^#include <linux\//d' /work/rc3/driver-prototype/minisforum_n5_it5571.c > drv3.c && gcc -O0 -g -Wall -Wno-unused-function -DDRV='"drv3.c"' h8harness.c -o h8r3 && ./h8r3 | grep -E '^(FAIL|RESULT)'
+RESULT 55 pass, 0 fail
+[exit 0]
+
+
+################################################################################
+### F2/F3 negative control (known defects, same tools, 7.0.14-20-pve)
+
+$ mkdir -p /work/neg && cp /in/h8/negctl/* /work/neg/ && cd /work/neg && make -C /lib/modules/7.0.14-20-pve/build M=$PWD C=2 modules 2>&1 | grep -E 'negctl.c:[0-9]+'
+negctl.c:9:18: warning: cast removes address space '__iomem' of expression
+[exit 0]
+
+$ cd /work/neg && make -C /lib/modules/7.0.14-20-pve/build M=$PWD clean >/dev/null && make -C /lib/modules/7.0.14-20-pve/build M=$PWD C=2 CHECK='/opt/smatch/smatch -p=kernel' modules 2>&1 | grep -E 'negctl.c:[0-9]+'
+negctl.c:21 negctl_b() error: dereferencing freed memory 'q' (line 20)
+[exit 0]
+
+
+################################################################################
+### end
+
+$ date -u
+Fri Oct 16 18:17:11 UTC 2026
+[exit 0]
+
+
+################################################################################
+### cleanup on builder (cleanup.sh uploaded with scp, run with bash)
+
+#!/bin/bash
+# Remove the P9 draft build container (if left) and its work dir. Images are kept.
+docker rm -f p9draft-build >/dev/null 2>&1 && echo "container removed" || echo "no container left"
+rm -rf /tmp/p9draft && echo "work dir removed"
+docker ps -a --format '{{.Names}}' | grep -c p9draft || true
+ls -d /tmp/p9draft 2>/dev/null || echo "/tmp/p9draft absent"
+docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' | grep 'debian:trixie'
+
+--- output
+container removed
+work dir removed
+0
+/tmp/p9draft absent
+debian:trixie 913f6706df59
+
+################################################################################
+### appendix: run.sh
+
+#!/bin/bash
+# P9 draft build: (A) rc3 = series 0001-0007 with patches-draft/rc3/0006
+# (comment-only), (B) rc2 + 0008 (rebased onto rc2) + draft 0009 read cache.
+# Runs in a throwaway debian:trixie container, /in mounted read-only.
+set -u
+export DEBIAN_FRONTEND=noninteractive
+K1=7.0.14-20-pve
+K2=7.0.12-1-pve
+MOD=minisforum_n5_it5571
+RC2=48f47ff8c9adfb325422aefcb7caf85541788ad70dcd43a4e409483eecf07eef
+FILT='^make|pahole|kernel was built|You are using|Skipping BTF|BTF \[M\]'
+PA='patch -p1 --forward --no-backup-if-mismatch --fuzz=0'
+
+sec() { printf '\n################################################################################\n### %s\n\n' "$*"; }
+run() { printf '$ %s\n' "$*"; bash -c "$*" 2>&1; printf '[exit %d]\n\n' "$?"; }
+
+series() { # $1 = dir, $2 = replacement 0006 or ""
+	for p in $(grep -v '^#' /in/driver/patches/series | sed '/^$/d'); do
+		f=/in/driver/patches/$p
+		[ -n "$2" ] && [ "$p" = 0006-shutdown.patch ] && f=$2
+		(cd "$1" && $PA -s < "$f") || { echo "FAIL $p"; return 1; }
+	done
+}
+export -f series
+export PA
+
+sec "S0 container and tools"
+run 'date -u; cat /etc/debian_version; uname -m; nproc; hostname'
+run 'apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git patch build-essential bc bison flex libelf-dev libssl-dev kmod perl python3 libsqlite3-dev sqlite3 libdbd-sqlite3-perl libtry-tiny-perl pkg-config xz-utils zstd binutils libasan8 libubsan1 >/dev/null 2>&1 && echo tools ok'
+run 'curl -fsSL -o /usr/share/keyrings/proxmox-archive-keyring.gpg https://enterprise.proxmox.com/debian/proxmox-archive-keyring-trixie.gpg && [ "$(sha256sum </usr/share/keyrings/proxmox-archive-keyring.gpg | cut -d" " -f1)" = 136673be77aba35dcce385b28737689ad64fd785a797e57897589aed08db6e45 ] && echo "keyring sha256 as in P2"'
+run 'printf "Types: deb\nURIs: http://download.proxmox.com/debian/pve\nSuites: trixie\nComponents: pve-no-subscription\nSigned-By: /usr/share/keyrings/proxmox-archive-keyring.gpg\n" >/etc/apt/sources.list.d/proxmox.sources && apt-get update -qq && apt-get install -y -qq --no-install-recommends proxmox-headers-'$K1' proxmox-headers-'$K2' >/dev/null 2>&1 && echo headers ok'
+run "dpkg-query -W proxmox-headers-$K1 proxmox-headers-$K2 gcc-14 binutils perl"
+run 'git clone -q https://git.kernel.org/pub/scm/devel/sparse/sparse.git /opt/sparse && git -C /opt/sparse checkout -q 37156835e3d725b6d750f000be33ba3814bb2310 && cd /opt/sparse && make -j$(nproc) PREFIX=/usr/local >/tmp/sparse-build.log 2>&1 && make PREFIX=/usr/local install >/dev/null 2>&1; sparse --version; git -C /opt/sparse log -1 --format="%H %cd" --date=iso'
+run '(git clone -q https://repo.or.cz/smatch.git /opt/smatch || git clone -q https://github.com/error27/smatch.git /opt/smatch) && git -C /opt/smatch checkout -q 5189e3fb018b783a26dcb45c02c114c1d1aad290 && cd /opt/smatch && make -j$(nproc) >/tmp/smatch-build.log 2>&1; ls -l /opt/smatch/smatch | cut -c1-10; git -C /opt/smatch log -1 --format="%H %cd" --date=iso'
+
+sec "S1 inputs"
+run 'cd /in && sha256sum driver/patches/*.patch driver/patches/series driver/patches-draft/0008-debugfs-ecram.patch driver/patches-draft/rc3/0006-shutdown.patch driver/patches-draft/0009-hwmon-read-cache.patch 0008-rebased-rc2.patch h9/* h8/harness.c && (cd driver/upstream && sha256sum -c SHA256SUMS)'
+run 'LC_ALL=C grep -nP "[^\x00-\x7f]|\r" /in/driver/patches-draft/rc3/0006-shutdown.patch /in/driver/patches-draft/0009-hwmon-read-cache.patch || echo "rc3 0006 and 0009: ASCII only, no CR"'
+
+sec "A1 rc2 (series as is) and rc3 (series with patches-draft/rc3/0006), patch --fuzz=0"
+run "mkdir -p /work && cp -a /in/driver/upstream /work/rc2 && series /work/rc2 '' && sha256sum /work/rc2/driver-prototype/$MOD.c | grep -q $RC2 && echo 'rc2 source == $RC2'"
+run "cp -a /in/driver/upstream /work/rc3 && cd /work/rc3 && for p in \$(grep -v '^#' /in/driver/patches/series | sed '/^\$/d'); do f=/in/driver/patches/\$p; [ \$p = 0006-shutdown.patch ] && f=/in/driver/patches-draft/rc3/\$p; echo \"== \$f\"; \$PA < \$f || exit 1; done; sha256sum driver-prototype/$MOD.c driver-prototype/Makefile"
+
+sec "A2 rc3 with git apply (fresh copy, no fuzz)"
+run "cp -a /in/driver/upstream /work/ga && cd /work/ga && git init -q . && for p in \$(grep -v '^#' /in/driver/patches/series | sed '/^\$/d'); do f=/in/driver/patches/\$p; [ \$p = 0006-shutdown.patch ] && f=/in/driver/patches-draft/rc3/\$p; git apply --check \$f && git apply \$f || exit 1; done; cmp driver-prototype/$MOD.c /work/rc3/driver-prototype/$MOD.c && echo 'git apply result == patch result'"
+
+sec "A3 delta rc2 -> rc3 (expect comment lines only)"
+run "cd /work && diff -u rc2/driver-prototype/$MOD.c rc3/driver-prototype/$MOD.c"
+run "cd /work && diff -u rc2/driver-prototype/$MOD.c rc3/driver-prototype/$MOD.c | grep '^[-+]' | grep -v '^\(---\|+++\) ' | grep -v '^[-+] \*' || echo 'every changed line is a comment line (\" * ...\")'"
+run "cd /work && for v in rc2 rc3; do gcc -fpreprocessed -dD -E -P rc\${v#rc}/driver-prototype/$MOD.c > \$v.nocomment.c; done; sha256sum rc2.nocomment.c rc3.nocomment.c; cmp rc2.nocomment.c rc3.nocomment.c && echo 'sources without comments identical'"
+run "cd /work && cmp /in/driver/patches/0006-shutdown.patch /in/driver/patches-draft/rc3/0006-shutdown.patch; diff /in/driver/patches/0006-shutdown.patch /in/driver/patches-draft/rc3/0006-shutdown.patch"
+
+sec "B1 rc2 + 0008: draft file as is (made on rc1) and rebased onto rc2"
+run "cp -a /work/rc2 /work/p8o && cd /work/p8o && \$PA --dry-run < /in/driver/patches-draft/0008-debugfs-ecram.patch"
+run "cd /work && diff <(grep '^[-+]' /in/driver/patches-draft/0008-debugfs-ecram.patch | grep -v '^\(---\|+++\) ') <(grep '^[-+]' /in/0008-rebased-rc2.patch | grep -v '^\(---\|+++\) ') ; echo '(changed lines: draft 0008 vs. rebased 0008; expected: only the date hunk, which rc2 0001 already has, and the old MODULE_VERSION context)'"
+run "cp -a /work/rc2 /work/p8 && cd /work/p8 && \$PA < /in/0008-rebased-rc2.patch && sha256sum driver-prototype/$MOD.c"
+
+sec "B2 + draft 0009 (patch --fuzz=0), also on rc3 + 0008"
+run "cp -a /work/p8 /work/p9 && cd /work/p9 && \$PA < /in/driver/patches-draft/0009-hwmon-read-cache.patch && sha256sum driver-prototype/$MOD.c"
+run "cp -a /work/rc3 /work/r3p9 && cd /work/r3p9 && \$PA -s < /in/0008-rebased-rc2.patch && \$PA < /in/driver/patches-draft/0009-hwmon-read-cache.patch && sha256sum driver-prototype/$MOD.c"
+run "cd /work && diff -u p9/driver-prototype/$MOD.c r3p9/driver-prototype/$MOD.c | grep '^[-+]' | grep -v '^\(---\|+++\) ' | grep -v '^[-+] \*' || echo 'rc3+0008+0009 differs from rc2+0008+0009 only in comment lines'"
+run "cd /work && cp -a p8 ga9 && cd ga9 && git init -q . && git apply --check /in/driver/patches-draft/0009-hwmon-read-cache.patch && echo 'git apply --check 0009 on rc2+0008: ok'"
+run "LC_ALL=C grep -nP '[^\x00-\x7f]|\r' /work/p9/driver-prototype/$MOD.c || echo 'p9 source: ASCII only, no CR'"
+
+for V in rc2 rc3 p8 p9; do
+	for K in $K1 $K2; do
+		sec "F4/F5 plain + W=1 build, $V, $K"
+		run "mkdir -p /work/b/$V-$K && cp /work/$V/driver-prototype/$MOD.c /work/$V/driver-prototype/Makefile /work/b/$V-$K/ && cd /work/b/$V-$K && make -C /lib/modules/$K/build M=\$PWD modules 2>&1 | grep -vE '$FILT'"
+		run "cd /work/b/$V-$K && cp $MOD.o $MOD.plain.o && make -C /lib/modules/$K/build M=\$PWD clean >/dev/null && make -C /lib/modules/$K/build M=\$PWD W=1 modules 2>&1 | grep -vE '$FILT'"
+		run "cd /work/b/$V-$K && for f in -Wextra -Wmissing-prototypes -Wmissing-declarations; do printf '%s in .o.cmd: %s\n' \"\$f\" \"\$(grep -c -- \"\$f\" .$MOD.o.cmd)\"; done; /usr/sbin/modinfo ./$MOD.ko | grep -E '^(version|srcversion|vermagic)'"
+		[ "$V" = rc2 ] && continue
+		[ "$V" = p8 ] && continue
+		sec "F2 sparse C=2, $V, $K"
+		run "cd /work/b/$V-$K && make -C /lib/modules/$K/build M=\$PWD clean >/dev/null && make -C /lib/modules/$K/build M=\$PWD C=2 modules 2>&1 | grep -vE '$FILT'"
+		sec "F3 smatch C=2, $V, $K"
+		run "cd /work/b/$V-$K && make -C /lib/modules/$K/build M=\$PWD clean >/dev/null && make -C /lib/modules/$K/build M=\$PWD C=2 CHECK='/opt/smatch/smatch -p=kernel' modules 2>&1 | grep -vE '$FILT'"
+	done
+done
+
+sec "A4 object code rc2 vs rc3 (plain build, same kernel)"
+for K in $K1 $K2; do
+	run "cd /work/b && cmp rc2-$K/$MOD.plain.o rc3-$K/$MOD.plain.o && echo '$K: rc2 and rc3 objects byte-identical' || { objdump -d --no-show-raw-insn rc2-$K/$MOD.plain.o | tail -n +3 > a.dis; objdump -d --no-show-raw-insn rc3-$K/$MOD.plain.o | tail -n +3 > b.dis; cmp a.dis b.dis && echo '$K: disassembly identical'; }"
+done
+
+sec "F1 checkpatch"
+run "sha256sum /lib/modules/$K1/build/scripts/checkpatch.pl /lib/modules/$K2/build/scripts/checkpatch.pl"
+for V in rc2 rc3 p8 p9; do
+	run "cd /work/$V/driver-prototype && perl /lib/modules/$K1/build/scripts/checkpatch.pl --no-tree -f $MOD.c | tail -n 2; perl /lib/modules/$K1/build/scripts/checkpatch.pl --no-tree --strict -f $MOD.c | grep -E '^total'; echo '($V; --strict informational)'"
+done
+run "cd /work && perl /lib/modules/$K1/build/scripts/checkpatch.pl --no-tree --strict --ignore FILE_PATH_CHANGES,SPDX_LICENSE_TAG,MISSING_SIGN_OFF,COMMIT_MESSAGE,COMMIT_LOG_LONG_LINE,EMAIL_SUBJECT,GIT_COMMIT_ID /in/driver/patches-draft/0009-hwmon-read-cache.patch | grep -vE '^$' | tail -n 20; echo '(strict on the 0009 patch file: code part; DEP-3 header is not a commit message)'"
+run "cd /work && perl /lib/modules/$K1/build/scripts/checkpatch.pl --no-tree --strict --ignore FILE_PATH_CHANGES,SPDX_LICENSE_TAG,MISSING_SIGN_OFF,COMMIT_MESSAGE,COMMIT_LOG_LONG_LINE,EMAIL_SUBJECT,GIT_COMMIT_ID /in/driver/patches-draft/rc3/0006-shutdown.patch | grep -vE '^$' | tail -n 20; echo '(strict on the rc3 0006 patch file)'"
+
+sec "H1 harness h9 (read cache) on rc2+0008+0009 (expect all PASS)"
+run "mkdir -p /work/h9 && cd /work/h9 && cp /in/h9/* . && sed '/^#include <linux\//d' /work/p9/driver-prototype/$MOD.c > drv9.c && gcc -O0 -g -Wall -Wextra -Wno-unused-function -Wno-unused-parameter -Wno-sign-compare -Wno-missing-field-initializers -DDRV='\"drv9.c\"' h9.c -o h9 && ./h9"
+run "cd /work/h9 && gcc -O0 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -Wno-unused-function -DDRV='\"drv9.c\"' h9.c -o h9s && ASAN_OPTIONS=detect_leaks=0 ./h9s 2>&1 | grep -E 'RESULT|ERROR|runtime error'"
+sec "H2 negative control: h9 on rc2+0008 without 0009 (expect FAIL on cache checks)"
+run "cd /work/h9 && sed '/^#include <linux\//d' /work/p8/driver-prototype/$MOD.c > drv8.c && gcc -O0 -g -Wall -Wno-unused-function -DDRV='\"drv8.c\"' h9.c -o h8n && ./h8n | grep -E '^(FAIL|RESULT)'"
+sec "H3 H8 harness (pwm/pwm_enable/restore/.shutdown, PCIe hand-back) on rc2+0008+0009 and rc3 (expect all PASS, unchanged from rc2)"
+run "cd /work/h9 && sed 's/^#include \"stubs.h\"/#include \"stubs9.h\"\nint h_kill;/' /in/h8/harness.c > h8harness.c && gcc -O0 -g -Wall -Wno-unused-function -DDRV='\"drv9.c\"' h8harness.c -o h8p9 && ./h8p9 | grep -E '^(FAIL|RESULT)'"
+run "cd /work/h9 && sed '/^#include <linux\//d' /work/rc3/driver-prototype/$MOD.c > drv3.c && gcc -O0 -g -Wall -Wno-unused-function -DDRV='\"drv3.c\"' h8harness.c -o h8r3 && ./h8r3 | grep -E '^(FAIL|RESULT)'"
+
+sec "F2/F3 negative control (known defects, same tools, $K1)"
+run "mkdir -p /work/neg && cp /in/h8/negctl/* /work/neg/ && cd /work/neg && make -C /lib/modules/$K1/build M=\$PWD C=2 modules 2>&1 | grep -E 'negctl.c:[0-9]+'"
+run "cd /work/neg && make -C /lib/modules/$K1/build M=\$PWD clean >/dev/null && make -C /lib/modules/$K1/build M=\$PWD C=2 CHECK='/opt/smatch/smatch -p=kernel' modules 2>&1 | grep -E 'negctl.c:[0-9]+'"
+
+sec "end"
+run 'date -u'
+
+################################################################################
+### appendix: h9/stubs9.h
+
+/* Extra userspace stubs for 0008 (debugfs ecram) and 0009 (read cache).
+ * Not kernel code. HZ = 1000 on the fake clock. */
+#include "stubs.h"
+extern int h_kill;
+#define current 0
+#define fatal_signal_pending(t) ((void)(t), h_kill)
+#define READ_ONCE(x) (x)
+#define WRITE_ONCE(x, v) ((x) = (v))
+static inline int mutex_lock_killable(struct mutex *m)
+{ if (h_kill) return -EINTR; mutex_lock(m); return 0; }
+#define jiffies ((unsigned long)(fake_ns / 1000000))
+#define msecs_to_jiffies(m) ((unsigned long)(m))
+#define time_before(a, b) ((long)((a) - (b)) < 0)
+struct inode { void *i_private; };
+struct file { int x; };
+struct file_operations { void *owner;
+	int (*open)(struct inode *, struct file *);
+	long (*read)(struct file *, char *, size_t, long *);
+	int (*release)(struct inode *, struct file *); };
+#define THIS_MODULE NULL
+static inline long seq_read(struct file *f, char *b, size_t n, long *p)
+{ (void)f; (void)b; (void)n; (void)p; return 0; }
+static inline int single_release(struct inode *i, struct file *f) { (void)i; (void)f; return 0; }
+static inline int single_open(struct file *f, int (*show)(struct seq_file *, void *), void *d)
+{ (void)f; (void)show; (void)d; return 0; }
+static inline int nonseekable_open(struct inode *i, struct file *f) { (void)i; (void)f; return 0; }
+
+################################################################################
+### appendix: h9/h9.c
+
+/*
+ * P9 harness: runs the driver's hwmon read path (temp*_input, fan*_input)
+ * against a fake ACPI EC (0x62/0x66, read command 0x80) and a fake PMC2
+ * (0x68/0x6c, 0xd5 + tach subcommands 0x14-0x19) in userspace and checks
+ * the 0009 cache: hits without port I/O, refresh after 1 s, errors not
+ * cached, per-input refresh, dead flag, killable lock, pwm path unchanged.
+ * Build:
+ *   sed '/^#include <linux\//d' minisforum_n5_it5571.c > drv.c
+ *   gcc -O0 -g -Wall -Wno-unused-function -DDRV='"drv.c"' h9.c -o h9
+ * Fake EC model: the EC answers every read at once; "stuck" keeps IBF set
+ * on both interfaces (every wait times out within the access budget).
+ */
+#include "stubs9.h"
+
+s64 fake_ns;
+int h_lock_violation;
+int h_kill;
+struct platform_device h_pdev;
+
+#include DRV
+
+/* ---------------- fake EC ---------------- */
+static u8 ec_ram[256];
+static u16 tach[3];
+static int ec_state, ec_obf;
+static u8 ec_out;
+static int pmc_state, pmc_obf, cur_sub;
+static u8 pmc_out;
+static int ec_reads, pmc_reads, pmc_writes;
+static int io_count, io_lock_bad, io_region_bad;
+static int stuck;
+static unsigned regions_held;
+static struct n5_data *g;
+
+void hlog(const char *fmt, ...) { (void)fmt; }
+
+static unsigned port_bit(unsigned short p)
+{
+	switch (p) {
+	case 0x62: return 1; case 0x66: return 2; case 0x68: return 4; case 0x6c: return 8;
+	}
+	return 0;
+}
+
+static void io_check(unsigned short port)
+{
+	unsigned b = port_bit(port);
+
+	io_count++;
+	if (!g || !g->lock.locked)
+		io_lock_bad++;
+	if (b && !(regions_held & b))
+		io_region_bad++;
+}
+
+static int is_write_sub(int s)
+{
+	static const int w[] = { 0x23, 0x25, 0x27, 0x29, 0x2f, 0x2c, 0x33, 0x35, 0x37, 0x39 };
+	unsigned i;
+
+	for (i = 0; i < ARRAY_SIZE(w); i++)
+		if (w[i] == s)
+			return 1;
+	return 0;
+}
+
+static u8 tach_byte(int sub)
+{
+	/* low 0x18/0x16/0x14, high 0x19/0x17/0x15 for fan1/fan2/fan3 */
+	int ch = (0x19 - sub) / 2;
+	int high = sub & 1;
+
+	return high ? tach[ch] >> 8 : tach[ch] & 0xff;
+}
+
+void h_outb(u8 v, unsigned short port)
+{
+	io_check(port);
+	if (stuck)
+		return;
+	if (port == 0x66 && v == 0x80) {
+		ec_state = 1;
+		return;
+	}
+	if (port == 0x62 && ec_state == 1) {
+		ec_out = ec_ram[v];
+		ec_obf = 1;
+		ec_state = 0;
+		ec_reads++;
+		return;
+	}
+	if (port == 0x6c && v == 0xd5) {
+		pmc_state = 1;
+		return;
+	}
+	if (port != 0x68)
+		return;
+	if (pmc_state == 1) {
+		cur_sub = v;
+		if (v >= 0x14 && v <= 0x19) {
+			pmc_out = tach_byte(v);
+			pmc_obf = 1;
+			pmc_reads++;
+			pmc_state = 0;
+		} else if (is_write_sub(v)) {
+			pmc_state = 2;
+		} else {
+			pmc_state = 0; /* action */
+		}
+	} else if (pmc_state == 2) {
+		pmc_writes++;
+		pmc_state = 0;
+	}
+}
+
+u8 h_inb(unsigned short port)
+{
+	io_check(port);
+	switch (port) {
+	case 0x66:
+		return (stuck ? 0x02 : 0) | (ec_obf ? 0x01 : 0);
+	case 0x62:
+		ec_obf = 0;
+		return ec_out;
+	case 0x6c:
+		return (stuck ? 0x02 : 0) | (pmc_obf ? 0x01 : 0);
+	case 0x68:
+		pmc_obf = 0;
+		return pmc_out;
+	}
+	return 0;
+}
+
+/* ---------------- devres / DMI / hwmon ---------------- */
+enum { R_REGION, R_ACTION, R_HWMON };
+static struct { int kind; void (*fn)(void *); void *arg; unsigned bit; } dr[32];
+static int ndr;
+static struct device hwdev;
+
+void *devm_kzalloc(struct device *d, size_t n, int gfp)
+{
+	(void)d; (void)gfp;
+	return calloc(1, n);
+}
+
+void *devm_request_region(struct device *d, unsigned long start, unsigned long n, const char *name)
+{
+	(void)d; (void)n; (void)name;
+	dr[ndr].kind = R_REGION;
+	dr[ndr].bit = port_bit(start);
+	regions_held |= dr[ndr].bit;
+	ndr++;
+	return (void *)1;
+}
+
+int devm_add_action_or_reset(struct device *d, void (*fn)(void *), void *arg)
+{
+	(void)d;
+	dr[ndr].kind = R_ACTION;
+	dr[ndr].fn = fn;
+	dr[ndr].arg = arg;
+	ndr++;
+	return 0;
+}
+
+struct device *devm_hwmon_device_register_with_info(struct device *d, const char *name,
+	void *drvdata, const struct hwmon_chip_info *ci, const void *groups)
+{
+	(void)d; (void)name; (void)ci; (void)groups;
+	hwdev.drvdata = drvdata;
+	dr[ndr++].kind = R_HWMON;
+	return &hwdev;
+}
+
+const struct dmi_system_id *h_dmi_first_match(const struct dmi_system_id *t)
+{
+	return &t[1]; /* N5 PRO / F8NAA entry */
+}
+
+int h_dmi_match(int f, const char *s)
+{
+	(void)f; (void)s;
+	return 1;
+}
+
+/* ---------------- test helpers ---------------- */
+static int fails, passes;
+
+#define CHECK(name, cond) do { \
+	if (cond) { passes++; printf("PASS  %s\n", name); } \
+	else { fails++; printf("FAIL  %s  (line %d)\n", name, __LINE__); } \
+} while (0)
+
+static void probe(void)
+{
+	ndr = 0;
+	regions_held = 0;
+	h_pdev.drvdata = NULL;
+	experimental_write = 1;
+	if (n5_probe(&h_pdev))
+		printf("probe failed\n");
+	g = h_pdev.drvdata;
+}
+
+static void unbind(void)
+{
+	int i;
+
+	for (i = ndr - 1; i >= 0; i--) {
+		if (dr[i].kind == R_REGION)
+			regions_held &= ~dr[i].bit;
+		else if (dr[i].kind == R_ACTION)
+			dr[i].fn(dr[i].arg);
+	}
+	ndr = 0;
+}
+
+static int rt(int ch, long *v) { return n5_read(&hwdev, hwmon_temp, hwmon_temp_input, ch, v); }
+static int rf(int ch, long *v) { return n5_read(&hwdev, hwmon_fan, hwmon_fan_input, ch, v); }
+static void ms(int n) { fake_ns += (s64)n * 1000000LL; }
+
+int main(void)
+{
+	long v, v2;
+	int ret, n, i, ok;
+	s64 t0;
+
+	fake_ns = 5000000000LL; /* 5 s after boot */
+	memset(ec_ram, 0, sizeof(ec_ram));
+	ec_ram[0x09] = 45; ec_ram[0x04] = 33; ec_ram[0x05] = 30; ec_ram[0x06] = 22;
+	tach[0] = 2000; tach[1] = 2200; tach[2] = 1240;
+
+	printf("== C1 temp1: first read from EC, second from cache, refresh after 1 s\n");
+	probe();
+	CHECK("C1 probe does no port I/O", io_count == 0);
+	n = ec_reads;
+	CHECK("C1 temp1 = 45000", rt(0, &v) == 0 && v == 45000);
+	CHECK("C1 one EC read", ec_reads == n + 1);
+	ec_ram[0x09] = 50;
+	i = ec_reads;
+	n = io_count;
+	ms(999);
+	CHECK("C1 999 ms later: cached 45000", rt(0, &v) == 0 && v == 45000);
+	CHECK("C1 cache hit: no port I/O", io_count == n);
+	ms(2);
+	CHECK("C1 1001 ms later: refreshed 50000", rt(0, &v) == 0 && v == 50000);
+	CHECK("C1 refresh: one EC read", ec_reads == i + 1);
+
+	printf("== C2 per input: temp2 not served from temp1, fan1 own cache\n");
+	n = ec_reads;
+	CHECK("C2 temp2 = 33000", rt(1, &v) == 0 && v == 33000);
+	CHECK("C2 temp2 did its own EC read", ec_reads == n + 1);
+	n = pmc_reads;
+	CHECK("C2 fan1 = 2000", rf(0, &v) == 0 && v == 2000);
+	CHECK("C2 fan1: 3 PMC2 reads (high, low, high)", pmc_reads == n + 3);
+	tach[0] = 2100;
+	n = io_count;
+	CHECK("C2 fan1 cached 2000", rf(0, &v) == 0 && v == 2000);
+	CHECK("C2 fan1 cache hit: no port I/O", io_count == n);
+	n = pmc_reads;
+	CHECK("C2 fan2 = 2200 (own refresh)", rf(1, &v) == 0 && v == 2200 && pmc_reads == n + 3);
+	ms(1001);
+	CHECK("C2 fan1 refreshed 2100", rf(0, &v) == 0 && v == 2100);
+
+	printf("== C3 flood: 10000 reads of fan1 and temp1 within 1 s\n");
+	ms(1001);
+	n = pmc_reads;
+	i = ec_reads;
+	ok = 1;
+	for (ret = 0; ret < 10000; ret++) {
+		if (rf(0, &v) || v != 2100 || rt(0, &v2) || v2 != 50000)
+			ok = 0;
+		fake_ns += 50000; /* 50 us per pair: 0.5 s in total */
+	}
+	CHECK("C3 all values correct", ok);
+	CHECK("C3 fan1: one refresh (3 PMC2 reads)", pmc_reads == n + 3);
+	CHECK("C3 temp1: one refresh (1 EC read)", ec_reads == i + 1);
+
+	printf("== C4 errors are not cached\n");
+	ms(1001);
+	stuck = 1;
+	t0 = fake_ns;
+	ret = rt(0, &v);
+	CHECK("C4 stuck EC: temp1 -ETIMEDOUT", ret == -ETIMEDOUT);
+	CHECK("C4 within access budget (<= 1.02 s)", fake_ns - t0 <= 1020000000LL);
+	CHECK("C4 stale value not served after failed refresh", rt(0, &v) == -ETIMEDOUT);
+	stuck = 0;
+	ec_ram[0x09] = 47;
+	n = ec_reads;
+	CHECK("C4 EC back: next read goes to the EC (47000)", rt(0, &v) == 0 && v == 47000 && ec_reads == n + 1);
+	stuck = 1;
+	ms(1001);
+	CHECK("C4 fan1 stuck -> -ETIMEDOUT", rf(0, &v) == -ETIMEDOUT);
+	stuck = 0;
+	n = pmc_reads;
+	CHECK("C4 fan1 retried at once", rf(0, &v) == 0 && v == 2100 && pmc_reads > n);
+
+	printf("== C6 sentinels: cached raw, still -ENODATA\n");
+	ms(1001);
+	ec_ram[0x05] = 0xff;
+	n = ec_reads;
+	CHECK("C6 temp3 0xff -> -ENODATA", rt(2, &v) == -ENODATA && ec_reads == n + 1);
+	CHECK("C6 temp3 again -> -ENODATA from cache", rt(2, &v) == -ENODATA && ec_reads == n + 1);
+	tach[2] = 0xffff;
+	n = pmc_reads;
+	CHECK("C6 fan3 0xffff -> -ENODATA", rf(2, &v) == -ENODATA && pmc_reads == n + 3);
+	CHECK("C6 fan3 again -> -ENODATA from cache", rf(2, &v) == -ENODATA && pmc_reads == n + 3);
+	tach[2] = 0;
+	ms(1001);
+	CHECK("C6 fan3 0 rpm is a value (0)", rf(2, &v) == 0 && v == 0);
+	ec_ram[0x05] = 30;
+
+	printf("== C7 killable: a killed reader gets -EINTR, no I/O, no state\n");
+	ms(1001);
+	h_kill = 1;
+	n = io_count;
+	CHECK("C7 temp1 -EINTR", rt(0, &v) == -EINTR);
+	CHECK("C7 fan1 -EINTR", rf(0, &v) == -EINTR);
+	CHECK("C7 no port I/O", io_count == n);
+	CHECK("C7 lock free afterwards", !g->lock.locked);
+	h_kill = 0;
+
+	printf("== C8 pwm path unchanged: write, cached pwm read, fan cache not invalidated\n");
+	CHECK("C8 fan1 refresh", rf(0, &v) == 0 && v == 2100);
+	n = pmc_writes;
+	CHECK("C8 pwm1_enable=1 ok", n5_write(&hwdev, hwmon_pwm, hwmon_pwm_enable, 0, 1) == 0);
+	CHECK("C8 pwm1=128 ok", n5_write(&hwdev, hwmon_pwm, hwmon_pwm_input, 0, 128) == 0);
+	CHECK("C8 pwm writes reached the EC", pmc_writes > n);
+	CHECK("C8 pwm1 reads 128", n5_read(&hwdev, hwmon_pwm, hwmon_pwm_input, 0, &v) == 0 && v == 128);
+	tach[0] = 1500;
+	CHECK("C8 fan1 still cached (2100) within 1 s after the write", rf(0, &v) == 0 && v == 2100);
+	ms(1001);
+	CHECK("C8 fan1 1500 after 1 s", rf(0, &v) == 0 && v == 1500);
+
+	printf("== C9 dead: after .shutdown cached reads give -ENODEV, no I/O\n");
+	CHECK("C9 temp1 cached before shutdown", rt(0, &v) == 0);
+	n5_shutdown(&h_pdev);
+	n = io_count;
+	CHECK("C9 temp1 -ENODEV", rt(0, &v) == -ENODEV);
+	CHECK("C9 fan1 -ENODEV", rf(0, &v) == -ENODEV);
+	CHECK("C9 no port I/O after shutdown", io_count == n);
+	unbind();
+
+	printf("== C10 rebind: cache starts empty\n");
+	probe();
+	n = ec_reads;
+	CHECK("C10 temp1 read goes to the EC", rt(0, &v) == 0 && ec_reads == n + 1);
+	n = io_count;
+	unbind();
+	CHECK("C10 unbind: no I/O (nothing touched)", io_count == n);
+	n = io_count;
+	CHECK("C10 read after unbind -> -ENODEV", rt(0, &v) == -ENODEV && io_count == n);
+
+	printf("== global\n");
+	CHECK("every port I/O under data->lock", io_lock_bad == 0);
+	CHECK("every port I/O inside reserved regions", io_region_bad == 0);
+	CHECK("no mutex misuse", h_lock_violation == 0);
+	printf("RESULT %d pass, %d fail\n", passes, fails);
+	return fails ? 1 : 0;
+}
+
+(h9/stubs.h = audit-20261016/H8-raw/src/stubs.h, h8/harness.c = H8-raw/src/harness.c, h8/negctl = H8-raw/src/negctl; unchanged copies)

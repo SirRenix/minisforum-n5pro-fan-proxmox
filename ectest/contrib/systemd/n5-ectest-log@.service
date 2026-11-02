@@ -1,0 +1,45 @@
+# n5-ectest long-term log, one instance per run id:
+#   systemctl enable --now n5-ectest-log@<run-id>.service n5-ectest-check@<run-id>.timer
+# After the end of the run: systemctl disable n5-ectest-log@<run-id>.service n5-ectest-check@<run-id>.timer
+# Read-only: sysfs/debugfs reads, journalctl, systemctl show. The sandbox
+# keeps sysfs read-only and has no CAP_SYS_RAWIO and no /dev/port.
+[Unit]
+Description=n5-ectest long-term log %i (read-only, F8b)
+Documentation=file:///usr/local/share/doc/n5-ectest/README.md
+After=multi-user.target
+OnFailure=n5-ectest-failed@%i.service
+# a unit that fails at every start (disk full) stops after 10 starts an hour
+StartLimitIntervalSec=1h
+StartLimitBurst=10
+
+[Service]
+Type=notify
+NotifyAccess=main
+WatchdogSec=180
+# optional: N5ECTEST_LOG_ARGS="--mail-to root --duration 7d"
+EnvironmentFile=-/etc/n5-ectest/log.env
+ExecStart=/usr/local/bin/n5-ectest log --run-id %i --out /var/lib/n5-ectest $N5ECTEST_LOG_ARGS
+Restart=on-failure
+RestartSec=30
+StateDirectory=n5-ectest
+StateDirectoryMode=0750
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=128M
+CPUQuota=20%
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/n5-ectest -/var/spool/postfix
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+CapabilityBoundingSet=~CAP_SYS_RAWIO CAP_SYS_MODULE CAP_SYS_BOOT CAP_SYS_TIME
+DevicePolicy=closed
+DeviceAllow=/dev/kmsg r
+LogLevelMax=notice
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=n5-ectest outside check of log run %i every 5 min
+
+[Timer]
+OnActiveSec=5min
+OnUnitActiveSec=5min
+AccuracySec=10s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

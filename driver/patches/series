@@ -1,0 +1,12 @@
+# Patch series applied by packaging/build-deb.sh to a copy of ../upstream/,
+# in this order, with: patch -p1 --forward --no-backup-if-mismatch --fuzz=0
+# One file name per line (relative to this directory); "#" lines and blank
+# lines are ignored. Format and rules: ../README.md.
+# Empty = the package ships upstream unchanged (FORK_VERSION must be empty).
+0001-downstream-marking.patch
+0002-write-allowlist.patch
+0003-debugfs-dcr.patch
+0004-remove-ordering.patch
+0005-timeout-budget.patch
+0006-shutdown.patch
+0007-abi-fixes.patch

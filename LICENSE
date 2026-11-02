@@ -1,4 +1,4 @@
-minisforum-n5pro-fan-proxmox - IT5571 fan control scripts and validation data for the Minisforum N5 Pro
+minisforum-n5pro-fan-proxmox - IT5571 fan driver DKMS package, patches and validation tools for the Minisforum N5 Pro
 Copyright (C) 2026 SirRenix
 
 The scripts and documentation in this repository are free software; you can

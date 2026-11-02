@@ -1,7 +1,39 @@
-# Driver source packaged by packaging/build-deb.sh (sourced as shell).
-# A new upstream tag: UPSTREAM_TAG + UPSTREAM_COMMIT + PACKAGE_VERSION in
-# deploy/dkms.conf, PKG_REV back to 1. A packaging-only change: PKG_REV + 1.
+# Driver source packaged by packaging/build-deb.sh (sourced as shell, through
+# packaging/version.sh, which also test-deb.sh and the release workflow use).
+#
+# The source is driver/upstream/: a byte-identical copy of UPSTREAM_COMMIT,
+# checked against driver/upstream/SHA256SUMS at build time and against GitHub
+# in CI. Our changes are the patch series driver/patches/ (driver/README.md).
+#
+# Version mapping (computed by packaging/version.sh):
+#
+#   FORK_VERSION FORK_RC  git tag         Debian version   DKMS PACKAGE_VERSION  MODULE_VERSION
+#   (empty)      (empty)  v0.2.1-1        0.2.1-1          0.2.1                 0.2.0 (upstream, as is)
+#   sr1          rc1      v0.2.1-sr1-rc1  0.2.1+sr1~rc1-1  0.2.1+sr1~rc1         0.2.1+sr1~rc1
+#   sr1          (empty)  v0.2.1-sr1      0.2.1+sr1-1      0.2.1+sr1             0.2.1+sr1
+#
+# - FORK_VERSION empty = legacy scheme: unchanged upstream, driver/patches/series
+#   must be empty, tag v<upstream>-<PKG_REV>. A packaging-only change: PKG_REV + 1.
+# - FORK_VERSION srN = our downstream revision N on this upstream base ("sr" =
+#   SirRenix). Every change (driver or packaging) is a new srN or rcN; PKG_REV
+#   stays 1. FORK_RC rcN marks a pre-release (Debian "~" sorts it before the
+#   final srN; the GitHub release is marked as pre-release).
+# - Order is one-way: sr1~rc1 < sr1~rc2 < sr1 < sr2~rc1 < sr2. After a final
+#   srN the next version is sr(N+1)[~rcM], never srN~rcM again (it would sort
+#   below srN and apt would not upgrade).
+# - With FORK_VERSION set, the patch series must make MODULE_VERSION equal the
+#   DKMS PACKAGE_VERSION (patch 0001), so rc and final differ in modinfo;
+#   build-deb.sh checks it.
+# - A new upstream base: import it into driver/upstream/ (driver/README.md),
+#   set UPSTREAM_TAG + UPSTREAM_COMMIT, PACKAGE_VERSION in deploy/dkms.conf to
+#   the upstream version, FORK_VERSION back to sr1 (or empty without patches),
+#   PKG_REV back to 1.
+# - deploy/dkms.conf is the template: build-deb.sh writes PACKAGE_VERSION into
+#   the packaged copy. Its own PACKAGE_VERSION stays the upstream version,
+#   because deploy/install.sh (hand path, unpatched upstream clone) uses it.
 UPSTREAM_REPO=https://github.com/ltdstudio/minisforum-n5-it5571.git
 UPSTREAM_TAG=v0.2.1
 UPSTREAM_COMMIT=feb6d9a5fbf6662a52fa7496009537945d2b30b0
 PKG_REV=1
+FORK_VERSION=sr1
+FORK_RC=

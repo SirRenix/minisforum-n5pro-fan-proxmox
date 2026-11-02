@@ -1,0 +1,18 @@
+# n5-fangov sources copied into go/n5 and ectest on 2026-10-10 (phase 1 of TESTKIT-DESIGN 2).
+# ectest/tools/drift-check.sh fails when one of them changed in n5-fangov: port the change.
+47630edc7d47475aac96c64cc45fc9d8337cc82bd39ccb1f9c00302f30ae122d  internal/n5driver/n5driver.go
+b12dc944bd9e8c9bfc956449f03f20fdfb05759f4aea8d9c809fe6f6ccdf2ba8  internal/n5driver/n5driver_test.go
+99cb2b6134fda12d65b4292706de93416be8f4cf4a6e0ca46805969c63a8dc80  internal/hwstatus/hwstatus.go
+145220f5ae7439364c0768cf6611017930ddaf7d199da618dab767546b77ddcb  internal/hwstatus/hwstatus_test.go
+6afb64c743902eabfb11daa672c089880b938e2b9a7d415e83dcab1d1d7487ce  internal/hwstatus/results.tsv
+b9b62ee0d96ef82c3db82e029d959d32328698ee0656fd6826b89f84f256276d  internal/validate/eval.go
+536c07042198861f61daf3f7b4225f2157616290e1131345c577d5ef738a5972  internal/validate/runner.go
+a81d6a8cc7c395f12302de167d6cbd40caf77c943cdf4c6062165bbfd93b4d08  internal/validate/bundle.go
+75693fa91f59e2449366361e70b896d13af50201027cd7ab6cca75b37b48c8f2  internal/validate/sim.go
+4f449fc67c585bbc521f8a56471f832a932712c5df46a81e145d2b156aa956be  internal/validate/replay.go
+d538710adfd663acb0fbd8fdff316eed94226e83fe7cdd7872777c67948e4a59  internal/validate/validate_test.go
+ff7985df53ee58d0dbc007437682f5e3d6ff482961361265545048360c4edcdc  cmd/n5-fangov/validate.go
+0c01c250cf92fd33ffc0ced524d474da0867b1a7386f26cae1b30550a7dbbe6e  cmd/n5-fangov/session.go
+08dd558957beb8c78a078baccbe7be45eae6f60f20b0a39381ef45ec7447b355  cmd/n5-fangov/identify.go
+89bc44b57a272d164be2e1b28ab2efc2b1ab517f4a61d518b740e0530d5047ac  cmd/n5-fangov/writerlock_unix.go
+6c21ce63ebb0fce8e1d3b7f5002ee8e0fe222cfef384ac44fd4d1d56f0bd3d0a  tools/gen-hwstatus.sh

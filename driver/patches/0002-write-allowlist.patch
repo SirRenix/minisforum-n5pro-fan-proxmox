@@ -1,0 +1,181 @@
+Description: Gate PWM writes on a board allowlist and the DMI system vendor
+ Upstream enabled writes for every validated profile and, with
+ experimental_write=1, for every experimental profile and for force-loaded
+ unknown systems (c:585-587). The package sets experimental_write=1, so
+ force=1 on any other machine opened PMC2 writes to an unknown EC (A2,
+ critical). The DMI table matches product and board name only, no vendor
+ (A1, critical by impact). The EC command set and the channel map are
+ board firmware, not a property of the IT5571 chip, so the same chip on
+ another board is no reason to write.
+ .
+ Writes are now enabled only if DMI sys_vendor is exactly "Micro Computer
+ (HK) Tech Limited" (measured on the reference N5 Pro, befunde/raw/
+ 01-baseline-20260914-160216.txt:10) AND either the profile is validated
+ upstream (N5/F8NAA) or experimental_write=1 and the profile is in the
+ downstream write allowlist, which holds only N5 PRO/F8NAA. A force-loaded
+ unknown system is always read-only, experimental_write is ignored there.
+ N5 Air/F8NAB is read-only. The probe logs why writes are off.
+ .
+ The N5 PRO/F8NAA DMI entry additionally matches DMI_SYS_VENDOR exactly
+ (the measured value), so an N5 PRO/F8NAA board from another vendor does
+ not bind without force=1, and then only read-only. The N5 and N5 Air
+ entries stay as upstream, without vendor, because their vendor string is
+ not measured: they still bind read-only on a vendor mismatch, and sensor
+ reads still send EC read commands there. Consequence for the
+ upstream-validated N5: if its sys_vendor differs from the N5 Pro value,
+ it binds read-only (safe direction, documented in the README).
+ .
+ Resolves A1 (target board: vendor in the match and in the write gate;
+ N5/N5 Air: vendor in the write gate only, residual documented), A2, A11
+ (force behaves as documented), A13 (behaviour now matches the text from
+ 0001), the A3 note (validated N5 writes without opt-in only with the
+ vendor match). Mitigates A9: the module alias is still a substring glob
+ and modules-load.d still loads it everywhere the package is installed,
+ but a wrong binding can no longer write.
+ .
+ Tested: build/static analysis as 0001; modinfo alias of the N5 PRO entry
+ contains svnMicroComputer(HK)TechLimited. Not tested on hardware: binding
+ and dmesg on the N5 Pro with experimental_write=1 (writes on) and =0
+ (read-only, pwm* hidden).
+Author: SirRenix <7069603+SirRenix@users.noreply.github.com>
+Origin: vendor
+Forwarded: not-needed
+Last-Update: 2026-10-09
+---
+--- a/driver-prototype/minisforum_n5_it5571.c
++++ b/driver-prototype/minisforum_n5_it5571.c
+@@ -23,6 +23,13 @@
+  * Modified 2026-10-17 by SirRenix for the Debian/Proxmox DKMS package
+  * minisforum-n5-it5571-dkms; changes: driver/patches/ in
+  * https://github.com/SirRenix/minisforum-n5pro-fan-proxmox
++ *
++ * Downstream gates: the N5 Pro DMI entry also requires DMI sys_vendor
++ * "Micro Computer (HK) Tech Limited". PWM writes need that vendor and
++ * either the upstream-validated N5 profile or, with experimental_write=1,
++ * a board in the downstream write allowlist (N5 Pro/F8NAA). Every other
++ * system, force=1 included, is read-only: no PWM writes, but sensor reads
++ * still send EC read commands.
+  */
+ 
+ #include <linux/delay.h>
+@@ -52,6 +59,13 @@
+ #define N5_FAN_CHANNELS         4
+ #define N5_TEMP_CHANNELS        4
+ 
++/*
++ * Writes are gated on the system vendor in addition to the product/board
++ * match: the EC command set and channel map are board firmware, not a
++ * property of the IT5571 chip. Value measured on an N5 Pro (BIOS 1.05).
++ */
++#define N5_SYS_VENDOR           "Micro Computer (HK) Tech Limited"
++
+ static bool force;
+ module_param(force, bool, 0444);
+ MODULE_PARM_DESC(force,
+@@ -65,6 +79,8 @@
+ struct n5_board_profile {
+ 	const char *name;
+ 	bool validated;
++	/* Downstream write allowlist: experimental_write=1 takes effect. */
++	bool write_allowlist;
+ };
+ 
+ struct n5_data {
+@@ -496,6 +512,7 @@
+ static struct n5_board_profile n5_pro_f8naa = {
+ 	.name = "Minisforum N5 Pro / F8NAA",
+ 	.validated = false,
++	.write_allowlist = true,
+ };
+ 
+ static struct n5_board_profile n5_air_f8nab = {
+@@ -513,8 +530,14 @@
+ 		.driver_data = &n5_f8naa,
+ 	},
+ 	{
++		/*
++		 * Vendor measured on the reference host. The N5 and N5 Air
++		 * entries stay as upstream (vendor not measured); writes there
++		 * still need the vendor, see n5_write_block_reason().
++		 */
+ 		.ident = "Minisforum N5 Pro / F8NAA (experimental)",
+ 		.matches = {
++			DMI_EXACT_MATCH(DMI_SYS_VENDOR, N5_SYS_VENDOR),
+ 			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "N5 PRO"),
+ 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "F8NAA"),
+ 		},
+@@ -541,11 +564,33 @@
+ };
+ MODULE_DEVICE_TABLE(dmi, n5_dmi_table);
+ 
++static const char n5_block_no_optin[] = "experimental_write=0";
++
++/*
++ * Returns NULL if PWM writes may be enabled, otherwise the reason why not.
++ * A force-loaded unknown system is always read-only.
++ */
++static const char *n5_write_block_reason(const struct n5_board_profile *profile)
++{
++	if (!profile)
++		return "unknown system, force=1 binds read-only";
++	if (!dmi_match(DMI_SYS_VENDOR, N5_SYS_VENDOR))
++		return "DMI sys_vendor is not \"" N5_SYS_VENDOR "\"";
++	if (profile->validated)
++		return NULL;
++	if (!profile->write_allowlist)
++		return "board is not in the downstream write allowlist";
++	if (!experimental_write)
++		return n5_block_no_optin;
++	return NULL;
++}
++
+ static int n5_probe(struct platform_device *pdev)
+ {
+ 	struct n5_data *data;
+ 	const struct dmi_system_id *match;
+ 	const struct n5_board_profile *profile = NULL;
++	const char *write_block;
+ 	int i;
+ 
+ 	match = dmi_first_match(n5_dmi_table);
+@@ -587,9 +632,8 @@
+ 	}
+ 
+ 	mutex_init(&data->lock);
+-	data->write_enabled = profile && profile->validated;
+-	if (!data->write_enabled && experimental_write)
+-		data->write_enabled = true;
++	write_block = n5_write_block_reason(profile);
++	data->write_enabled = !write_block;
+ 	for (i = 0; i < N5_PWM_CHANNELS; i++) {
+ 		data->pwm[i] = 255;
+ 		data->pwm_enable[i] = 2;
+@@ -606,17 +650,23 @@
+ 		return PTR_ERR(data->hwmon_dev);
+ 	}
+ 
+-	if (profile && profile->validated) {
++	if (profile && data->write_enabled && profile->validated) {
+ 		dev_info(&pdev->dev, "%s: validated profile; PWM writes enabled\n",
+ 			 profile->name);
+-	} else if (data->write_enabled) {
++	} else if (profile && data->write_enabled) {
+ 		dev_warn(&pdev->dev,
+ 			 "%s: EXPERIMENTAL PWM WRITES ENABLED; stop immediately if a fan stops, runs unexpectedly, a channel is mismatched, or temperatures become abnormal\n",
+-			 profile ? profile->name : "force-loaded unknown system");
+-	} else {
++			 profile->name);
++	} else if (profile && write_block == n5_block_no_optin) {
+ 		dev_warn(&pdev->dev,
+ 			 "%s: experimental read-only mode; PWM nodes hidden (set experimental_write=1 only after checking temperature and RPM data)\n",
+-			 profile ? profile->name : "force-loaded unknown system");
++			 profile->name);
++	} else {
++		dev_warn(&pdev->dev,
++			 "%s: read-only mode, PWM nodes hidden: %s%s\n",
++			 profile ? profile->name : "force-loaded unknown system",
++			 write_block,
++			 experimental_write ? " (experimental_write=1 ignored)" : "");
+ 	}
+ 	dev_info(&pdev->dev,
+ 		 "registered 4 fan and 4 temperature channels%s\n",

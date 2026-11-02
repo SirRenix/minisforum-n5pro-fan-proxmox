@@ -1,0 +1,11 @@
+[Unit]
+Description=n5-validation: sample every 30 s
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=30s
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

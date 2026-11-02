@@ -1,0 +1,10 @@
+#!/bin/bash
+# n5_fan stub: logs the call; "rpm" prints three tach values
+set -eu
+# shellcheck source=../fakek.sh
+. "$FK_TEST_DIR/fakek.sh"
+fk_log "n5_fan $* state=$(fk_state)"
+[ "${F8A_TEST_TOOLFAIL:-}" != n5_fan ] || { echo "n5_fan: read timed out (injected)" >&2; exit 1; }
+[ "${F8A_TEST_SLOWTOOL:-0}" = 0 ] || { sleep "$F8A_TEST_SLOWTOOL"; fk_log "n5_fan done state=$(fk_state)"; }
+[ "${1:-}" = rpm ] || { echo "n5_fan stub: only rpm is simulated" >&2; exit 2; }
+printf 'TACH1: 2003 RPM\nTACH2: 2236 RPM\nTACH3: 1656 RPM\n'

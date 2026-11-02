@@ -1,0 +1,21 @@
+Upstream source of the minisforum_n5_it5571 driver, byte-identical to the
+upstream commit below. Do not edit files here; changes go to ../patches
+(see ../README.md). SHA256SUMS is checked by packaging/build-deb.sh and the
+CI compares these files with the commit on GitHub.
+
+repo:    https://github.com/ltdstudio/minisforum-n5-it5571
+tag:     v0.2.1 (annotated tag object 1614f39ff2b69b2a07a82bf4806e5027611928d3)
+commit:  feb6d9a5fbf6662a52fa7496009537945d2b30b0
+fetched: 2026-10-08, via the GitHub contents API (?ref=feb6d9a5fbf6662a52fa7496009537945d2b30b0),
+         base64-decoded to bytes; git blob ids checked against the upstream tree
+license: GPL-2.0-only (SPDX header of minisforum_n5_it5571.c; LICENSE, LICENSES/)
+
+files (upstream path = path here):
+  driver-prototype/minisforum_n5_it5571.c   blob 28484eba79bac7b5e65efa85cc48f27a87d5637e
+  driver-prototype/Makefile                 blob e98644b049b5029e1b50fad39c92c6bbe2798a5c
+  LICENSE                                   blob ea8e93dc44bc462a2be34e484432cf2b9ec88527
+  LICENSES/GPL-2.0                          blob ea8e93dc44bc462a2be34e484432cf2b9ec88527
+  LICENSES/KERNEL-COPYING                   blob a635a38ef9405fdfcfe97f3a435393c1e9cae971
+
+Not imported (not needed to build or license the module): Unraid plugin,
+research-tools/, prebuilt .ko, docs, install scripts.

@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # Installation test of the DKMS package in a Debian 13 container (CI and
 # tools): a hand installation of 0.2.0 (deploy/install.sh as of 09/2026) is
-# taken over, the module is built for the installed headers, removal cleans
-# up. Run as root in debian:trixie from the repo root, after build-deb.sh.
+# taken over, the module is built for the installed headers, an active
+# regulator is stopped before 'dkms remove' and started after the load
+# (stub systemctl); a stale restart record, an already loaded module, an
+# early postinst failure and an aborted upgrade (new preinst fails) are
+# covered; removal cleans up. Run as root in debian:trixie from the repo
+# root, after build-deb.sh.
 set -euo pipefail
 PKG=minisforum-n5-it5571
-. packaging/UPSTREAM
-VER=${UPSTREAM_TAG#v}
-DEB=$(ls dist/${PKG}-dkms_*_all.deb)
+. packaging/version.sh
+DEB=dist/${PKG}-dkms_${DEBVER}_all.deb
+[ -f "$DEB" ] || { echo "FAIL: $DEB missing (packaging/build-deb.sh)" >&2; exit 1; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 export DEBIAN_FRONTEND=noninteractive
@@ -41,15 +45,162 @@ grep -q 'experimental_write=1' /usr/lib/modprobe.d/$PKG.conf || fail "modprobe o
 grep -qx "$PKG" /usr/lib/modules-load.d/$PKG.conf 2>/dev/null || grep -qx 'minisforum_n5_it5571' /usr/lib/modules-load.d/$PKG.conf || fail "modules-load entry missing"
 modinfo -k "$K" minisforum_n5_it5571 | grep -E '^(filename|version):'
 [ "$(cat /usr/src/$PKG-$VER/UPSTREAM_COMMIT)" = "$UPSTREAM_COMMIT" ] || fail "UPSTREAM_COMMIT"
+if [ -z "$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' driver/patches/series)" ]; then
+	for f in minisforum_n5_it5571.c Makefile; do
+		want=$(sha256sum <driver/upstream/driver-prototype/$f | cut -d' ' -f1)
+		got=$(sha256sum </usr/src/$PKG-$VER/$f | cut -d' ' -f1)
+		[ "$got" = "$want" ] || fail "/usr/src/$PKG-$VER/$f differs from driver/upstream (series is empty)"
+		echo "$f = driver/upstream ($got)"
+	done
+fi
 
-echo "--- an edited /etc copy is kept on reinstall"
+echo "--- stubs: systemctl, dkms and modprobe log their calls (update order, E7)"
+# no systemd in the container: a stub systemctl keeps fake unit states in
+# $UNITS_DIR; dkms and modprobe are wrapped to log the order. modprobe of the
+# module itself succeeds without loading anything (no N5 Pro here).
+CALLS=/tmp/e7-calls
+UNITS_DIR=/tmp/e7-units
+STATE=/run/$PKG-dkms.restart
+REAL_DKMS=$(command -v dkms)
+REAL_MODPROBE=$(command -v modprobe)
+# apt runs dpkg with DPkg::Path (default without /usr/local/sbin)
+STUBPATH=(-o DPkg::Path=/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin)
+mkdir -p "$UNITS_DIR"
+cat >/usr/local/sbin/systemctl <<EOF
+#!/bin/sh
+echo "systemctl \$*" >>$CALLS
+[ "\$1" = is-active ] && [ "\$2" = --quiet ] && set -- is-active "\$3"
+case "\$1" in
+is-active) [ -e "$UNITS_DIR/\$2" ] ;;
+stop) rm -f "$UNITS_DIR/\$2" ;;
+start) touch "$UNITS_DIR/\$2" ;;
+*) exit 0 ;;
+esac
+EOF
+cat >/usr/local/sbin/dkms <<EOF
+#!/bin/sh
+echo "dkms \$*" >>$CALLS
+[ "\$1" = add ] && [ -e /tmp/e7-fail-add ] && exit 1
+exec $REAL_DKMS "\$@"
+EOF
+cat >/usr/local/sbin/modprobe <<EOF
+#!/bin/sh
+echo "modprobe \$*" >>$CALLS
+[ "\$*" = minisforum_n5_it5571 ] && exit 0
+exec $REAL_MODPROBE "\$@"
+EOF
+chmod 0755 /usr/local/sbin/systemctl /usr/local/sbin/dkms /usr/local/sbin/modprobe
+# line of the first/last call matching an ERE, 0 if none
+first() { grep -nE "$1" "$CALLS" | head -1 | cut -d: -f1 | grep . || echo 0; }
+last() { grep -nE "$1" "$CALLS" | tail -1 | cut -d: -f1 | grep . || echo 0; }
+
+echo "--- an edited /etc copy is kept on reinstall; an active n5-fangov is stopped and started around it"
 echo 'options minisforum_n5_it5571 experimental_write=1 force=0' >/etc/modprobe.d/$PKG.conf
-apt-get install -y --reinstall "./$DEB" 2>&1 | grep -E "^$PKG" || true
+: >"$CALLS"
+touch "$UNITS_DIR/n5-fangov.service"
+apt-get "${STUBPATH[@]}" install -y --reinstall "./$DEB" 2>&1 | grep -E "^$PKG" || true
 [ -e /etc/modprobe.d/$PKG.conf ] || fail "edited /etc copy removed"
 dkms status -m $PKG | grep -q "$VER, $K, .*: installed" || fail "not installed after reinstall"
+cat "$CALLS"
+stop=$(first '^systemctl stop n5-fangov\.service$')
+rm_=$(first "^dkms remove -m $PKG ")
+inst=$(last "^dkms install -m $PKG ")
+load=$(last '^modprobe minisforum_n5_it5571$')
+start=$(first '^systemctl start n5-fangov\.service$')
+echo "order: stop=$stop remove=$rm_ install=$inst load=$load start=$start"
+[ "$stop" -gt 0 ] || fail "n5-fangov not stopped on upgrade"
+[ "$rm_" -gt "$stop" ] || fail "dkms remove not after stopping n5-fangov"
+[ "$inst" -gt "$rm_" ] || fail "dkms install not after dkms remove"
+[ "$load" -gt "$inst" ] || fail "module not loaded after dkms install"
+[ "$start" -gt "$load" ] || fail "n5-fangov not started after the module load"
+[ "$(grep -c '^systemctl stop ' "$CALLS")" -eq 1 ] || fail "stopped more than n5-fangov"
+[ "$(grep -c '^systemctl start ' "$CALLS")" -eq 1 ] || fail "started more than n5-fangov"
+[ -e "$UNITS_DIR/n5-fangov.service" ] || fail "n5-fangov not active after upgrade"
+[ -e "$STATE" ] && fail "$STATE left behind"
 
-echo "--- remove"
-apt-get remove -y ${PKG}-dkms 2>&1 | grep -E "^$PKG" || true
+echo "--- inactive regulator: nothing is started"
+: >"$CALLS"
+rm -f "$UNITS_DIR"/*
+apt-get "${STUBPATH[@]}" install -y --reinstall "./$DEB" 2>&1 | grep -E "^$PKG" || true
+grep -qE '^systemctl (stop|start) ' "$CALLS" && fail "stop/start without an active regulator"
+[ -e "$STATE" ] && fail "$STATE left behind"
+
+echo "--- a stale record from an interrupted sequence does not start a stopped regulator"
+: >"$CALLS"
+rm -f "$UNITS_DIR"/*
+echo n5-fangov.service >"$STATE"
+apt-get "${STUBPATH[@]}" install -y --reinstall "./$DEB" 2>&1 | grep -E "^$PKG" || true
+grep -qE '^systemctl start ' "$CALLS" && fail "stale $STATE started a regulator"
+[ -e "$STATE" ] && fail "$STATE left behind"
+
+echo "--- module already loaded (reference host case): no modprobe of the module, regulator started again"
+cat >/usr/local/sbin/lsmod <<EOF
+#!/bin/sh
+echo "Module                  Size  Used by"
+echo "minisforum_n5_it5571   16384  0"
+EOF
+chmod 0755 /usr/local/sbin/lsmod
+: >"$CALLS"
+touch "$UNITS_DIR/n5-fangov.service"
+out=$(apt-get "${STUBPATH[@]}" install -y --reinstall "./$DEB" 2>&1 | grep -E "^$PKG" || true)
+echo "$out"
+echo "$out" | grep -q "module already loaded" || fail "already-loaded branch not taken"
+grep -q '^modprobe minisforum_n5_it5571$' "$CALLS" && fail "module loaded again although lsmod lists it"
+[ "$(first '^systemctl start n5-fangov\.service$')" -gt "$(last "^dkms install -m $PKG ")" ] || fail "n5-fangov not started after the build (already loaded)"
+[ -e "$UNITS_DIR/n5-fangov.service" ] || fail "n5-fangov not active (already loaded)"
+
+echo "--- postinst fails early (dkms add): the regulator is started again, then dpkg --configure repairs"
+: >"$CALLS"
+touch /tmp/e7-fail-add
+apt-get "${STUBPATH[@]}" install -y --reinstall "./$DEB" >/tmp/e7-early.log 2>&1 && fail "postinst did not fail with a failing dkms add"
+grep -E "^$PKG" /tmp/e7-early.log || true
+grep -q '^systemctl start n5-fangov\.service$' "$CALLS" || fail "n5-fangov stays stopped after an early postinst failure"
+[ -e "$UNITS_DIR/n5-fangov.service" ] || fail "n5-fangov not active after an early postinst failure"
+[ -e "$STATE" ] && fail "$STATE left behind after an early failure"
+rm -f /tmp/e7-fail-add
+dpkg --configure -a >/dev/null
+dkms status -m $PKG | grep -q "$VER, $K, .*: installed" || fail "not installed after dpkg --configure -a"
+
+echo "--- aborted upgrade (new preinst fails, module loaded as on the reference host): DKMS entry and module are back, regulator started"
+FAKE=/tmp/e7-fake
+rm -rf "$FAKE" && mkdir -p "$FAKE/DEBIAN"
+cat >"$FAKE/DEBIAN/control" <<EOF
+Package: ${PKG}-dkms
+Version: ${VER}-99
+Architecture: all
+Maintainer: test <test@example.invalid>
+Description: test package whose preinst fails
+ test
+EOF
+printf '#!/bin/sh\nexit 1\n' >"$FAKE/DEBIAN/preinst"
+chmod 0755 "$FAKE/DEBIAN/preinst"
+dpkg-deb --build --root-owner-group "$FAKE" /tmp/e7-fake.deb >/dev/null
+: >"$CALLS"
+touch "$UNITS_DIR/n5-fangov.service"
+dpkg -i /tmp/e7-fake.deb >/tmp/e7-abort.log 2>&1 && fail "fake upgrade did not fail"
+grep -E "^$PKG|abort" /tmp/e7-abort.log || true
+[ "$(dpkg-query -W -f='${db:Status-Abbrev} ${Version}' ${PKG}-dkms)" = "ii  $DEBVER" ] || fail "package state after the aborted upgrade: $(dpkg-query -W -f='${db:Status-Abbrev} ${Version}' ${PKG}-dkms)"
+dkms status -m $PKG | grep -q "$VER, $K, .*: installed" || fail "no DKMS entry after abort-upgrade"
+ls /lib/modules/"$K"/updates/dkms/minisforum_n5_it5571.ko* >/dev/null 2>&1 || fail "no module file after abort-upgrade"
+[ "$(first "^dkms remove -m $PKG ")" -gt 0 ] || fail "the old prerm did not run dkms remove (scenario not reached)"
+[ "$(first '^systemctl start n5-fangov\.service$')" -gt "$(last "^dkms install -m $PKG ")" ] || fail "n5-fangov not started after the rebuild"
+[ -e "$STATE" ] && fail "$STATE left behind after abort-upgrade"
+rm -f /usr/local/sbin/lsmod
+
+echo "--- remove; an active legacy n5-fand is stopped before dkms remove and stays stopped"
+rm -f "$UNITS_DIR"/*
+: >"$CALLS"
+touch "$UNITS_DIR/n5-fand.service"
+apt-get "${STUBPATH[@]}" remove -y ${PKG}-dkms 2>&1 | grep -E "^$PKG" || true
+cat "$CALLS"
+stop=$(first '^systemctl stop n5-fand\.service$')
+rm_=$(first "^dkms remove -m $PKG ")
+echo "order: stop=$stop remove=$rm_"
+[ "$stop" -gt 0 ] || fail "n5-fand not stopped on remove"
+[ "$rm_" -gt "$stop" ] || fail "dkms remove not after stopping n5-fand"
+grep -q '^systemctl start ' "$CALLS" && fail "a regulator was started on remove"
+[ -e "$STATE" ] && fail "$STATE written on remove"
+rm -f /usr/local/sbin/systemctl /usr/local/sbin/dkms /usr/local/sbin/modprobe /usr/local/sbin/lsmod
 [ -z "$(dkms status -m $PKG)" ] || fail "dkms still lists $PKG after remove"
 [ -e "/lib/modules/$K/updates/dkms/minisforum_n5_it5571.ko" ] && fail ".ko left behind"
 [ -e "/lib/modules/$K/updates/dkms/minisforum_n5_it5571.ko.xz" ] && fail ".ko.xz left behind"

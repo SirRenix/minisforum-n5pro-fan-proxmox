@@ -1,0 +1,135 @@
+Description: Put touched PWM channels into a safe state on shutdown and reboot
+ The driver had no PM ops and no .shutdown (E4). A channel left in manual
+ mode by the regulator stayed in manual mode across a warm reboot until
+ the regulator ran again, or for good if the module did not build for the
+ new kernel (E9).
+ .
+ Adds a platform .shutdown hook. For every channel this module touched:
+ - CPU (pwm1) and SSD (pwm2): EC automatic mode (0x21, 0x2e); the EC
+   regulates them;
+ - HDD (pwm3) and PCIe (pwm4): 255. PCIe: after its auto command (0x31)
+   the EC keeps the last duty (befunde BEFUNDE.md). HDD, as a precaution:
+   after 0x2b the EC regulates the group to a target RPM chosen from EC
+   0x06 (ambient: < 34 C 1200 rpm, 34-99 C 1600 rpm), not from the disk
+   temperatures (derived from EC firmware 0.14, befunde M5; the measured
+   values fit). Returning them to "automatic" could undercut the
+   regulator's fail-safe (n5-fangov: HDD 140) for the whole next boot if
+   the module is not loaded again (E9 path), i.e. leave the fans lower
+   than before (E3/E5 class, delta review finding 1).
+ PCIe handed back with pwm4_enable=2 stays touched (0004) and is set to 255
+ here again (audit-20261016 F-1). Unbind/unload (0004) also hands PCIe back
+ at 255; HDD gets 0x2b there, CPU/SSD their auto command.
+ A failed step is logged and leaves that channel as it is; there is no
+ fallback to the auto command, which could lower the duty. The hook sets
+ the dead flag under data->lock first: later hwmon/debugfs accesses return
+ -ENODEV and the devres restore from 0004 does nothing afterwards. Every
+ channel gets its own access budget from 0005 (<= 4 x 1 s in total).
+ The same applies to poweroff (HDD/PCIe briefly at 255 before power-off).
+ No suspend/resume ops: the host does not suspend (README, E4).
+ .
+ Consequence to verify (T6): after a warm reboot HDD and PCIe run at 255
+ until n5-fangov sets its values; CPU/SSD are in EC automatic. Whether the
+ EC or the BIOS keeps or resets these duties across the reboot is not
+ measured.
+ .
+ Resolves E4 (driver side), E9 (no unregulated low duty across reboot).
+ .
+ Tested: build/static analysis as 0001. Not tested on hardware: warm
+ reboot and poweroff with channels in manual mode, dmesg of the shutdown
+ (journal of the previous boot), DCR/RPM directly after the reboot before
+ n5-fangov starts (T6).
+ .
+ rc3 (audit-20261016 BACKLOG #27): header and code comment no longer say
+ that the EC does not regulate HDD after 0x2b ("fixed 0x57"); that
+ statement was corrected in befunde BEFUNDE.md on 2026-10-08/09 (M5).
+ HDD 255 at shutdown is kept as a precaution. Comment text only; the
+ code, the PCIe reasoning and the line count are unchanged.
+Author: SirRenix <7069603+SirRenix@users.noreply.github.com>
+Origin: vendor
+Forwarded: no
+Last-Update: 2026-10-16
+---
+--- a/driver-prototype/minisforum_n5_it5571.c
++++ b/driver-prototype/minisforum_n5_it5571.c
+@@ -870,13 +870,18 @@
+  * Hand every channel this module touched back (n5_handback_locked(): CPU,
+  * SSD, HDD to EC automatic mode, PCIe to 255) and refuse all later
+  * hwmon/debugfs accesses (-ENODEV). Runs as a devres action after the hwmon
+- * device is gone and before the port regions are released.
++ * device is gone and before the port regions are released. After the
++ * .shutdown hook (dead already set) it does nothing.
+  */
+ static void n5_restore(struct n5_data *data)
+ {
+ 	int i, ret;
+ 
+ 	mutex_lock(&data->lock);
++	if (data->dead) {
++		mutex_unlock(&data->lock);
++		return;
++	}
+ 	data->dead = true;
+ 	for (i = 0; i < N5_PWM_CHANNELS; i++) {
+ 		if (!data->pwm_touched[i])
+@@ -1015,11 +1020,61 @@
+ 	return 0;
+ }
+ 
++/*
++ * Reboot/poweroff, only for channels this module touched: CPU and SSD go
++ * back to EC automatic mode, which regulates them. HDD and PCIe are set to
++ * 255 instead. PCIe keeps its last duty after the auto command. HDD, as a
++ * precaution: the EC regulates it to a target RPM from EC 0x06 (ambient),
++ * not disk temperature (derived from EC firmware, befunde M5). Either may
++ * undercut the regulator's fail-safe for the next boot if the module is not
++ * loaded again. PCIe handed back with pwm4_enable=2 stays touched (0004)
++ * and gets 255 here again. A failed step leaves the channel as it is (no
++ * fallback to the auto command, which could lower the duty). Sets the dead
++ * flag: later accesses return -ENODEV and the devres restore does nothing.
++ */
++static void n5_shutdown(struct platform_device *pdev)
++{
++	static const bool full_speed[N5_PWM_CHANNELS] = {
++		false, false, true, true
++	};
++	struct n5_data *data = platform_get_drvdata(pdev);
++	int i, ret;
++
++	if (!data)
++		return;
++
++	mutex_lock(&data->lock);
++	if (data->dead) {
++		mutex_unlock(&data->lock);
++		return;
++	}
++	data->dead = true;
++	for (i = 0; i < N5_PWM_CHANNELS; i++) {
++		if (!data->pwm_touched[i])
++			continue;
++		n5_access_begin(data);
++		if (full_speed[i])
++			ret = n5_set_pwm_locked(data, i, 255);
++		else
++			ret = n5_set_auto_locked(data, i);
++		if (ret) {
++			dev_warn(data->dev,
++				 "shutdown: PWM channel %d not set to %s (%d)\n",
++				 i + 1, full_speed[i] ? "255" : "EC automatic mode",
++				 ret);
++			continue;
++		}
++		data->pwm_touched[i] = false;
++	}
++	mutex_unlock(&data->lock);
++}
++
+ static struct platform_driver n5_driver = {
+ 	.driver = {
+ 		.name = N5_DRIVER_NAME,
+ 	},
+ 	.probe = n5_probe,
++	.shutdown = n5_shutdown,
+ };
+ 
+ static int __init n5_init(void)

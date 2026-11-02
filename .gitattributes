@@ -4,3 +4,8 @@
 *.txt text eol=lf
 # byte-exact fixtures: postinst compares their sha256
 packaging/test/legacy-*.conf -text -diff
+# upstream copy and patches stay byte-exact (SHA256SUMS, patch --fuzz=0)
+driver/upstream/** -text
+driver/patches/** -text
+# run raw data stays byte-exact (SHA256SUMS)
+befunde/runs/*/** -text

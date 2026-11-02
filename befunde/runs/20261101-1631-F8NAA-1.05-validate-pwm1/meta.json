@@ -1,0 +1,194 @@
+{
+  "aborted": "",
+  "boot_type": "cold",
+  "channel": 1,
+  "ec_ram_tables": null,
+  "finished": "2026-11-01T15:41:11Z",
+  "gates": [
+    {
+      "id": "G1",
+      "condition": "no other pwm writer: n5-fangov (also restarting), n5-fand, fancontrol inactive by systemd state, process (comm/argv[0]) and open pwm files; pwm cache as expected and writer lock held, checked at every sample",
+      "result": "PASS",
+      "detail": "none active (systemd units, processes, open pwm files, pwm cache, writer-lock inode); checked again at every sample, writer lock held"
+    },
+    {
+      "id": "G2",
+      "condition": "no scrub/resilver/backup",
+      "result": "PASS",
+      "detail": "no scrub, resilver, vzdump or proxmox-backup-client"
+    },
+    {
+      "id": "G3",
+      "condition": "load average (1 min) \u003c 1.0",
+      "result": "PASS",
+      "detail": "load1 0.10"
+    },
+    {
+      "id": "G4",
+      "condition": "over 5 min: EC system (0x04), EC ambient (0x06) and HDD temperature each change \u003c 1 C; every abort-limit sensor (Tctl, NVMe, HDD) readable; Tctl is a limit only (TESTSPEC 0.4 #20)",
+      "result": "PASS",
+      "detail": "over 5m0s: [system (ec 0x04) 0.0 C (\u003c 1 C) ambient (ec 0x06) 0.0 C (\u003c 1 C) hdd 0.0 C (\u003c 1 C) tctl 12.2 C (not a stability criterion: limit 85 C only, TESTSPEC 0.4 #20)]"
+    },
+    {
+      "id": "G5",
+      "condition": "operator at the device",
+      "result": "PASS",
+      "detail": "confirmation typed at /dev/tty1, local console"
+    },
+    {
+      "id": "G6",
+      "condition": "register snapshot before the first write: duty registers and EC RAM curve tables 0x10-0x27, 0x30-0x38, 0x70-0x81",
+      "result": "PARTIAL",
+      "detail": "duty registers recorded (first sample); no /sys/kernel/debug/minisforum_n5_it5571/ecram (driver 0.2.1+sr2 with debug_regs=1): the curve tables come from a mode-A snapshot (tools/f8a/f8a-snapshot.sh) taken after boot and before the module was loaded - name it in the run record; whether something wrote earlier in this boot is not visible"
+    },
+    {
+      "id": "G7",
+      "condition": "board in the driver's write table, sys_vendor as measured for that board, module not loaded with force",
+      "result": "PASS",
+      "detail": "N5 PRO/F8NAA, sys_vendor \"Micro Computer (HK) Tech Limited\", driver 0.2.1+sr1~rc3 force=N"
+    }
+  ],
+  "grid": {
+    "gaps": 0,
+    "sample_s": 5,
+    "tolerance_s": 0.5
+  },
+  "identity": {
+    "n5fangov_version": "0.5.0-rc4",
+    "dmi": {
+      "product_name": "N5 PRO",
+      "board_name": "F8NAA",
+      "board_version": "1.0",
+      "sys_vendor": "Micro Computer (HK) Tech Limited",
+      "bios_version": "1.05",
+      "bios_date": "03/31/2026",
+      "ec_firmware_release": "0.14"
+    },
+    "kernel": "7.0.14-26-pve",
+    "kernel_taint": "12289",
+    "boot_id": "970722ce-0e47-4490-ad0a-85bc4b8e86f8",
+    "uptime_s": 3664.7,
+    "driver": {
+      "loaded": true,
+      "version": "0.2.1+sr1~rc3",
+      "srcversion": "D1E4D4D188041A61EC3D872",
+      "taint": "OE",
+      "parameters": {
+        "debug_regs": "Y",
+        "experimental_write": "Y",
+        "force": "N"
+      },
+      "hwmon_path": "/sys/class/hwmon/hwmon14",
+      "hwmon_attrs": [
+        "fan1_input",
+        "fan1_label",
+        "fan2_input",
+        "fan2_label",
+        "fan3_input",
+        "fan3_label",
+        "name",
+        "pwm1",
+        "pwm1_enable",
+        "pwm2",
+        "pwm2_enable",
+        "pwm3",
+        "pwm3_enable",
+        "pwm4",
+        "pwm4_enable",
+        "temp1_input",
+        "temp1_label",
+        "temp2_input",
+        "temp2_label",
+        "temp3_input",
+        "temp3_label",
+        "temp4_input",
+        "temp4_label",
+        "uevent"
+      ],
+      "pwm_visible": true,
+      "dcr_path": "/sys/kernel/debug/minisforum_n5_it5571/dcr"
+    },
+    "dcr": {
+      "path": "/sys/kernel/debug/minisforum_n5_it5571/dcr",
+      "dump": "1800: 00 ff 00 56 4b 64 64 00 00 00 00 06 00 00 00 00",
+      "channels": {
+        "pwm1": 86,
+        "pwm2": 75,
+        "pwm3": 100,
+        "pwm4": 0
+      }
+    },
+    "profile_detected": "n5pro",
+    "hw_status": {
+      "status": "experimental",
+      "key": "N5 PRO / F8NAA / BIOS 1.05 / EC 0.14",
+      "entry": {
+        "product": "N5 PRO",
+        "board": "F8NAA",
+        "bios": "1.05",
+        "ec": "0.14",
+        "status": "experimental",
+        "origin": "own",
+        "date": "2026-10-17",
+        "note": "TESTSPEC-Lauf unvollständig (Wartungsfenster 1 am 2026-10-17: T1 nicht gelaufen, Gate G4; BEFUNDE.md); F8b-Baseline 2026-10-08–15 PASS; Kanalzuordnung am 2026-09-14 vor TESTSPEC gemessen (BEFUNDE.md Phase 6)"
+      },
+      "reason": "experimental on the reference device"
+    },
+    "hw_status_table": {
+      "source": "befunde/RESULTS.md (github.com/SirRenix/minisforum-n5pro-fan-proxmox)",
+      "source_table_sha256": "64b7c7ec874ce9492ca85b2a1d9246690095d8268c6f868bfeb4670e6d508bb5",
+      "generated": "2026-10-31"
+    }
+  },
+  "limit_sensors": {
+    "hdd": true,
+    "nvme": true,
+    "tctl": true
+  },
+  "mode": "hardware",
+  "redaction": [
+    "host name (full and short) -\u003e n5host",
+    "DMI serial numbers and product UUID -\u003e [serial]",
+    "MAC addresses -\u003e [mac]",
+    "IPv4 addresses -\u003e [ipv4]",
+    "IPv6 addresses (with \"[ipv6]\" or eight groups) -\u003e [ipv6]",
+    "mail addresses -\u003e [mail] (systemd instance units such as getty@tty1.service stay)",
+    "user names: /home/[user] -\u003e /home/[user] USER, SUDO_USER, LOGNAME (not root) -\u003e [user]",
+    "values of SSH_CONNECTION, SSH_CLIENT, SSH_TTY -\u003e [ssh]",
+    "\"serial: X\" style values -\u003e [serial]"
+  ],
+  "restore_failed": null,
+  "restore_values": {
+    "1": "auto",
+    "2": "auto",
+    "3": "140",
+    "4": "auto"
+  },
+  "restore_warnings": null,
+  "result_role": "cross-check (TESTSPEC 0.4 §1 rule 4, §9 #27): second implementation for D4; the tool of record for G1-G7, T0-T5 is n5-ectest",
+  "session": {
+    "console_flag": false,
+    "local_console": true,
+    "remote": null,
+    "stdin": "/dev/tty1"
+  },
+  "settle_time_s": {
+    "pwm1": 10,
+    "pwm2": 10,
+    "pwm3": 10,
+    "pwm4": 1
+  },
+  "spec_deviations": [],
+  "spec_version": "0.4",
+  "started": "2026-11-01T15:31:03Z",
+  "timing": {
+    "gate_window_s": 300,
+    "handback_observe_s": 1020,
+    "hold_s": 60,
+    "observe_s": 900,
+    "repeat": 3,
+    "sample_s": 5
+  },
+  "tool": "n5-fangov",
+  "tool_version": "0.5.0-rc4"
+}

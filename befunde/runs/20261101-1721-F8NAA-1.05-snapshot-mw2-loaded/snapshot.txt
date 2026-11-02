@@ -1,0 +1,81 @@
+
+=== provenance ===
+tool: n5-ectest 0.1.0-mw2 (commit 88e2b9f0b861)
+spec_version: 0.4
+label: mw2-loaded
+mode: B
+boot_type: cold
+date_utc: 2026-11-01T17:21:45Z
+mode B: driver module loaded; no port I/O (hwmon and the debugfs dcr file only)
+
+=== identity ===
+uptime_s: 10306.85
+boot_id: 970722ce-0e47-4490-ad0a-85bc4b8e86f8
+kernel: 7.0.14-26-pve
+kernel_version: #1 SMP PREEMPT_DYNAMIC PMX 7.0.14-26 (2026-10-22T18:45Z)
+host: n5host
+dmi.product_name: N5 PRO
+dmi.board_name: F8NAA
+dmi.board_version: 1.0
+dmi.sys_vendor: Micro Computer (HK) Tech Limited
+dmi.bios_version: 1.05
+dmi.bios_date: 03/31/2026
+dmi.bios_release: 5.35
+dmi.ec_firmware_release: 0.14
+os: debian 13
+lockdown: none
+container: -
+driver: minisforum_n5_it5571 0.2.1+sr1~rc3, srcversion D1E4D4D188041A61EC3D872, taint OE, write-enabled; package 0.2.1+sr1~rc3-1
+
+=== lsmod (filtered) ===
+minisforum_n5_it5571 28672 0 - Live 0xffffffffc1ff9000 (OE)
+k10temp 16384 0 - Live 0xffffffffc0470000
+drivetemp 16384 0 - Live 0xffffffffc0468000
+nvme 65536 7 - Live 0xffffffffc0400000
+
+=== /proc/ioports 002e-002f/0062/0066/0068/006c ===
+  0062-0062 : minisforum_n5_it5571
+  0066-0066 : minisforum_n5_it5571
+  0068-0068 : minisforum_n5_it5571
+  006c-006c : minisforum_n5_it5571
+
+=== module parameters ===
+debug_regs=Y
+experimental_write=Y
+force=N
+modprobe.d / modules-load.d entries:
+/etc/modprobe.d/n5-mw2-blacklist.conf:blacklist minisforum_n5_it5571
+
+=== independent temperatures (k10temp, nvme, drivetemp) ===
+Tctl=39.1 NVMe_max=40.9 HDD_max=37.0
+
+=== n5-fangov ===
+is-active: inactive
+
+=== hwmon minisforum_n5_it5571 (/sys/class/hwmon/hwmon14) ===
+fan1_input=1989 (CPU Fan)
+fan2_input=2158 (SSD Fan)
+fan3_input=2246 (HDD Fan)
+fan4_input=error (no label)
+ec_cpu=37.0
+ec_system=29.0
+ec_board=24.0
+ec_ambient=20.0
+TACH1: 1989 RPM (hwmon fan1_input)
+TACH2: 2158 RPM (hwmon fan2_input)
+TACH3: 2246 RPM (hwmon fan3_input)
+pwm1=140 pwm1_enable=2 (driver cache, not EC state)
+pwm2=180 pwm2_enable=2 (driver cache, not EC state)
+pwm3=140 pwm3_enable=1 (driver cache, not EC state)
+pwm4=255 pwm4_enable=2 (driver cache, not EC state)
+
+=== dcr (debugfs, I2EC 0x1800-0x180F) ===
+=== BEGIN I2EC ===
+1800: 00 ff 00 55 4b 8c 8c 00 00 00 00 06 00 00 00 00
+=== END I2EC ===
+DCR1(CPU)=55 DCR2(SSD)=4b DCR3/4(HDD)=8c/8c DCR5(PCIe)=00
+
+=== independent temperatures (end) ===
+Tctl=39.0 NVMe_max=40.9 HDD_max=37.0
+
+RESULT: INCOMPLETE (fan4_input unreadable)

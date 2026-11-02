@@ -1,0 +1,24 @@
+#!/bin/bash
+# systemctl stub: is-active / is-enabled of n5-fangov from the fake state;
+# fake state "dbus-fail" simulates an unusable systemctl
+set -eu
+s=$(cat "$F8A_ROOT/fake/fangov")
+if [ "$s" = dbus-fail ]; then
+    echo "Failed to connect to bus: No such file or directory" >&2
+    exit 1
+fi
+case "${1:-}" in
+    is-active)
+        echo "$s"
+        [ "$s" = active ] && exit 0
+        exit 3
+        ;;
+    is-enabled)
+        echo disabled
+        exit 1
+        ;;
+    *)
+        echo "systemctl stub: unsupported $*" >&2
+        exit 1
+        ;;
+esac

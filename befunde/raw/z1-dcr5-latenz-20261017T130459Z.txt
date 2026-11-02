@@ -1,0 +1,16 @@
+Z1 2026-10-17T15:04:59+02:00 kernel 7.0.14-20-pve driver 0.2.1+sr1~rc2 srcversion E9CF5951A3238F3B9930797
+start: pwm4_enable=2 DCR5=ff
+enable=1 gesetzt (Treiber schreibt 255 vor manuell)
+b-enable1 +0ms DCR5=ff
+b-enable1 +20193ms DCR5=ff (Ende)
+pwm4=167 geschrieben
+b-write167 +1ms DCR5=ff
+b-write167 +215ms DCR5=a7
+b-write167 +30025ms DCR5=a7 (Ende)
+pwm4_enable=2 (Rueckgabe, rc2: 255)
+c-handback +0ms DCR5=a7
+c-handback +212ms DCR5=ff
+c-handback +60077ms DCR5=ff (Ende)
+ende: pwm4_enable=2 pwm4=255 DCR5=ff
+dcr komplett: 1800: 00 ff 00 56 4b 57 57 ff 00 00 00 06 00 00 00 00
+dmesg: keine Treiber-Warnungen

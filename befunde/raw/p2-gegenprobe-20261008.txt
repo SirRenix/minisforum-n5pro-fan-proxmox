@@ -1,0 +1,920 @@
+P2 gegenprobe 2026-10-08 (UTC ~20:45-20:48): driver/upstream + empty patch series
+vs. the old pipeline (git clone v0.2.1) vs. the module running on n5host.
+Hostnames replaced: production host = n5host, Docker build host = buildhost
+(containers: debian:trixie image sha256:9cc080028c43..., created 2026-09-18,
+hostname buildhost-ct). Scripts: part A = old/new pipeline against
+proxmox-headers of n5host; part B = workflow job build-test + negative tests +
+throw-away rc package. Repo state: working tree of 2026-10-08 (uncommitted P2
+changes), copied to buildhost by tar. All containers and work dirs removed
+afterwards; the debian:trixie image was already present and kept.
+
+################################################################################
+### N0 n5host, read-only (user claude, no root, nothing changed)
+
+$ uname -r
+7.0.14-20-pve
+
+$ /usr/sbin/modinfo minisforum_n5_it5571 | grep -E "^(filename|version|srcversion|vermagic|signer):"
+filename:       /lib/modules/7.0.14-20-pve/updates/dkms/minisforum_n5_it5571.ko
+version:        0.2.0
+srcversion:     96E49785C432E4B85FAF416
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+signer:         DKMS module signing key
+
+$ sha256sum /usr/src/minisforum-n5-it5571-0.2.1/*
+7f8c1efd6bd1d5b03b092ceb0942301da77dd15ba3ab7d3a5ab7f014987e77c9  /usr/src/minisforum-n5-it5571-0.2.1/dkms.conf
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  /usr/src/minisforum-n5-it5571-0.2.1/Makefile
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  /usr/src/minisforum-n5-it5571-0.2.1/minisforum_n5_it5571.c
+25d1bb834db207191e1b2238db1231c15a15ed0920e1f9671fc08d669fa6bbd3  /usr/src/minisforum-n5-it5571-0.2.1/UPSTREAM_COMMIT
+
+$ cat /usr/src/minisforum-n5-it5571-0.2.1/UPSTREAM_COMMIT
+feb6d9a5fbf6662a52fa7496009537945d2b30b0
+
+$ /usr/sbin/dkms status -m minisforum-n5-it5571
+minisforum-n5-it5571/0.2.1, 7.0.12-1-pve, x86_64: installed
+minisforum-n5-it5571/0.2.1, 7.0.14-19-pve, x86_64: installed
+minisforum-n5-it5571/0.2.1, 7.0.14-20-pve, x86_64: installed
+
+$ dpkg-query -W minisforum-n5-it5571-dkms proxmox-headers-$(uname -r) dkms gcc-14
+dkms	3.2.2-1~deb13u1
+gcc-14	14.2.0-19
+minisforum-n5-it5571-dkms	0.2.1-1
+proxmox-headers-7.0.14-20-pve	7.0.14-20
+
+$ sha256sum /usr/share/keyrings/proxmox-archive-keyring.gpg
+136673be77aba35dcce385b28737689ad64fd785a797e57897589aed08db6e45  /usr/share/keyrings/proxmox-archive-keyring.gpg
+
+$ cat /proc/version
+Linux version 7.0.14-20-pve (build@proxmox) (gcc (Debian 14.2.0-19) 14.2.0, GNU ld (GNU Binutils for Debian) 2.44) #1 SMP PREEMPT_DYNAMIC PMX 7.0.14-20 (2026-09-24T10:43Z)
+
+Note: the .deb built here (0.2.1-1, new pipeline) was not compared with the
+released 0.2.1-1 .deb file. By construction it additionally contains
+/usr/src/minisforum-n5-it5571-0.2.1/PATCHES; the DKMS source files .c,
+Makefile, dkms.conf and UPSTREAM_COMMIT have the same sha256 as on n5host
+(A5 below).
+
+################################################################################
+### buildhost, container A (docker run --rm debian:trixie bash gp.sh)
+
+### A0 container
+
+$ cat /etc/debian_version; uname -m
+13.7
+x86_64
+
+$ apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git patch build-essential bc bison flex libelf-dev libssl-dev openssl dkms kmod xz-utils zstd binutils >/dev/null && echo tools ok
+tools ok
+
+$ curl -fsSL -o /usr/share/keyrings/proxmox-archive-keyring.gpg https://enterprise.proxmox.com/debian/proxmox-archive-keyring-trixie.gpg && sha256sum /usr/share/keyrings/proxmox-archive-keyring.gpg
+136673be77aba35dcce385b28737689ad64fd785a797e57897589aed08db6e45  /usr/share/keyrings/proxmox-archive-keyring.gpg
+
+$ [ "$(sha256sum </usr/share/keyrings/proxmox-archive-keyring.gpg | cut -d' ' -f1)" = 136673be77aba35dcce385b28737689ad64fd785a797e57897589aed08db6e45 ] && echo 'keyring = n5host /usr/share/keyrings/proxmox-archive-keyring.gpg'
+keyring = n5host /usr/share/keyrings/proxmox-archive-keyring.gpg
+
+$ cat /etc/apt/sources.list.d/proxmox.sources
+Types: deb
+URIs: http://download.proxmox.com/debian/pve
+Suites: trixie
+Components: pve-no-subscription
+Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
+
+$ apt-get update -qq && apt-get install -y -qq --no-install-recommends proxmox-headers-$K >/dev/null && echo headers ok
+headers ok
+
+$ dpkg-query -W proxmox-headers-$K gcc-14 binutils dkms; ls -l /lib/modules/$K/build
+binutils	2.44-3
+dkms	3.2.2-1~deb13u1
+gcc-14	14.2.0-19
+proxmox-headers-7.0.14-20-pve	7.0.14-20
+lrwxrwxrwx 1 root root 36 Sep 24 10:43 /lib/modules/7.0.14-20-pve/build -> /usr/src/linux-headers-7.0.14-20-pve
+
+### A1 OLD pipeline (as build-deb.sh 0.2.1-1: git clone tag, check commit, copy .c + Makefile)
+
+$ mkdir -p /work/old && cd /work/old && git clone -q --depth 1 --branch v0.2.1 https://github.com/ltdstudio/minisforum-n5-it5571.git up 2>/dev/null && git -C up rev-parse HEAD
+feb6d9a5fbf6662a52fa7496009537945d2b30b0
+
+$ [ "$(git -C /work/old/up rev-parse HEAD)" = "$COMMIT" ] && echo "commit ok"
+commit ok
+
+$ install -d /work/old/src && install -m 0644 /work/old/up/driver-prototype/$MOD.c /work/old/up/driver-prototype/Makefile /work/old/src/ && cd /work/old/src && sha256sum $MOD.c Makefile
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  minisforum_n5_it5571.c
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  Makefile
+
+### A2 NEW pipeline (build-deb.sh: driver/upstream + empty series)
+
+$ cd /work/repo && grep -E "^(UPSTREAM_TAG|UPSTREAM_COMMIT|PKG_REV|FORK_VERSION|FORK_RC)=" packaging/UPSTREAM && grep -v "^#" driver/patches/series | grep -c . || true
+UPSTREAM_TAG=v0.2.1
+UPSTREAM_COMMIT=feb6d9a5fbf6662a52fa7496009537945d2b30b0
+PKG_REV=1
+FORK_VERSION=
+FORK_RC=
+0
+
+$ cd /work/repo && KEEP_SRC=/work/new/src bash packaging/build-deb.sh
+built /work/repo/dist/minisforum-n5-it5571-dkms_0.2.1-1_all.deb
+ Package: minisforum-n5-it5571-dkms
+ Version: 0.2.1-1
+ Depends: dkms (>= 3.0), proxmox-default-headers | linux-headers-amd64
+
+$ cd /work/repo && ls -l dist/ && cat dist/*.sha256
+total 16
+-rw-r--r-- 1 root root 8296 Oct  8 20:46 minisforum-n5-it5571-dkms_0.2.1-1_all.deb
+-rw-r--r-- 1 root root  108 Oct  8 20:46 minisforum-n5-it5571-dkms_0.2.1-1_all.deb.sha256
+71e5955e2b6010f35897a64ccce9442af7b75267feaec509066a2780960c2b67  minisforum-n5-it5571-dkms_0.2.1-1_all.deb
+
+$ cd /work/new/src && ls -l && cat UPSTREAM_COMMIT PATCHES dkms.conf && sha256sum $MOD.c Makefile
+total 36
+-rw-r--r-- 1 root root   204 Oct  8 20:46 Makefile
+-rw-r--r-- 1 root root    77 Oct  8 20:46 PATCHES
+-rw-r--r-- 1 root root    41 Oct  8 20:46 UPSTREAM_COMMIT
+-rw-r--r-- 1 root root   364 Oct  8 20:46 dkms.conf
+-rw-r--r-- 1 root root 17496 Oct  8 20:46 minisforum_n5_it5571.c
+feb6d9a5fbf6662a52fa7496009537945d2b30b0
+# none: upstream v0.2.1 (feb6d9a5fbf6662a52fa7496009537945d2b30b0) unchanged
+PACKAGE_NAME="minisforum-n5-it5571"
+PACKAGE_VERSION="0.2.1"
+BUILT_MODULE_NAME[0]="minisforum_n5_it5571"
+DEST_MODULE_LOCATION[0]="/updates/dkms"
+MAKE[0]="make -C ${kernel_source_dir} M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build modules"
+CLEAN="make -C ${kernel_source_dir} M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build clean"
+AUTOINSTALL="yes"
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  minisforum_n5_it5571.c
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  Makefile
+
+### A3 source tree comparison
+
+$ cmp /work/old/src/$MOD.c /work/new/src/$MOD.c && cmp /work/old/src/Makefile /work/new/src/Makefile && echo "old == new (.c, Makefile)"
+old == new (.c, Makefile)
+
+$ cmp /work/new/src/$MOD.c /work/repo/driver/upstream/driver-prototype/$MOD.c && cmp /work/new/src/Makefile /work/repo/driver/upstream/driver-prototype/Makefile && echo "new == driver/upstream"
+new == driver/upstream
+n5host /usr/src/minisforum-n5-it5571-0.2.1 (read-only, see N0): .c e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  Makefile edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9
+
+$ [ "$(sha256sum </work/new/src/$MOD.c | cut -d" " -f1)" = e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74 ] && [ "$(sha256sum </work/new/src/Makefile | cut -d" " -f1)" = edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9 ] && echo "new == n5host /usr/src (.c, Makefile)"
+new == n5host /usr/src (.c, Makefile)
+
+### A4 build both against proxmox-headers-7.0.14-20-pve (make, as DKMS MAKE[0])
+
+$ make -s -C /lib/modules/$K/build M=/work/old/src modules 2>&1 | tail -n 5; ls -l /work/old/src/$MOD.ko
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+-rw-r--r-- 1 root root 434464 Oct  8 20:46 /work/old/src/minisforum_n5_it5571.ko
+
+$ make -s -C /lib/modules/$K/build M=/work/new/src modules 2>&1 | tail -n 5; ls -l /work/new/src/$MOD.ko
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+-rw-r--r-- 1 root root 434464 Oct  8 20:46 /work/new/src/minisforum_n5_it5571.ko
+
+### A5 NEW package installed: postinst builds via DKMS for 7.0.14-20-pve
+
+$ cd /work/repo && apt-get install -y ./dist/${PKG}-dkms_0.2.1-1_all.deb 2>&1 | grep -E "^$PKG|Setting up|build" || true
+Setting up proxmox-headers-7.0.14-22-pve (7.0.14-22) ...
+Setting up proxmox-headers-7.0 (7.0.14-22) ...
+Setting up minisforum-n5-it5571-dkms (0.2.1-1) ...
+minisforum-n5-it5571: built and installed for 7.0.14-20-pve
+minisforum-n5-it5571: built and installed for 7.0.14-22-pve
+minisforum-n5-it5571: module not loaded now (no matching N5 Pro, or no permission here); it loads at boot via /usr/lib/modules-load.d/minisforum-n5-it5571.conf
+Setting up proxmox-default-headers (2.1.0) ...
+
+$ dkms status -m $PKG
+minisforum-n5-it5571/0.2.1, 7.0.14-20-pve, x86_64: installed
+minisforum-n5-it5571/0.2.1, 7.0.14-22-pve, x86_64: installed
+
+$ ls -l /lib/modules/$K/updates/dkms/
+total 32
+-rw-r--r-- 1 root root 31213 Oct  8 20:46 minisforum_n5_it5571.ko
+
+$ cat /usr/src/$PKG-0.2.1/UPSTREAM_COMMIT /usr/src/$PKG-0.2.1/PATCHES; sha256sum /usr/src/$PKG-0.2.1/*
+feb6d9a5fbf6662a52fa7496009537945d2b30b0
+# none: upstream v0.2.1 (feb6d9a5fbf6662a52fa7496009537945d2b30b0) unchanged
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  /usr/src/minisforum-n5-it5571-0.2.1/Makefile
+f6d6ec8d1ffc5bce54bf5ec2b658a63b42dac0ac812bd4ff45d761d8fbad2b01  /usr/src/minisforum-n5-it5571-0.2.1/PATCHES
+25d1bb834db207191e1b2238db1231c15a15ed0920e1f9671fc08d669fa6bbd3  /usr/src/minisforum-n5-it5571-0.2.1/UPSTREAM_COMMIT
+7f8c1efd6bd1d5b03b092ceb0942301da77dd15ba3ab7d3a5ab7f014987e77c9  /usr/src/minisforum-n5-it5571-0.2.1/dkms.conf
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  /usr/src/minisforum-n5-it5571-0.2.1/minisforum_n5_it5571.c
+
+### A6 modinfo comparison
+
+$ modinfo /work/old/src/minisforum_n5_it5571.ko | grep -E '^(filename|version|srcversion|vermagic):'
+filename:       /work/old/src/minisforum_n5_it5571.ko
+version:        0.2.0
+srcversion:     96E49785C432E4B85FAF416
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+
+$ modinfo /work/new/src/minisforum_n5_it5571.ko | grep -E '^(filename|version|srcversion|vermagic):'
+filename:       /work/new/src/minisforum_n5_it5571.ko
+version:        0.2.0
+srcversion:     96E49785C432E4B85FAF416
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+
+$ modinfo /lib/modules/7.0.14-20-pve/updates/dkms/minisforum_n5_it5571.ko | grep -E '^(filename|version|srcversion|vermagic):'
+filename:       /lib/modules/7.0.14-20-pve/updates/dkms/minisforum_n5_it5571.ko
+version:        0.2.0
+srcversion:     96E49785C432E4B85FAF416
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+
+$ for f in /work/old/src/$MOD.ko /work/new/src/$MOD.ko /lib/modules/$K/updates/dkms/$MOD.ko*; do printf "%s %s\n" "$(modinfo -F srcversion $f)" "$f"; done
+96E49785C432E4B85FAF416 /work/old/src/minisforum_n5_it5571.ko
+96E49785C432E4B85FAF416 /work/new/src/minisforum_n5_it5571.ko
+96E49785C432E4B85FAF416 /lib/modules/7.0.14-20-pve/updates/dkms/minisforum_n5_it5571.ko
+
+$ a=$(modinfo -F srcversion /work/old/src/$MOD.ko); b=$(modinfo -F srcversion /work/new/src/$MOD.ko); d=$(modinfo -F srcversion /lib/modules/$K/updates/dkms/$MOD.ko*); [ "$a" = "$b" ] && [ "$b" = "$d" ] && [ "$a" = 96E49785C432E4B85FAF416 ] && echo "srcversion old = new = dkms = n5host = $a"
+srcversion old = new = dkms = n5host = 96E49785C432E4B85FAF416
+
+### A7 .text section (informative; bit-identical .ko not expected)
+
+$ cd /work && objcopy -O binary --only-section=.text old/src/$MOD.ko old.text && objcopy -O binary --only-section=.text new/src/$MOD.ko new.text && sha256sum old.text new.text && { cmp old.text new.text && echo ".text old == new" || echo ".text differs"; }
+aa356bfdfea869bfec1963103041e9842ad6b479027f6d14d515c4aec9915a5f  old.text
+aa356bfdfea869bfec1963103041e9842ad6b479027f6d14d515c4aec9915a5f  new.text
+.text old == new
+
+$ cd /work && sha256sum old/src/$MOD.ko new/src/$MOD.ko; cmp old/src/$MOD.ko new/src/$MOD.ko && echo ".ko identical" || echo ".ko differ (expected: build path / build-id)"
+a2b8a40a8c438d60ea94daee67cb2ae44d65cad6bcc7553deee16d5da0772ece  old/src/minisforum_n5_it5571.ko
+070390b322a2100faac564245e9e258ce40d4268d4c73363d1da2aeeaf0761c4  new/src/minisforum_n5_it5571.ko
+old/src/minisforum_n5_it5571.ko new/src/minisforum_n5_it5571.ko differ: char 11005, line 11
+.ko differ (expected: build path / build-id)
+
+$ readelf -n /work/old/src/$MOD.ko | grep -A1 "Build ID" || true; readelf -n /work/new/src/$MOD.ko | grep -A1 "Build ID" || true
+    Build ID: 2aaeff0b02e70a3d2cfa26e5dd39f29e048c1776
+
+    Build ID: 15ee3981ea2b2b1cfc19148874caf2d344640063
+
+
+### A done
+exit 0
+
+################################################################################
+### buildhost, container B (docker run --rm debian:trixie bash wf.sh)
+
+### B1 workflow job build-test
+
+$ cat /etc/debian_version
+13.7
+
+$ apt-get update -qq && apt-get install -y -qq patch ca-certificates >/dev/null && echo tools ok
+tools ok
+
+$ bash packaging/build-deb.sh
+built /w/dist/minisforum-n5-it5571-dkms_0.2.1-1_all.deb
+ Package: minisforum-n5-it5571-dkms
+ Version: 0.2.1-1
+ Depends: dkms (>= 3.0), proxmox-default-headers | linux-headers-amd64
+
+$ bash packaging/test/test-deb.sh
+headers: 6.12.111+deb13-amd64
+--- hand installation 0.2.0, as deploy/install.sh left it
+minisforum-n5-it5571/0.2.0, 6.12.111+deb13-amd64, x86_64: installed
+--- apt install the package
+Setting up minisforum-n5-it5571-dkms (0.2.1-1) ...
+minisforum-n5-it5571: taking over the hand-installed DKMS source 0.2.0 (deploy/install.sh)
+minisforum-n5-it5571: removed the hand-installed /etc/modprobe.d/minisforum-n5-it5571.conf; /usr/lib/modprobe.d/minisforum-n5-it5571.conf applies
+minisforum-n5-it5571: removed the hand-installed /etc/modules-load.d/minisforum-n5-it5571.conf; /usr/lib/modules-load.d/minisforum-n5-it5571.conf applies
+minisforum-n5-it5571: built and installed for 6.12.111+deb13-amd64
+minisforum-n5-it5571: module not loaded now (no matching N5 Pro, or no permission here); it loads at boot via /usr/lib/modules-load.d/minisforum-n5-it5571.conf
+minisforum-n5-it5571/0.2.1, 6.12.111+deb13-amd64, x86_64: installed
+filename:       /lib/modules/6.12.111+deb13-amd64/updates/dkms/minisforum_n5_it5571.ko.xz
+version:        0.2.0
+minisforum_n5_it5571.c = driver/upstream (e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74)
+Makefile = driver/upstream (edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9)
+--- an edited /etc copy is kept on reinstall
+minisforum-n5-it5571: keeping /etc/modprobe.d/minisforum-n5-it5571.conf (edited); it overrides /usr/lib/modprobe.d/minisforum-n5-it5571.conf
+minisforum-n5-it5571: built and installed for 6.12.111+deb13-amd64
+minisforum-n5-it5571: module not loaded now (no matching N5 Pro, or no permission here); it loads at boot via /usr/lib/modules-load.d/minisforum-n5-it5571.conf
+--- remove
+minisforum-n5-it5571: module files removed; a loaded module stays until reboot. Without the driver the fans run on the BIOS curve after the next boot.
+PASS
+
+### B2 version mapping (packaging/version.sh)
+
+$ cd /w && tmp=$(mktemp -d) && mkdir $tmp/packaging && sed -e 's/^FORK_VERSION=.*/FORK_VERSION=/' -e 's/^FORK_RC=.*/FORK_RC=/' -e 's/^PKG_REV=.*/PKG_REV=1/' packaging/UPSTREAM >$tmp/packaging/UPSTREAM && cp packaging/version.sh $tmp/packaging/ && ROOT=$tmp bash -euc '. $ROOT/packaging/version.sh; echo "FORK_VERSION= FORK_RC= PKG_REV=1 -> VER=$VER DEBVER=$DEBVER GIT_TAG=$GIT_TAG"'
+FORK_VERSION= FORK_RC= PKG_REV=1 -> VER=0.2.1 DEBVER=0.2.1-1 GIT_TAG=v0.2.1-1
+
+$ cd /w && tmp=$(mktemp -d) && mkdir $tmp/packaging && sed -e 's/^FORK_VERSION=.*/FORK_VERSION=/' -e 's/^FORK_RC=.*/FORK_RC=/' -e 's/^PKG_REV=.*/PKG_REV=2/' packaging/UPSTREAM >$tmp/packaging/UPSTREAM && cp packaging/version.sh $tmp/packaging/ && ROOT=$tmp bash -euc '. $ROOT/packaging/version.sh; echo "FORK_VERSION= FORK_RC= PKG_REV=2 -> VER=$VER DEBVER=$DEBVER GIT_TAG=$GIT_TAG"'
+FORK_VERSION= FORK_RC= PKG_REV=2 -> VER=0.2.1 DEBVER=0.2.1-2 GIT_TAG=v0.2.1-2
+
+$ cd /w && tmp=$(mktemp -d) && mkdir $tmp/packaging && sed -e 's/^FORK_VERSION=.*/FORK_VERSION=sr1/' -e 's/^FORK_RC=.*/FORK_RC=rc1/' -e 's/^PKG_REV=.*/PKG_REV=1/' packaging/UPSTREAM >$tmp/packaging/UPSTREAM && cp packaging/version.sh $tmp/packaging/ && ROOT=$tmp bash -euc '. $ROOT/packaging/version.sh; echo "FORK_VERSION=sr1 FORK_RC=rc1 PKG_REV=1 -> VER=$VER DEBVER=$DEBVER GIT_TAG=$GIT_TAG"'
+FORK_VERSION=sr1 FORK_RC=rc1 PKG_REV=1 -> VER=0.2.1+sr1~rc1 DEBVER=0.2.1+sr1~rc1-1 GIT_TAG=v0.2.1-sr1-rc1
+
+$ cd /w && tmp=$(mktemp -d) && mkdir $tmp/packaging && sed -e 's/^FORK_VERSION=.*/FORK_VERSION=sr1/' -e 's/^FORK_RC=.*/FORK_RC=/' -e 's/^PKG_REV=.*/PKG_REV=1/' packaging/UPSTREAM >$tmp/packaging/UPSTREAM && cp packaging/version.sh $tmp/packaging/ && ROOT=$tmp bash -euc '. $ROOT/packaging/version.sh; echo "FORK_VERSION=sr1 FORK_RC= PKG_REV=1 -> VER=$VER DEBVER=$DEBVER GIT_TAG=$GIT_TAG"'
+FORK_VERSION=sr1 FORK_RC= PKG_REV=1 -> VER=0.2.1+sr1 DEBVER=0.2.1+sr1-1 GIT_TAG=v0.2.1-sr1
+
+$ cd /w && tmp=$(mktemp -d) && mkdir $tmp/packaging && sed -e 's/^FORK_VERSION=.*/FORK_VERSION=sr2/' -e 's/^FORK_RC=.*/FORK_RC=/' -e 's/^PKG_REV=.*/PKG_REV=1/' packaging/UPSTREAM >$tmp/packaging/UPSTREAM && cp packaging/version.sh $tmp/packaging/ && ROOT=$tmp bash -euc '. $ROOT/packaging/version.sh; echo "FORK_VERSION=sr2 FORK_RC= PKG_REV=1 -> VER=$VER DEBVER=$DEBVER GIT_TAG=$GIT_TAG"'
+FORK_VERSION=sr2 FORK_RC= PKG_REV=1 -> VER=0.2.1+sr2 DEBVER=0.2.1+sr2-1 GIT_TAG=v0.2.1-sr2
+
+$ cd /w && tmp=$(mktemp -d) && mkdir $tmp/packaging && sed 's/^FORK_RC=.*/FORK_RC=rc1/' packaging/UPSTREAM >$tmp/packaging/UPSTREAM && cp packaging/version.sh $tmp/packaging/ && ROOT=$tmp bash -euc '. $ROOT/packaging/version.sh; echo $VER'   # expected to fail
+packaging/UPSTREAM: FORK_RC=rc1 needs FORK_VERSION
+-> failed as expected (exit 1)
+
+$ cd /w && tmp=$(mktemp -d) && mkdir $tmp/packaging && sed -e 's/^FORK_VERSION=.*/FORK_VERSION=sr1/' -e 's/^PKG_REV=.*/PKG_REV=2/' packaging/UPSTREAM >$tmp/packaging/UPSTREAM && cp packaging/version.sh $tmp/packaging/ && ROOT=$tmp bash -euc '. $ROOT/packaging/version.sh; echo $VER'   # expected to fail
+packaging/UPSTREAM: PKG_REV=2: with FORK_VERSION set, a change is a new srN/rcN and PKG_REV stays 1
+-> failed as expected (exit 1)
+
+$ cd /w && tmp=$(mktemp -d) && mkdir $tmp/packaging && sed 's/^FORK_VERSION=.*/FORK_VERSION=sirrenix1/' packaging/UPSTREAM >$tmp/packaging/UPSTREAM && cp packaging/version.sh $tmp/packaging/ && ROOT=$tmp bash -euc '. $ROOT/packaging/version.sh; echo $VER'   # expected to fail
+packaging/UPSTREAM: FORK_VERSION=sirrenix1 is not srN
+-> failed as expected (exit 1)
+
+### B3 build-deb.sh refuses a changed driver/upstream
+
+$ cp -a /w /n1 && cp -a /w /n2 && cp -a /w /n3 && cp -a /w /n4 && rm -rf /n1/dist /n2/dist /n3/dist /n4/dist
+
+$ cd /n1 && printf "\n" >>driver/upstream/driver-prototype/minisforum_n5_it5571.c && bash packaging/build-deb.sh   # expected to fail
+sha256sum: WARNING: 1 computed checksum did NOT match
+driver-prototype/minisforum_n5_it5571.c: FAILED
+build-deb: driver/upstream does not match its SHA256SUMS
+-> failed as expected (exit 1)
+
+$ cd /n2 && touch driver/upstream/driver-prototype/extra.h && bash packaging/build-deb.sh   # expected to fail
+build-deb: driver/upstream has files not in SHA256SUMS (or misses some)
+-> failed as expected (exit 1)
+
+### B4 build-deb.sh refuses patches without FORK_VERSION, and a patch that needs fuzz
+
+$ cat /n3/driver/patches/0001-module-version.patch | sed -n "1,20p"
+Description: test only: MODULE_VERSION = PACKAGE_VERSION
+Author: test
+Origin: vendor
+Forwarded: not-needed
+Last-Update: 2026-10-08
+---
+diff -urN a/driver-prototype/minisforum_n5_it5571.c b/driver-prototype/minisforum_n5_it5571.c
+--- a/driver-prototype/minisforum_n5_it5571.c	2026-10-08 20:41:24.000000000 +0000
++++ b/driver-prototype/minisforum_n5_it5571.c	2026-10-08 20:47:15.718499249 +0000
+@@ -678,4 +678,4 @@
+ MODULE_AUTHOR("ltdstudio, community exploration for the Minisforum N5 family");
+ MODULE_DESCRIPTION("Minisforum N5 family IT5571 fan/temp hwmon driver; N5 Pro/Air support is experimental; not affiliated with Minisforum; use at your own risk");
+ MODULE_LICENSE("GPL");
+-MODULE_VERSION("0.2.0");
++MODULE_VERSION("0.2.1+sr1~rc1");
+
+$ cd /n3 && bash packaging/build-deb.sh   # expected to fail
+build-deb: driver/patches/series is not empty: set FORK_VERSION (packaging/UPSTREAM)
+-> failed as expected (exit 1)
+
+$ cd /n3 && sed -i -e 's/^FORK_VERSION=.*/FORK_VERSION=sr1/' -e 's/^FORK_RC=.*/FORK_RC=rc1/' packaging/UPSTREAM && grep -E '^FORK' packaging/UPSTREAM
+FORK_VERSION=sr1
+FORK_RC=rc1
+
+$ cd /n3 && KEEP_SRC=/n3-src bash packaging/build-deb.sh && cat /n3-src/PATCHES /n3-src/dkms.conf && grep -n "^MODULE_VERSION" /n3-src/minisforum_n5_it5571.c
+applying 0001-module-version.patch
+built /n3/dist/minisforum-n5-it5571-dkms_0.2.1+sr1~rc1-1_all.deb
+ Package: minisforum-n5-it5571-dkms
+ Version: 0.2.1+sr1~rc1-1
+ Depends: dkms (>= 3.0), proxmox-default-headers | linux-headers-amd64
+0001-module-version.patch
+PACKAGE_NAME="minisforum-n5-it5571"
+PACKAGE_VERSION="0.2.1+sr1~rc1"
+BUILT_MODULE_NAME[0]="minisforum_n5_it5571"
+DEST_MODULE_LOCATION[0]="/updates/dkms"
+MAKE[0]="make -C ${kernel_source_dir} M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build modules"
+CLEAN="make -C ${kernel_source_dir} M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build clean"
+AUTOINSTALL="yes"
+681:MODULE_VERSION("0.2.1+sr1~rc1");
+
+$ cd /n4 && sed -i 's/^FORK_VERSION=.*/FORK_VERSION=sr1/' packaging/UPSTREAM && awk 'h==1 && /^ / && !d {print $0 " /* changed context */"; d=1; next} /^@@/ {h=1} {print}' driver/patches/0001-module-version.patch >/tmp/p && mv /tmp/p driver/patches/0001-module-version.patch && grep -n 'changed context' driver/patches/0001-module-version.patch
+11: MODULE_AUTHOR("ltdstudio, community exploration for the Minisforum N5 family"); /* changed context */
+
+$ cd /n4 && bash packaging/build-deb.sh   # expected to fail
+applying 0001-module-version.patch
+1 out of 1 hunk FAILED -- saving rejects to file driver-prototype/minisforum_n5_it5571.c.rej
+build-deb: 0001-module-version.patch does not apply cleanly
+-> failed as expected (exit 1)
+
+### B5 install the throw-away rc package (0.2.1+sr1~rc1-1): DKMS with + and ~
+
+$ cd /n3 && ls dist/ && bash packaging/test/test-deb.sh
+minisforum-n5-it5571-dkms_0.2.1+sr1~rc1-1_all.deb
+minisforum-n5-it5571-dkms_0.2.1+sr1~rc1-1_all.deb.sha256
+headers: 6.12.111+deb13-amd64
+--- hand installation 0.2.0, as deploy/install.sh left it
+minisforum-n5-it5571/0.2.0, 6.12.111+deb13-amd64, x86_64: installed
+--- apt install the package
+Setting up minisforum-n5-it5571-dkms (0.2.1+sr1~rc1-1) ...
+minisforum-n5-it5571: taking over the hand-installed DKMS source 0.2.0 (deploy/install.sh)
+minisforum-n5-it5571: removed the hand-installed /etc/modprobe.d/minisforum-n5-it5571.conf; /usr/lib/modprobe.d/minisforum-n5-it5571.conf applies
+minisforum-n5-it5571: removed the hand-installed /etc/modules-load.d/minisforum-n5-it5571.conf; /usr/lib/modules-load.d/minisforum-n5-it5571.conf applies
+minisforum-n5-it5571: built and installed for 6.12.111+deb13-amd64
+minisforum-n5-it5571: module not loaded now (no matching N5 Pro, or no permission here); it loads at boot via /usr/lib/modules-load.d/minisforum-n5-it5571.conf
+minisforum-n5-it5571/0.2.1+sr1~rc1, 6.12.111+deb13-amd64, x86_64: installed
+filename:       /lib/modules/6.12.111+deb13-amd64/updates/dkms/minisforum_n5_it5571.ko.xz
+version:        0.2.1+sr1~rc1
+--- an edited /etc copy is kept on reinstall
+minisforum-n5-it5571: keeping /etc/modprobe.d/minisforum-n5-it5571.conf (edited); it overrides /usr/lib/modprobe.d/minisforum-n5-it5571.conf
+minisforum-n5-it5571: built and installed for 6.12.111+deb13-amd64
+minisforum-n5-it5571: module not loaded now (no matching N5 Pro, or no permission here); it loads at boot via /usr/lib/modules-load.d/minisforum-n5-it5571.conf
+--- remove
+minisforum-n5-it5571: module files removed; a loaded module stays until reboot. Without the driver the fans run on the BIOS curve after the next boot.
+PASS
+
+### B done
+exit 0
+
+################################################################################
+### buildhost, container C: package.yml parsed (python3-yaml), run: blocks of
+### upstream-check and the release tag check executed in debian:trixie
+
+upstream-check needs= None steps= ['actions/checkout', 'driver/upstream is byte-identical to UPSTREAM_COMMIT on GitHub', 'upstream tag still points at UPSTREAM_COMMIT']
+build-test needs= upstream-check steps= ['tools', 'actions/checkout', 'build', 'installation test (hand install taken over, build, reinstall, remove)', 'actions/upload-artifact']
+release needs= build-test steps= ['actions/checkout', 'actions/download-artifact', 'tag matches packaging/UPSTREAM', 'publish']
+--- upstream-check step 2
+LICENSE: OK
+LICENSES/GPL-2.0: OK
+LICENSES/KERNEL-COPYING: OK
+driver-prototype/Makefile: OK
+driver-prototype/minisforum_n5_it5571.c: OK
+same  LICENSE
+same  LICENSES/GPL-2.0
+same  LICENSES/KERNEL-COPYING
+same  driver-prototype/Makefile
+same  driver-prototype/minisforum_n5_it5571.c
+--- upstream-check step 3   (no output = tag v0.2.1 still points at feb6d9a)
+--- release tag check, tag v0.2.1-1, no dist/ (expected: stops at the .deb check)
+::error::no .deb for 0.2.1-1
+exit 1
+--- release tag check, tag v0.2.1-sr1-rc1 (expected: tag mismatch)
+::error::tag v0.2.1-sr1-rc1, packaging/UPSTREAM says v0.2.1-1 (Debian 0.2.1-1)
+exit 1
+
+Not run: the workflow on GitHub itself (nothing pushed), the publish step.
+
+################################################################################
+################################################################################
+P2 review fixes, re-check 2026-10-08 (UTC ~20:58-21:02)
+
+Review findings 1-8 fixed (.gitignore /upstream/, CI fetches the upstream tag
+and checks file set + bytes + ORIGIN blob ids, build-deb.sh checks the file
+set against ORIGIN, series parsing/stray patches/touched files, version.sh
+exits on error without set -e, UPSTREAM ordering rule, absolute release link).
+Repo state: ONLY the committable files (git ls-files -co --exclude-standard,
+79 files, driver/upstream/* included), tar'd to buildhost - not the working
+tree with ignored files. Hostnames replaced as above. Both containers
+(--rm) and the work dir on buildhost removed afterwards.
+
+################################################################################
+### N1 n5host, read-only, re-measured
+
+$ /usr/sbin/modinfo -F srcversion minisforum_n5_it5571; /usr/sbin/modinfo -F version minisforum_n5_it5571; uname -r; sha256sum /usr/src/minisforum-n5-it5571-0.2.1/{minisforum_n5_it5571.c,Makefile}
+96E49785C432E4B85FAF416
+0.2.0
+7.0.14-20-pve
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  minisforum-n5-it5571-0.2.1/minisforum_n5_it5571.c
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  minisforum-n5-it5571-0.2.1/Makefile
+
+################################################################################
+### R  review-fix checks (debian:trixie, committable tree in /r, scratch copy /t)
+### CI step upstream-check = the run block extracted from package.yml (/ci.sh)
+tools ok
+
+### F1 committable tree (git ls-files -co --exclude-standard)
+
+$ cd /r && find driver -type f | LC_ALL=C sort
+driver/README.md
+driver/patches/series
+driver/upstream/LICENSE
+driver/upstream/LICENSES/GPL-2.0
+driver/upstream/LICENSES/KERNEL-COPYING
+driver/upstream/ORIGIN
+driver/upstream/SHA256SUMS
+driver/upstream/driver-prototype/Makefile
+driver/upstream/driver-prototype/minisforum_n5_it5571.c
+[rc=0]
+
+$ cd /r && bash packaging/build-deb.sh
+built /r/dist/minisforum-n5-it5571-dkms_0.2.1-1_all.deb
+ Package: minisforum-n5-it5571-dkms
+ Version: 0.2.1-1
+ Depends: dkms (>= 3.0), proxmox-default-headers | linux-headers-amd64
+[rc=0]
+
+### F4 version.sh without set -e
+
+$ fresh; cd /t && sed -i "s/^FORK_RC=.*/FORK_RC=rc1/" packaging/UPSTREAM && sh -c ". packaging/version.sh; echo CONTINUED VER=\$VER GIT_TAG=\$GIT_TAG"
+packaging/UPSTREAM: FORK_RC=rc1 needs FORK_VERSION
+[rc=1]
+
+$ fresh; cd /t && sed -i -e 's/^FORK_VERSION=.*/FORK_VERSION=sr1/' -e 's/^FORK_RC=.*/FORK_RC=" "/' packaging/UPSTREAM && bash -c '. packaging/version.sh; echo CONTINUED VER=$VER'
+packaging/UPSTREAM: FORK_RC=  is not rcN
+[rc=1]
+
+$ fresh; cd /t && sed -i -e 's/^FORK_VERSION=.*/FORK_VERSION=sr1/' -e 's/^FORK_RC=.*/FORK_RC=rc0/' packaging/UPSTREAM && bash -c '. packaging/version.sh; echo CONTINUED VER=$VER'
+packaging/UPSTREAM: FORK_RC=rc0 is not rcN
+[rc=1]
+
+$ fresh; cd /t && sed -i -e 's/^FORK_VERSION=.*/FORK_VERSION=sr1/' -e 's/^FORK_RC=.*/FORK_RC=rc1/' packaging/UPSTREAM && sh -c '. packaging/version.sh; echo VER=$VER DEBVER=$DEBVER GIT_TAG=$GIT_TAG'
+VER=0.2.1+sr1~rc1 DEBVER=0.2.1+sr1~rc1-1 GIT_TAG=v0.2.1-sr1-rc1
+[rc=0]
+
+$ cd /r && sh -c ". packaging/version.sh; echo VER=\$VER DEBVER=\$DEBVER GIT_TAG=\$GIT_TAG"
+VER=0.2.1 DEBVER=0.2.1-1 GIT_TAG=v0.2.1-1
+[rc=0]
+
+### F5 version ordering
+
+$ for p in "0.2.1-1 0.2.1-2" "0.2.1-2 0.2.1+sr1~rc1-1" "0.2.1+sr1~rc1-1 0.2.1+sr1~rc2-1" "0.2.1+sr1~rc2-1 0.2.1+sr1-1" "0.2.1+sr1-1 0.2.1+sr2~rc1-1" "0.2.1+sr2~rc1-1 0.2.1+sr2-1" "0.2.1+sr2-1 0.2.2-1" "0.2.1+sr1-1 0.2.1+sr1~rc2-1"; do set -- $p; if dpkg --compare-versions $1 lt $2; then echo "$1 < $2"; else echo "$1 NOT < $2"; fi; done
+0.2.1-1 < 0.2.1-2
+0.2.1-2 < 0.2.1+sr1~rc1-1
+0.2.1+sr1~rc1-1 < 0.2.1+sr1~rc2-1
+0.2.1+sr1~rc2-1 < 0.2.1+sr1-1
+0.2.1+sr1-1 < 0.2.1+sr2~rc1-1
+0.2.1+sr2~rc1-1 < 0.2.1+sr2-1
+0.2.1+sr2-1 < 0.2.2-1
+0.2.1+sr1-1 NOT < 0.2.1+sr1~rc2-1
+[rc=0]
+
+### F6 patch series: stray file, duplicate, bad entry
+
+$ fresh; cd /t && printf "x\n" >driver/patches/0001-stray.patch && bash packaging/build-deb.sh
+build-deb: driver/patches/ and series differ: in dir [0001-stray.patch], in series []
+[rc=1]
+
+$ fresh; cd /t && cp driver/upstream/LICENSE driver/patches/README && bash packaging/build-deb.sh
+build-deb: driver/patches/ and series differ: in dir [README], in series []
+[rc=1]
+
+$ fresh; cd /t && touch "driver/patches/a b.patch" && printf "a b.patch\n" >>driver/patches/series && bash packaging/build-deb.sh
+build-deb: series: invalid entry "a b.patch" (allowed: A-Z a-z 0-9 . _ + -)
+[rc=1]
+
+$ fresh; cd /t && touch driver/patches/0001-x.patch && printf "0001-x.patch\n0001-x.patch\n" >>driver/patches/series && bash packaging/build-deb.sh
+build-deb: series lists 0001-x.patch twice
+[rc=1]
+
+$ fresh; cd /t && touch "driver/patches/*" && printf "*\n" >>driver/patches/series && bash packaging/build-deb.sh
+build-deb: series: invalid entry "*" (allowed: A-Z a-z 0-9 . _ + -)
+[rc=1]
+
+$ fresh; cd /t && touch driver/patches/.hidden && bash packaging/build-deb.sh
+build-deb: driver/patches/ and series differ: in dir [.hidden], in series []
+[rc=1]
+
+### F6/F7 valid patch builds; patch adding a file or touching LICENSE fails
+
+$ fresh; mkp 0001-module-version.patch true; cd /t && bash packaging/build-deb.sh && D=dist/minisforum-n5-it5571-dkms_0.2.1+sr1~rc1-1_all.deb; dpkg-deb -c $D | grep usr/src && dpkg-deb --fsys-tarfile $D | tar -xO ./usr/src/minisforum-n5-it5571-0.2.1+sr1~rc1/PATCHES
+applying 0001-module-version.patch
+built /t/dist/minisforum-n5-it5571-dkms_0.2.1+sr1~rc1-1_all.deb
+ Package: minisforum-n5-it5571-dkms
+ Version: 0.2.1+sr1~rc1-1
+ Depends: dkms (>= 3.0), proxmox-default-headers | linux-headers-amd64
+drwxr-xr-x root/root         0 2026-10-08 21:00 ./usr/src/
+drwxr-xr-x root/root         0 2026-10-08 21:00 ./usr/src/minisforum-n5-it5571-0.2.1+sr1~rc1/
+-rw-r--r-- root/root       204 2026-10-08 21:00 ./usr/src/minisforum-n5-it5571-0.2.1+sr1~rc1/Makefile
+-rw-r--r-- root/root        26 2026-10-08 21:00 ./usr/src/minisforum-n5-it5571-0.2.1+sr1~rc1/PATCHES
+-rw-r--r-- root/root        41 2026-10-08 21:00 ./usr/src/minisforum-n5-it5571-0.2.1+sr1~rc1/UPSTREAM_COMMIT
+-rw-r--r-- root/root       372 2026-10-08 21:00 ./usr/src/minisforum-n5-it5571-0.2.1+sr1~rc1/dkms.conf
+-rw-r--r-- root/root     17504 2026-10-08 21:00 ./usr/src/minisforum-n5-it5571-0.2.1+sr1~rc1/minisforum_n5_it5571.c
+0001-module-version.patch
+[rc=0]
+
+$ fresh; mkp 0001-new-header.patch "echo \"#define X 1\" >driver-prototype/n5.h"; cd /t && bash packaging/build-deb.sh
+applying 0001-new-header.patch
+build-deb: patch series touches driver-prototype/n5.h; only driver-prototype/minisforum_n5_it5571.c and Makefile are packaged
+[rc=1]
+
+$ fresh; mkp 0001-license.patch "echo x >>LICENSE"; cd /t && bash packaging/build-deb.sh
+applying 0001-license.patch
+build-deb: patch series touches LICENSE; only driver-prototype/minisforum_n5_it5571.c and Makefile are packaged
+[rc=1]
+
+$ fresh; mkp 0001-rm-makefile.patch "rm driver-prototype/Makefile"; cd /t && bash packaging/build-deb.sh
+applying 0001-rm-makefile.patch
+build-deb: patch series removed a packaged file
+[rc=1]
+
+### F3 build-deb.sh: file dropped from dir + SHA256SUMS
+
+$ fresh; cd /t/driver/upstream && rm LICENSES/KERNEL-COPYING && sed -i "/KERNEL-COPYING/d" SHA256SUMS && cd /t && bash packaging/build-deb.sh
+build-deb: driver/upstream file set differs from the files: list in ORIGIN
+[rc=1]
+
+$ fresh; cd /t/driver/upstream && rm LICENSES/KERNEL-COPYING && sed -i "/KERNEL-COPYING/d" SHA256SUMS ORIGIN && cd /t && bash packaging/build-deb.sh | head -1
+built /t/dist/minisforum-n5-it5571-dkms_0.2.1-1_all.deb
+[rc=0]
+
+### F2/F3 CI step upstream-check (run block extracted from package.yml)
+
+$ echo "IMPORT=$IMPORT"; cat /ci.sh
+IMPORT=driver-prototype/minisforum_n5_it5571.c driver-prototype/Makefile LICENSE LICENSES
+. packaging/UPSTREAM
+git init -q /tmp/up
+git -C /tmp/up fetch -q --depth=1 "$UPSTREAM_REPO" "refs/tags/$UPSTREAM_TAG:refs/tags/$UPSTREAM_TAG"
+got=$(git -C /tmp/up rev-parse "refs/tags/$UPSTREAM_TAG^{commit}")
+[ "$got" = "$UPSTREAM_COMMIT" ] || { echo "::error::upstream $UPSTREAM_TAG is $got, packaging/UPSTREAM pins $UPSTREAM_COMMIT"; exit 1; }
+git -C /tmp/up ls-tree -r --name-only "$got" -- $IMPORT | LC_ALL=C sort > /tmp/want
+[ -s /tmp/want ] || { echo "::error::nothing to import at $got"; exit 1; }
+cd driver/upstream
+sha256sum --strict -c SHA256SUMS
+find . -type f ! -name SHA256SUMS ! -name ORIGIN | sed 's|^\./||' | LC_ALL=C sort > /tmp/have
+sed -n 's/^  \([^ ]*\) *blob [0-9a-f]\{40\}$/\1/p' ORIGIN | LC_ALL=C sort > /tmp/origin
+sed 's/^[0-9a-f]*  //' SHA256SUMS | LC_ALL=C sort > /tmp/sums
+diff -u /tmp/want /tmp/have || { echo "::error::driver/upstream file set differs from upstream ($IMPORT)"; exit 1; }
+diff -u /tmp/want /tmp/origin || { echo "::error::ORIGIN files: list differs from upstream"; exit 1; }
+diff -u /tmp/want /tmp/sums || { echo "::error::SHA256SUMS file list differs from upstream"; exit 1; }
+fail=0
+while read -r f; do
+  if git -C /tmp/up cat-file blob "$got:$f" | cmp -s - "$f"; then echo "same  $f"; else echo "::error::$f differs from $UPSTREAM_TAG ($got)"; fail=1; fi
+  blob=$(git -C /tmp/up rev-parse "$got:$f")
+  awk -v f="$f" -v b="$blob" '$1 == f && $2 == "blob" && $3 == b { ok = 1 } END { exit !ok }' ORIGIN || { echo "::error::ORIGIN blob id of $f is not $blob"; fail=1; }
+done < /tmp/want
+[ "$fail" = 0 ]
+
+[rc=0]
+
+$ fresh; ci
+LICENSE: OK
+LICENSES/GPL-2.0: OK
+LICENSES/KERNEL-COPYING: OK
+driver-prototype/Makefile: OK
+driver-prototype/minisforum_n5_it5571.c: OK
+same  LICENSE
+same  LICENSES/GPL-2.0
+same  LICENSES/KERNEL-COPYING
+same  driver-prototype/Makefile
+same  driver-prototype/minisforum_n5_it5571.c
+[rc=0]
+
+$ fresh; cd /t/driver/upstream && rm LICENSES/KERNEL-COPYING && sed -i "/KERNEL-COPYING/d" SHA256SUMS ORIGIN && ci
+LICENSE: OK
+LICENSES/GPL-2.0: OK
+driver-prototype/Makefile: OK
+driver-prototype/minisforum_n5_it5571.c: OK
+--- /tmp/want	2026-10-08 21:00:12.774942037 +0000
++++ /tmp/have	2026-10-08 21:00:12.774942037 +0000
+@@ -1,5 +1,4 @@
+ LICENSE
+ LICENSES/GPL-2.0
+-LICENSES/KERNEL-COPYING
+ driver-prototype/Makefile
+ driver-prototype/minisforum_n5_it5571.c
+::error::driver/upstream file set differs from upstream (driver-prototype/minisforum_n5_it5571.c driver-prototype/Makefile LICENSE LICENSES)
+[rc=1]
+
+$ fresh; cd /t/driver/upstream && printf "\n" >>driver-prototype/Makefile && sha256sum LICENSE LICENSES/GPL-2.0 LICENSES/KERNEL-COPYING driver-prototype/Makefile driver-prototype/minisforum_n5_it5571.c >SHA256SUMS && ci
+LICENSE: OK
+LICENSES/GPL-2.0: OK
+LICENSES/KERNEL-COPYING: OK
+driver-prototype/Makefile: OK
+driver-prototype/minisforum_n5_it5571.c: OK
+same  LICENSE
+same  LICENSES/GPL-2.0
+same  LICENSES/KERNEL-COPYING
+::error::driver-prototype/Makefile differs from v0.2.1 (feb6d9a5fbf6662a52fa7496009537945d2b30b0)
+same  driver-prototype/minisforum_n5_it5571.c
+[rc=1]
+
+$ fresh; cd /t && sed -i "s/^UPSTREAM_COMMIT=.*/UPSTREAM_COMMIT=0000000000000000000000000000000000000000/" packaging/UPSTREAM && ci
+::error::upstream v0.2.1 is feb6d9a5fbf6662a52fa7496009537945d2b30b0, packaging/UPSTREAM pins 0000000000000000000000000000000000000000
+[rc=1]
+
+$ fresh; cd /t && sed -i "s/^UPSTREAM_TAG=.*/UPSTREAM_TAG=v0.2.0/" packaging/UPSTREAM && ci
+::error::upstream v0.2.0 is e47545166ac93e3c5769dcaef75ee6ec4dd5d95d, packaging/UPSTREAM pins feb6d9a5fbf6662a52fa7496009537945d2b30b0
+[rc=1]
+
+$ fresh; cd /t/driver/upstream && sed -i "s/blob a635a38ef9405fdfcfe97f3a435393c1e9cae971/blob a635a38ef9405fdfcfe97f3a435393c1e9cae970/" ORIGIN && ci
+LICENSE: OK
+LICENSES/GPL-2.0: OK
+LICENSES/KERNEL-COPYING: OK
+driver-prototype/Makefile: OK
+driver-prototype/minisforum_n5_it5571.c: OK
+same  LICENSE
+same  LICENSES/GPL-2.0
+same  LICENSES/KERNEL-COPYING
+::error::ORIGIN blob id of LICENSES/KERNEL-COPYING is not a635a38ef9405fdfcfe97f3a435393c1e9cae971
+same  driver-prototype/Makefile
+same  driver-prototype/minisforum_n5_it5571.c
+[rc=1]
+
+### F8 release notes link
+
+$ grep -n "blob/\$GITHUB_REF_NAME/driver/patches/series" /r/.github/workflows/package.yml
+104:            what="with the patches in [\`driver/patches/\`](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/driver/patches/series) (Debian/Proxmox fork, not affiliated with upstream)"
+[rc=0]
+
+### F1 installation test as in the workflow (committable tree)
+
+$ fresh; cd /t && bash packaging/build-deb.sh >/dev/null && apt-get install -y -qq dkms linux-headers-amd64 >/dev/null 2>&1; cd /t && bash packaging/test/test-deb.sh
+headers: 6.12.111+deb13-amd64
+--- hand installation 0.2.0, as deploy/install.sh left it
+minisforum-n5-it5571/0.2.0, 6.12.111+deb13-amd64, x86_64: installed
+--- apt install the package
+Setting up minisforum-n5-it5571-dkms (0.2.1-1) ...
+minisforum-n5-it5571: taking over the hand-installed DKMS source 0.2.0 (deploy/install.sh)
+minisforum-n5-it5571: removed the hand-installed /etc/modprobe.d/minisforum-n5-it5571.conf; /usr/lib/modprobe.d/minisforum-n5-it5571.conf applies
+minisforum-n5-it5571: removed the hand-installed /etc/modules-load.d/minisforum-n5-it5571.conf; /usr/lib/modules-load.d/minisforum-n5-it5571.conf applies
+minisforum-n5-it5571: built and installed for 6.12.111+deb13-amd64
+minisforum-n5-it5571: module not loaded now (no matching N5 Pro, or no permission here); it loads at boot via /usr/lib/modules-load.d/minisforum-n5-it5571.conf
+minisforum-n5-it5571/0.2.1, 6.12.111+deb13-amd64, x86_64: installed
+filename:       /lib/modules/6.12.111+deb13-amd64/updates/dkms/minisforum_n5_it5571.ko.xz
+version:        0.2.0
+minisforum_n5_it5571.c = driver/upstream (e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74)
+Makefile = driver/upstream (edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9)
+--- an edited /etc copy is kept on reinstall
+minisforum-n5-it5571: keeping /etc/modprobe.d/minisforum-n5-it5571.conf (edited); it overrides /usr/lib/modprobe.d/minisforum-n5-it5571.conf
+minisforum-n5-it5571: built and installed for 6.12.111+deb13-amd64
+minisforum-n5-it5571: module not loaded now (no matching N5 Pro, or no permission here); it loads at boot via /usr/lib/modules-load.d/minisforum-n5-it5571.conf
+--- remove
+minisforum-n5-it5571: module files removed; a loaded module stays until reboot. Without the driver the fans run on the BIOS curve after the next boot.
+PASS
+[rc=0]
+
+### done
+
+################################################################################
+### A' gegenprobe part A repeated on the committable tree (build-deb.sh changed)
+
+### A0 container
+
+$ cat /etc/debian_version; uname -m
+13.7
+x86_64
+
+$ apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git patch build-essential bc bison flex libelf-dev libssl-dev openssl dkms kmod xz-utils zstd binutils >/dev/null && echo tools ok
+tools ok
+
+$ curl -fsSL -o /usr/share/keyrings/proxmox-archive-keyring.gpg https://enterprise.proxmox.com/debian/proxmox-archive-keyring-trixie.gpg && sha256sum /usr/share/keyrings/proxmox-archive-keyring.gpg
+136673be77aba35dcce385b28737689ad64fd785a797e57897589aed08db6e45  /usr/share/keyrings/proxmox-archive-keyring.gpg
+
+$ [ "$(sha256sum </usr/share/keyrings/proxmox-archive-keyring.gpg | cut -d' ' -f1)" = 136673be77aba35dcce385b28737689ad64fd785a797e57897589aed08db6e45 ] && echo 'keyring = n5host /usr/share/keyrings/proxmox-archive-keyring.gpg'
+keyring = n5host /usr/share/keyrings/proxmox-archive-keyring.gpg
+
+$ cat /etc/apt/sources.list.d/proxmox.sources
+Types: deb
+URIs: http://download.proxmox.com/debian/pve
+Suites: trixie
+Components: pve-no-subscription
+Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
+
+$ apt-get update -qq && apt-get install -y -qq --no-install-recommends proxmox-headers-$K >/dev/null && echo headers ok
+headers ok
+
+$ dpkg-query -W proxmox-headers-$K gcc-14 binutils dkms; ls -l /lib/modules/$K/build
+binutils	2.44-3
+dkms	3.2.2-1~deb13u1
+gcc-14	14.2.0-19
+proxmox-headers-7.0.14-20-pve	7.0.14-20
+lrwxrwxrwx 1 root root 36 Sep 24 10:43 /lib/modules/7.0.14-20-pve/build -> /usr/src/linux-headers-7.0.14-20-pve
+
+### A1 OLD pipeline (as build-deb.sh 0.2.1-1: git clone tag, check commit, copy .c + Makefile)
+
+$ mkdir -p /work/old && cd /work/old && git clone -q --depth 1 --branch v0.2.1 https://github.com/ltdstudio/minisforum-n5-it5571.git up 2>/dev/null && git -C up rev-parse HEAD
+feb6d9a5fbf6662a52fa7496009537945d2b30b0
+
+$ [ "$(git -C /work/old/up rev-parse HEAD)" = "$COMMIT" ] && echo "commit ok"
+commit ok
+
+$ install -d /work/old/src && install -m 0644 /work/old/up/driver-prototype/$MOD.c /work/old/up/driver-prototype/Makefile /work/old/src/ && cd /work/old/src && sha256sum $MOD.c Makefile
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  minisforum_n5_it5571.c
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  Makefile
+
+### A2 NEW pipeline (build-deb.sh: driver/upstream + empty series)
+
+$ cd /work/repo && grep -E "^(UPSTREAM_TAG|UPSTREAM_COMMIT|PKG_REV|FORK_VERSION|FORK_RC)=" packaging/UPSTREAM && grep -v "^#" driver/patches/series | grep -c . || true
+UPSTREAM_TAG=v0.2.1
+UPSTREAM_COMMIT=feb6d9a5fbf6662a52fa7496009537945d2b30b0
+PKG_REV=1
+FORK_VERSION=
+FORK_RC=
+0
+
+$ cd /work/repo && KEEP_SRC=/work/new/src bash packaging/build-deb.sh
+built /work/repo/dist/minisforum-n5-it5571-dkms_0.2.1-1_all.deb
+ Package: minisforum-n5-it5571-dkms
+ Version: 0.2.1-1
+ Depends: dkms (>= 3.0), proxmox-default-headers | linux-headers-amd64
+
+$ cd /work/repo && ls -l dist/ && cat dist/*.sha256
+total 16
+-rw-r--r-- 1 root root 8296 Oct  8 21:01 minisforum-n5-it5571-dkms_0.2.1-1_all.deb
+-rw-r--r-- 1 root root  108 Oct  8 21:01 minisforum-n5-it5571-dkms_0.2.1-1_all.deb.sha256
+9a577c9cb32b91de73c4803a4f921a2b6312e634c8fac112e95f41d55e6d1a84  minisforum-n5-it5571-dkms_0.2.1-1_all.deb
+
+$ cd /work/new/src && ls -l && cat UPSTREAM_COMMIT PATCHES dkms.conf && sha256sum $MOD.c Makefile
+total 36
+-rw-r--r-- 1 root root   204 Oct  8 21:01 Makefile
+-rw-r--r-- 1 root root    77 Oct  8 21:01 PATCHES
+-rw-r--r-- 1 root root    41 Oct  8 21:01 UPSTREAM_COMMIT
+-rw-r--r-- 1 root root   364 Oct  8 21:01 dkms.conf
+-rw-r--r-- 1 root root 17496 Oct  8 21:01 minisforum_n5_it5571.c
+feb6d9a5fbf6662a52fa7496009537945d2b30b0
+# none: upstream v0.2.1 (feb6d9a5fbf6662a52fa7496009537945d2b30b0) unchanged
+PACKAGE_NAME="minisforum-n5-it5571"
+PACKAGE_VERSION="0.2.1"
+BUILT_MODULE_NAME[0]="minisforum_n5_it5571"
+DEST_MODULE_LOCATION[0]="/updates/dkms"
+MAKE[0]="make -C ${kernel_source_dir} M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build modules"
+CLEAN="make -C ${kernel_source_dir} M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build clean"
+AUTOINSTALL="yes"
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  minisforum_n5_it5571.c
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  Makefile
+
+### A3 source tree comparison
+
+$ cmp /work/old/src/$MOD.c /work/new/src/$MOD.c && cmp /work/old/src/Makefile /work/new/src/Makefile && echo "old == new (.c, Makefile)"
+old == new (.c, Makefile)
+
+$ cmp /work/new/src/$MOD.c /work/repo/driver/upstream/driver-prototype/$MOD.c && cmp /work/new/src/Makefile /work/repo/driver/upstream/driver-prototype/Makefile && echo "new == driver/upstream"
+new == driver/upstream
+n5host /usr/src/minisforum-n5-it5571-0.2.1 (read-only, see N0): .c e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  Makefile edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9
+
+$ [ "$(sha256sum </work/new/src/$MOD.c | cut -d" " -f1)" = e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74 ] && [ "$(sha256sum </work/new/src/Makefile | cut -d" " -f1)" = edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9 ] && echo "new == n5host /usr/src (.c, Makefile)"
+new == n5host /usr/src (.c, Makefile)
+
+### A4 build both against proxmox-headers-7.0.14-20-pve (make, as DKMS MAKE[0])
+
+$ make -s -C /lib/modules/$K/build M=/work/old/src modules 2>&1 | tail -n 5; ls -l /work/old/src/$MOD.ko
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+-rw-r--r-- 1 root root 434464 Oct  8 21:01 /work/old/src/minisforum_n5_it5571.ko
+
+$ make -s -C /lib/modules/$K/build M=/work/new/src modules 2>&1 | tail -n 5; ls -l /work/new/src/$MOD.ko
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+Skipping BTF generation for minisforum_n5_it5571.ko due to unavailability of vmlinux
+-rw-r--r-- 1 root root 434464 Oct  8 21:01 /work/new/src/minisforum_n5_it5571.ko
+
+### A5 NEW package installed: postinst builds via DKMS for 7.0.14-20-pve
+
+$ cd /work/repo && apt-get install -y ./dist/${PKG}-dkms_0.2.1-1_all.deb 2>&1 | grep -E "^$PKG|Setting up|build" || true
+Setting up proxmox-headers-7.0.14-22-pve (7.0.14-22) ...
+Setting up proxmox-headers-7.0 (7.0.14-22) ...
+Setting up minisforum-n5-it5571-dkms (0.2.1-1) ...
+minisforum-n5-it5571: built and installed for 7.0.14-20-pve
+minisforum-n5-it5571: built and installed for 7.0.14-22-pve
+minisforum-n5-it5571: module not loaded now (no matching N5 Pro, or no permission here); it loads at boot via /usr/lib/modules-load.d/minisforum-n5-it5571.conf
+Setting up proxmox-default-headers (2.1.0) ...
+
+$ dkms status -m $PKG
+minisforum-n5-it5571/0.2.1, 7.0.14-20-pve, x86_64: installed
+minisforum-n5-it5571/0.2.1, 7.0.14-22-pve, x86_64: installed
+
+$ ls -l /lib/modules/$K/updates/dkms/
+total 32
+-rw-r--r-- 1 root root 31213 Oct  8 21:01 minisforum_n5_it5571.ko
+
+$ cat /usr/src/$PKG-0.2.1/UPSTREAM_COMMIT /usr/src/$PKG-0.2.1/PATCHES; sha256sum /usr/src/$PKG-0.2.1/*
+feb6d9a5fbf6662a52fa7496009537945d2b30b0
+# none: upstream v0.2.1 (feb6d9a5fbf6662a52fa7496009537945d2b30b0) unchanged
+edfec5e4ecef5d44d489b04559518a40f5a80652d138c29b491f9ecdd26731d9  /usr/src/minisforum-n5-it5571-0.2.1/Makefile
+f6d6ec8d1ffc5bce54bf5ec2b658a63b42dac0ac812bd4ff45d761d8fbad2b01  /usr/src/minisforum-n5-it5571-0.2.1/PATCHES
+25d1bb834db207191e1b2238db1231c15a15ed0920e1f9671fc08d669fa6bbd3  /usr/src/minisforum-n5-it5571-0.2.1/UPSTREAM_COMMIT
+7f8c1efd6bd1d5b03b092ceb0942301da77dd15ba3ab7d3a5ab7f014987e77c9  /usr/src/minisforum-n5-it5571-0.2.1/dkms.conf
+e8676ed3820c3db72b6f9821f0a0af12245eb6290380817d390952e67cb25a74  /usr/src/minisforum-n5-it5571-0.2.1/minisforum_n5_it5571.c
+
+### A6 modinfo comparison
+
+$ modinfo /work/old/src/minisforum_n5_it5571.ko | grep -E '^(filename|version|srcversion|vermagic):'
+filename:       /work/old/src/minisforum_n5_it5571.ko
+version:        0.2.0
+srcversion:     96E49785C432E4B85FAF416
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+
+$ modinfo /work/new/src/minisforum_n5_it5571.ko | grep -E '^(filename|version|srcversion|vermagic):'
+filename:       /work/new/src/minisforum_n5_it5571.ko
+version:        0.2.0
+srcversion:     96E49785C432E4B85FAF416
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+
+$ modinfo /lib/modules/7.0.14-20-pve/updates/dkms/minisforum_n5_it5571.ko | grep -E '^(filename|version|srcversion|vermagic):'
+filename:       /lib/modules/7.0.14-20-pve/updates/dkms/minisforum_n5_it5571.ko
+version:        0.2.0
+srcversion:     96E49785C432E4B85FAF416
+vermagic:       7.0.14-20-pve SMP preempt mod_unload modversions 
+
+$ for f in /work/old/src/$MOD.ko /work/new/src/$MOD.ko /lib/modules/$K/updates/dkms/$MOD.ko*; do printf "%s %s\n" "$(modinfo -F srcversion $f)" "$f"; done
+96E49785C432E4B85FAF416 /work/old/src/minisforum_n5_it5571.ko
+96E49785C432E4B85FAF416 /work/new/src/minisforum_n5_it5571.ko
+96E49785C432E4B85FAF416 /lib/modules/7.0.14-20-pve/updates/dkms/minisforum_n5_it5571.ko
+
+$ a=$(modinfo -F srcversion /work/old/src/$MOD.ko); b=$(modinfo -F srcversion /work/new/src/$MOD.ko); d=$(modinfo -F srcversion /lib/modules/$K/updates/dkms/$MOD.ko*); [ "$a" = "$b" ] && [ "$b" = "$d" ] && [ "$a" = 96E49785C432E4B85FAF416 ] && echo "srcversion old = new = dkms = n5host = $a"
+srcversion old = new = dkms = n5host = 96E49785C432E4B85FAF416
+
+### A7 .text section (informative; bit-identical .ko not expected)
+
+$ cd /work && objcopy -O binary --only-section=.text old/src/$MOD.ko old.text && objcopy -O binary --only-section=.text new/src/$MOD.ko new.text && sha256sum old.text new.text && { cmp old.text new.text && echo ".text old == new" || echo ".text differs"; }
+aa356bfdfea869bfec1963103041e9842ad6b479027f6d14d515c4aec9915a5f  old.text
+aa356bfdfea869bfec1963103041e9842ad6b479027f6d14d515c4aec9915a5f  new.text
+.text old == new
+
+$ cd /work && sha256sum old/src/$MOD.ko new/src/$MOD.ko; cmp old/src/$MOD.ko new/src/$MOD.ko && echo ".ko identical" || echo ".ko differ (expected: build path / build-id)"
+a2b8a40a8c438d60ea94daee67cb2ae44d65cad6bcc7553deee16d5da0772ece  old/src/minisforum_n5_it5571.ko
+070390b322a2100faac564245e9e258ce40d4268d4c73363d1da2aeeaf0761c4  new/src/minisforum_n5_it5571.ko
+old/src/minisforum_n5_it5571.ko new/src/minisforum_n5_it5571.ko differ: char 11005, line 11
+.ko differ (expected: build path / build-id)
+
+$ readelf -n /work/old/src/$MOD.ko | grep -A1 "Build ID" || true; readelf -n /work/new/src/$MOD.ko | grep -A1 "Build ID" || true
+    Build ID: 2aaeff0b02e70a3d2cfa26e5dd39f29e048c1776
+
+    Build ID: 15ee3981ea2b2b1cfc19148874caf2d344640063
+
+
+### A done
+
+Not run: the workflow on GitHub itself (nothing pushed), the publish step; the
+new 0.2.1-1 .deb was not compared with the published 0.2.1-1 .deb (new: file PATCHES).
+Note A5: proxmox-default-headers pulled proxmox-headers-7.0.14-22-pve into the
+container as well; DKMS built for both, the comparison uses 7.0.14-20-pve only.

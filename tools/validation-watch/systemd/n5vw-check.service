@@ -1,0 +1,22 @@
+[Unit]
+Description=n5-validation: evaluate criteria K1..K8, alert by mail (F8b)
+Documentation=file:///usr/local/lib/n5-validation/README.md
+ConditionPathExists=/etc/n5-validation.conf
+OnFailure=n5vw-failmail@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/n5-validation/n5vw-check
+TimeoutStartSec=180
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=64M
+CPUQuota=10%
+ProtectSystem=strict
+PrivateTmp=yes
+NoNewPrivileges=yes
+LogLevelMax=notice
+# postfix maildrop (sendmail/postdrop must write there)
+ReadWritePaths=/var/spool/postfix
+# data directory: ReadWritePaths= + RequiresMountsFor= in the drop-in
+# n5vw-check.service.d/data-root.conf written by install.sh

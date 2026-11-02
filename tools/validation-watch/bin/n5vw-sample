@@ -1,0 +1,87 @@
+#!/bin/bash
+# n5vw-sample - append one CSV row of sensor readings (F8b long-term watch).
+#
+# READ-ONLY: sysfs/procfs reads and "systemctl show" only. No writes to /sys,
+# no port I/O, no modprobe, no n5-fangov commands.
+# Note: reading fanN_input / tempN_input of minisforum_n5_it5571 triggers EC
+# transactions inside the driver. Keep the interval at 30 s.
+# A missing or unreadable sensor gives an empty field; the row is always written.
+set -euo pipefail
+
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=n5vw-lib.sh
+. "$(dirname "$(readlink -f "$0")")/n5vw-lib.sh"
+vw_load_config
+mkdir -p "$RUN_DIR"
+
+# targets of vw_rd/vw_mdeg (printf -v)
+boot_id='' up='' la='' v='' c='' lab='' tctl='' nvme_max='' hdd_max=''
+now=$EPOCHSECONDS
+iso=$(vw_iso "$now")
+vw_rd /proc/sys/kernel/random/boot_id boot_id
+vw_rd /proc/uptime up; up=${up%% *}; up=${up%%.*}
+vw_rd /proc/loadavg la; la=${la%% *}
+
+# --- EC driver (resolved by name on every run) ------------------------------
+ec_dir=$(vw_hwmon_dirs "$EC_HWMON_NAME" | head -n 1 || true)
+ec_err=0
+declare -a fan=('' '' '') ect=('' '' '' '') pwm=('' '' '' '') pen=('' '' '' '')
+if [ -n "$ec_dir" ]; then
+    for i in 1 2 3; do
+        vw_rd "$ec_dir/fan${i}_input" v
+        if [ -z "$v" ]; then ec_err=$((ec_err + 1)); fi
+        fan[i - 1]=$v
+    done
+    for i in 1 2 3 4; do
+        vw_rd "$ec_dir/temp${i}_input" v
+        if [ -z "$v" ]; then ec_err=$((ec_err + 1)); fi
+        vw_mdeg "$v" c; ect[i - 1]=$c
+        # cached values, no EC transaction expected; may be invisible (read-only profile)
+        vw_rd "$ec_dir/pwm$i" v; pwm[i - 1]=$v
+        vw_rd "$ec_dir/pwm${i}_enable" v; pen[i - 1]=$v
+    done
+else
+    # driver/hwmon missing: no read attempted, no read error counted
+    ec_err=
+fi
+
+# --- k10temp Tctl -----------------------------------------------------------
+tctl=
+for d in $(vw_hwmon_dirs k10temp); do
+    for l in "$d"/temp*_label; do
+        [ -e "$l" ] || continue
+        vw_rd "$l" lab
+        if [ "$lab" = Tctl ]; then vw_rd "${l%_label}_input" v; vw_mdeg "$v" tctl; fi
+    done
+done
+
+# --- max of all instances of a hwmon type (temp1_input) ----------------------
+max_temp1() {
+    local d v m=
+    for d in $(vw_hwmon_dirs "$1"); do
+        vw_rd "$d/temp1_input" v
+        case "$v" in ''|*[!0-9-]*) continue ;; esac
+        if [ -z "$m" ] || [ "$v" -gt "$m" ]; then m=$v; fi
+    done
+    vw_mdeg "$m" "$2"
+}
+max_temp1 nvme nvme_max
+max_temp1 drivetemp hdd_max
+
+# --- n5-fangov --------------------------------------------------------------
+fg_state=; fg_nr=
+while IFS='=' read -r k v; do
+    case "$k" in
+        ActiveState) fg_state=$v ;;
+        NRestarts) fg_nr=$v ;;
+    esac
+done < <(systemctl show "$FANGOV_UNIT" -p ActiveState -p NRestarts 2>/dev/null || true)
+
+if [ ! -s "$SAMPLES" ]; then printf '%s\n' "$N5VW_CSV_HEADER" > "$SAMPLES"; fi
+printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+    "$iso" "$now" "$boot_id" "$up" "$la" \
+    "${fan[0]}" "${fan[1]}" "${fan[2]}" \
+    "${ect[0]}" "${ect[1]}" "${ect[2]}" "${ect[3]}" \
+    "${pwm[0]}" "${pwm[1]}" "${pwm[2]}" "${pwm[3]}" \
+    "${pen[0]}" "${pen[1]}" "${pen[2]}" "${pen[3]}" \
+    "$tctl" "$nvme_max" "$hdd_max" "$ec_err" "$fg_state" "$fg_nr" >> "$SAMPLES"

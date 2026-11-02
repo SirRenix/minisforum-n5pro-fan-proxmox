@@ -3,7 +3,7 @@
 # auch nach SIGKILL, Watchdog-Kill oder Absturz, wo der Stop-Handler des
 # Daemons nicht mehr dran kam. Setzt einen definierten, sicheren Zustand:
 #   CPU/SSD -> EC-Automatik (funktioniert nachweislich)
-#   HDD     -> HDD_STOP_PWM manuell (EC regelt den Kanal nach Write nicht mehr)
+#   HDD     -> HDD_STOP_PWM manuell (ob die EC-Regelung nach 0x2b der Plattentemperatur folgt, ist offen)
 # Idempotent; scheitert nie laut (Exit 0), meldet aber ins Journal.
 set -u
 CONF="${N5_FAND_CONF:-/etc/n5-fand.conf}"
