@@ -127,6 +127,7 @@ func New(t testing.TB, o Options) *Host {
 	}
 	h.Put("sys/kernel/security/lockdown", "[none] integrity confidentiality\n")
 	h.Put("proc/loadavg", "0.20 0.25 0.30 1/500 12345\n")
+	h.Put("sys/devices/system/cpu/online", "0-23\n")
 	h.Put("proc/uptime", "3600.00 80000.00\n")
 	h.Put("proc/sys/kernel/osrelease", "7.0.14-20-pve\n")
 	h.Put("proc/sys/kernel/version", "#1 SMP PREEMPT_DYNAMIC PMX 7.0.14-20\n")

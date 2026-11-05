@@ -274,7 +274,7 @@ func TestLogCommand(t *testing.T) {
 
 func TestVersionAndUsage(t *testing.T) {
 	e := newEnv(t, fake.Reference())
-	if rc := run([]string{"version"}); rc != exitOK || !strings.Contains(e.stdout.String(), "n5-ectest "+version) || !strings.Contains(e.stdout.String(), "TESTSPEC 0.4") {
+	if rc := run([]string{"version"}); rc != exitOK || !strings.Contains(e.stdout.String(), "n5-ectest "+version) || !strings.Contains(e.stdout.String(), "TESTSPEC 0.5") {
 		t.Fatalf("version: %s", e.stdout)
 	}
 	if rc := run(nil); rc != exitUsage {

@@ -425,18 +425,19 @@ func charts(b *strings.Builder, l *bundle.Loaded, r *Result) {
 	b.WriteString(t.svg())
 
 	if len(r.SubRuns) > 0 {
-		b.WriteString("<h2>T2/T3 sub-runs</h2><p class=\"sub\">x: seconds after the auto command. Bands: written value ±2 (T2 FAIL band, shaded) and ±16 (T2 leave threshold, dashed); A: the auto value per register (|W−A| &lt; 16 makes a sub-run INCONCLUSIVE); marks at 60 s (T2) and 900 s (T3); green: first steady 120-s window (T3).</p>")
+		b.WriteString("<h2>T2/T3 sub-runs</h2><p class=\"sub\">x: seconds after the auto command. Bands: written value ±2 (T2 FAIL band, shaded) and ±16 (T2 leave threshold, dashed); A: the auto value per register (|W−A| &lt; 16 makes a sub-run INCONCLUSIVE); marks at 60 s (T2) and at the T3 limit; green: first steady 120-s window (T3).</p>")
 		for _, sr := range r.SubRuns {
 			title := fmt.Sprintf("run %d %s: written %d — T2 %s, T3 %s", sr.Rep, sr.Label, sr.Written, sr.Eval.T2, sr.Eval.T3)
 			sc := newChart(title, "s after auto", "duty")
-			sc.xmin, sc.xmax = 0, float64(spec.ObserveS+spec.SettleHoldS)
+			limit := spec.T3LimitS(r.Meta.Channel)
+			sc.xmin, sc.xmax = 0, float64(limit+spec.SettleHoldS)
 			w := float64(sr.Written)
 			sc.bands = append(sc.bands, band{x0: 0, x1: sc.xmax, y0: w - spec.HoldCounts, y1: w + spec.HoldCounts, class: "band", title: "written ±2"})
 			if sr.Eval.SettleAtS != nil && sr.Eval.FinalValue != nil {
 				sc.bands = append(sc.bands, band{x0: *sr.Eval.SettleAtS, x1: *sr.Eval.SettleAtS + spec.SettleHoldS, y0: n, y1: n, class: "steady", title: fmt.Sprintf("steady at %d", *sr.Eval.FinalValue)})
 			}
 			sc.hlines = []hline{{w + spec.LeaveCounts, "W+16", "thr"}, {w - spec.LeaveCounts, "W−16", "thr"}}
-			sc.vlines = []vline{{spec.LeaveWithinS, "60 s"}, {spec.ObserveS, "900 s"}}
+			sc.vlines = []vline{{spec.LeaveWithinS, "60 s"}, {float64(limit), fmt.Sprintf("%d s", limit)}}
 			var regs []int
 			for k := range sr.Regs {
 				regs = append(regs, k)

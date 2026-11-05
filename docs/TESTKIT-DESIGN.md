@@ -2,8 +2,8 @@
 
 Status: design draft 2026-10-10 (revised after review), before implementation. Written against
 TESTSPEC 0.3; everything 0.3 did not cover is listed in §12. These items are decided in
-TESTSPEC **0.4** (operator decision 2026-10-17, changelog 0.4), which applies: where this design
-differs from TESTSPEC 0.4, the spec wins. Where the tool knowingly differs from the spec version it
+TESTSPEC **0.4** (operator decision 2026-10-17, changelog 0.4); TESTSPEC 0.5 applies: where this
+design differs from TESTSPEC, the spec wins. Where the tool knowingly differs from the spec version it
 names, the bundle records it in `spec_deviations` (§8).
 
 ## 1. Goal and scope

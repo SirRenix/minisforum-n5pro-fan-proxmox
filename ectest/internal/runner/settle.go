@@ -17,8 +17,8 @@ import (
 // SettleTime(ch) after the write is recorded, never judged.
 const SettlePoll = 200 * time.Millisecond
 
-// SettleTime is the settle time of channel ch: 1 s for pwm4, 10 s for
-// pwm1-pwm3 (spec.SettleS).
+// SettleTime is the settle time of channel ch after a write: 10 s for pwm3,
+// 1 s for the others (spec.SettleS).
 func SettleTime(ch int) time.Duration {
 	return time.Duration(spec.SettleS(ch) * float64(time.Second))
 }

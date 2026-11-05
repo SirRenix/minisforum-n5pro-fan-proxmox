@@ -55,8 +55,8 @@ func TestWaitDCRPCIeMinimum(t *testing.T) {
 // MW1 Z2: the HDD group ramps DCR3, then DCR4; the read-back at the settle
 // time (10 s) sees both.
 func TestWaitDCRHDDRamp(t *testing.T) {
-	if runner.SettleTime(3) != 10*time.Second || runner.SettleTime(1) != 10*time.Second || runner.SettleTime(4) != time.Second {
-		t.Fatalf("settle times %s %s %s", runner.SettleTime(1), runner.SettleTime(3), runner.SettleTime(4))
+	if runner.SettleTime(3) != 10*time.Second || runner.SettleTime(1) != time.Second || runner.SettleTime(2) != time.Second || runner.SettleTime(4) != time.Second {
+		t.Fatalf("settle times %s %s %s %s", runner.SettleTime(1), runner.SettleTime(2), runner.SettleTime(3), runner.SettleTime(4))
 	}
 	c := &vclock{t: t0}
 	read := dcrAt(c, t0, func(el time.Duration) map[int]int {

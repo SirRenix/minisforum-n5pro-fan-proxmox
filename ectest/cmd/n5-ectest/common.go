@@ -17,14 +17,14 @@ import (
 
 func specVersion() string { return spec.SpecVersion }
 
-// Spec deviations (TESTSPEC 0.4 §1 rule 6): only where the tool knowingly
+// Spec deviations (TESTSPEC §1 rule 6): only where the tool knowingly
 // differs from the version it names. Every bundle carries the open
 // conditions of rule 4; a writing run adds what it does not implement.
 // #13 (255 hold after a temperature abort) and #9 (G6 through ecram) are
 // implemented and no longer listed.
 const (
-	DeviationConditions = "conditions of TESTSPEC 0.4 §1 rule 4 open: #1 D4 cross-check of n5-ectest against a second implementation (§9) and #4 report reproducing a hand evaluation of the first T4/T5 log not done yet"
-	DeviationT4T5       = "T4/T5 not evaluated by the tool (TESTSPEC 0.4 §1 rule 4, §5.5, #4): reported INCONCLUSIVE \"not implemented\"; evaluate by hand per §5.5"
+	DeviationConditions = "conditions of TESTSPEC §1 rule 4 open: #1 D4 cross-check of n5-ectest against a second implementation (§9; n5-fangov validate implements 0.4, not 0.5) and #4 report reproducing a hand evaluation of the first T4/T5 log not done yet"
+	DeviationT4T5       = "T4/T5 not evaluated by the tool (TESTSPEC §1 rule 4, §5.5, #4): reported INCONCLUSIVE \"not implemented\"; evaluate by hand per §5.5"
 )
 
 func baseDeviations() []string { return []string{DeviationConditions} }

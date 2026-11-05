@@ -11,11 +11,12 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 )
 
 // SpecVersion is the TESTSPEC version this code implements.
-const SpecVersion = "0.4"
+const SpecVersion = "0.5"
 
 // Verdict of a test or sub-run.
 type Verdict string
@@ -47,11 +48,15 @@ const (
 	LeaveCounts    = 16  // T2 PASS: DCR differs from the written value by >= 16
 	HoldCounts     = 2   // T2 FAIL: DCR within +-2 of the written value
 	LeaveWithinS   = 60  // T2 PASS: ... within 60 s after the auto command
-	ObserveS       = 900 // T2/T3: log 15 min after the auto command
+	ObserveS       = 900 // T2/T3 pwm3: T3 limit; the log adds SettleHoldS (1020 s)
+	ObserveFastS   = 180 // T2/T3 pwm1/pwm2: T3 limit; the log adds SettleHoldS (300 s, 0.5 #34)
+	PreS           = 900 // T2/T3 pwm3: window that determines A
+	PreFastS       = 300 // T2/T3 pwm1/pwm2: window that determines A (0.5 #34)
 	SettleBandC    = 2   // T3: DCR constant +-2 ...
 	SettleHoldS    = 120 // ... for 120 s
 	T1OwnStepRPM   = 200 // T1: own tach changes >= 200 rpm per step
-	T1OtherRPM     = 50  // T1: other tachs +-50 rpm
+	T1OtherRPM     = 50  // T1: tach noise limit; other tachs outside +-50 rpm are reported (0.5 #30)
+	T1OtherDCR     = 16  // T1: another channel's DCR this far from its rest value follows (0.5 #33)
 	RunsRequired   = 3   // T2-T5 are run 3x
 	MinDuty        = 100 // duty below 100 is never written (§4)
 	MaxM           = 200 // T2: M = min(A + 48, 200)
@@ -61,28 +66,73 @@ const (
 	LimitHDDC      = 50.0
 	T1StepHoldS    = 60
 	SampleS        = 5
-	GateLoad1      = 1.0
-	GateTempDeltaC = 1.0 // G4: EC system (0x04), EC ambient (0x06) and HDD span < 1 C; Tctl is a safety limit only (0.4 #20)
+	GateLoadDiv    = 10  // G3: load average (1 min) < online CPUs / 10 (0.5 #31)
+	GateTempDeltaC = 1.0 // G4: per input trend < 1 C and span <= 1 C (0.5 #29); Tctl is a safety limit only (0.4 #20)
+	GateTrendS     = 60  // G4: the trend compares the means of the first and the last 60 s
 	GateWindowS    = 300
 	// DueToleranceS: a sample read within +-0.5 s of its due time is judged
 	// at its due time (TESTSPEC 0.4 §2, #11).
 	DueToleranceS = 0.5
-	// Settle time (TESTSPEC 0.4 §2.1, #21): a DCR read earlier than this
-	// after a write (pwm4 also after its hand-back) is recorded, not judged.
-	SettlePCIeS  = 1.0
-	SettleOtherS = 10.0
+	// Settle time after a write (TESTSPEC §2.1, 0.4 #21, 0.5 #32): a DCR read
+	// earlier than this is recorded, not judged. pwm1, pwm2, pwm4 1 s
+	// (measured <= 0.22 s), pwm3 10 s.
+	SettleFastS = 1.0
+	SettleHDDS  = 10.0
 	// CrossingC: a table input crosses a step boundary S when it lies >= 2 C
 	// beyond S on the other side (TESTSPEC 0.4 §5.1 #24, §5.2 #17).
 	CrossingC = 2.0
 )
 
-// SettleS is the settle time of channel ch in seconds (TESTSPEC 0.4 §2.1):
-// pwm4 1 s, pwm1-pwm3 10 s.
+// SettleS is the settle time of channel ch after a write in seconds
+// (TESTSPEC §2.1): pwm3 10 s, the others 1 s.
 func SettleS(ch int) float64 {
-	if ch == PCIeChannel {
-		return SettlePCIeS
+	if ch == 3 {
+		return SettleHDDS
 	}
-	return SettleOtherS
+	return SettleFastS
+}
+
+// T3LimitS is the T3 limit of channel ch in seconds (TESTSPEC §5.2): 180 s
+// on pwm1/pwm2, 900 s on pwm3. The log after the auto command is this plus
+// SettleHoldS, so a steady state that starts at the limit is seen in full.
+func T3LimitS(ch int) int {
+	if ch == 1 || ch == 2 {
+		return ObserveFastS
+	}
+	return ObserveS
+}
+
+// PreWindowS is the window that determines A on channel ch in seconds
+// (TESTSPEC §5.2): 300 s on pwm1/pwm2, 900 s on pwm3.
+func PreWindowS(ch int) int {
+	if ch == 1 || ch == 2 {
+		return PreFastS
+	}
+	return PreS
+}
+
+// GateLoadLimit is the G3 limit for cpus online CPUs (TESTSPEC §3).
+func GateLoadLimit(cpus int) float64 { return float64(cpus) / GateLoadDiv }
+
+// ParseCPUList counts the CPUs of a kernel CPU list ("0-23", "0-3,8,10-11");
+// 0 when it cannot be parsed.
+func ParseCPUList(s string) int {
+	n := 0
+	for _, part := range strings.Split(strings.TrimSpace(s), ",") {
+		lo, hi, isRange := strings.Cut(part, "-")
+		a, err := strconv.Atoi(lo)
+		if err != nil {
+			return 0
+		}
+		b := a
+		if isRange {
+			if b, err = strconv.Atoi(hi); err != nil || b < a {
+				return 0
+			}
+		}
+		n += b - a + 1
+	}
+	return n
 }
 
 // Judged reports whether a DCR read t seconds after the write of channel ch
@@ -156,6 +206,32 @@ func JudgedRegs(ch int) []int {
 	return nil
 }
 
+// OtherRegs are the duty registers of the channels other than ch.
+func OtherRegs(ch int) []int {
+	own := map[int]bool{}
+	for _, n := range JudgedRegs(ch) {
+		own[n] = true
+	}
+	var out []int
+	for n := 1; n <= 5; n++ {
+		if !own[n] {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// regChannel is the pwm channel of duty register n (TESTSPEC §2).
+func regChannel(n int) int {
+	switch n {
+	case 1, 2:
+		return n
+	case 3, 4:
+		return 3
+	}
+	return PCIeChannel
+}
+
 // T1Steps are the duties of the mapping test, in order.
 var T1Steps = []int{255, 217, 179, 140}
 
@@ -211,6 +287,9 @@ type HandbackRun struct {
 	// returns to A, so such a sub-run is INCONCLUSIVE for T2.
 	Auto      int  `json:"auto"`
 	AutoKnown bool `json:"auto_known"`
+	// LimitS is the T3 limit of the channel in seconds (T3LimitS; 0: ObserveS,
+	// e.g. replay, where the channel's timing is not the point).
+	LimitS int `json:"t3_limit_s,omitempty"`
 	// Crossed is set when the channel's table input crossed a step between
 	// the write and the end of the log, or in the window that determined A
 	// (TESTSPEC 0.4 §5.2 #17): T2 and T3 of the sub-run are INCONCLUSIVE.
@@ -255,6 +334,10 @@ func absInt(x int) int {
 // EvalHandback evaluates one sub-run for T2 and T3.
 func EvalHandback(r HandbackRun) SubResult {
 	s := SubResult{Label: r.Label, Reg: r.Reg, Written: r.Written, T2: Inconclusive, T3: Inconclusive}
+	limit := r.LimitS
+	if limit == 0 {
+		limit = ObserveS
+	}
 	if len(r.Samples) == 0 {
 		s.T2Reason, s.T3Reason = "no DCR samples", "no DCR samples"
 		return s
@@ -293,12 +376,12 @@ func EvalHandback(r HandbackRun) SubResult {
 		s.T2Reason = fmt.Sprintf("left the written value only after %.0f s (> %d s)", *s.LeftAtS, LeaveWithinS)
 	case s.Left:
 		s.T2Reason = fmt.Sprintf("left the written value %d (max deviation %d counts), time since the auto command not recorded", r.Written, s.MaxDev)
-	// FAIL needs the whole log of the sub-run (TESTSPEC §5.2: 1020 s =
-	// ObserveS + SettleHoldS), not only the 900 s of T3's limit
-	case allWithin2 && r.TimingKnown && s.ObservedS >= ObserveS+SettleHoldS:
+	// FAIL needs the whole log of the sub-run (TESTSPEC §5.2: the T3 limit
+	// plus SettleHoldS), not only T3's limit
+	case allWithin2 && r.TimingKnown && s.ObservedS >= float64(limit+SettleHoldS):
 		s.T2, s.T2Reason = Fail, fmt.Sprintf("DCR stayed within +-%d of %d for %.0f s", HoldCounts, r.Written, s.ObservedS)
 	case allWithin2:
-		s.T2Reason = fmt.Sprintf("DCR within +-%d of the written value, but observed for %.0f s only (need %d s after the auto command)", HoldCounts, s.ObservedS, ObserveS+SettleHoldS)
+		s.T2Reason = fmt.Sprintf("DCR within +-%d of the written value, but observed for %.0f s only (need %d s after the auto command)", HoldCounts, s.ObservedS, limit+SettleHoldS)
 	default:
 		s.T2Reason = fmt.Sprintf("DCR moved by %d counts (between %d and %d)", s.MaxDev, HoldCounts+1, LeaveCounts-1)
 	}
@@ -329,14 +412,14 @@ func EvalHandback(r HandbackRun) SubResult {
 		}
 	}
 	switch {
-	case s.Settled && r.TimingKnown && *s.SettleAtS <= ObserveS:
+	case s.Settled && r.TimingKnown && *s.SettleAtS <= float64(limit):
 		s.T3, s.T3Reason = Pass, fmt.Sprintf("steady at %d (+-%d for %d s) from %.0f s after the auto command", *s.FinalValue, SettleBandC, SettleHoldS, *s.SettleAtS)
 	case s.Settled && r.TimingKnown:
-		s.T3, s.T3Reason = Fail, fmt.Sprintf("steady state only from %.0f s (> %d s)", *s.SettleAtS, ObserveS)
+		s.T3, s.T3Reason = Fail, fmt.Sprintf("steady state only from %.0f s (> %d s)", *s.SettleAtS, limit)
 	case s.Settled:
 		s.T3Reason = fmt.Sprintf("steady at %d over the observed samples, time since the auto command not recorded", *s.FinalValue)
-	case r.TimingKnown && last >= ObserveS+SettleHoldS:
-		s.T3, s.T3Reason = Fail, fmt.Sprintf("no steady state within %d s", ObserveS)
+	case r.TimingKnown && last >= float64(limit+SettleHoldS):
+		s.T3, s.T3Reason = Fail, fmt.Sprintf("no steady state within %d s", limit)
 	default:
 		s.T3Reason = fmt.Sprintf("no steady window in %.0f s of data", s.ObservedS)
 	}
@@ -572,11 +655,14 @@ func MValue(a int) int {
 
 // T1Step is the data of one mapping step.
 type T1Step struct {
-	Duty   int           `json:"duty"`
-	DCR    []int         `json:"dcr"`            // channel DCR per sample (pwm3: DCR3; -1 / empty: unavailable)
-	DCR4   []int         `json:"dcr4,omitempty"` // pwm3 only: DCR4 per sample, judged like DCR (TESTSPEC §5.1)
-	Fans   map[int][]int `json:"fans"`           // fanN -> rpm per sample (-1 unreadable)
-	OwnRPM float64       `json:"own_rpm"`        // mean of the last 3 own-tach samples (filled by EvalT1)
+	Duty int           `json:"duty"`
+	DCR  []int         `json:"dcr"`            // channel DCR per sample (pwm3: DCR3; -1 / empty: unavailable)
+	DCR4 []int         `json:"dcr4,omitempty"` // pwm3 only: DCR4 per sample, judged like DCR (TESTSPEC §5.1)
+	Fans map[int][]int `json:"fans"`           // fanN -> rpm per sample (-1 unreadable)
+	// Others are the duty registers of the other channels per sample
+	// (register -> value, -1 unreadable; TESTSPEC §5.1, 0.5 #33).
+	Others map[int][]int `json:"other_dcr,omitempty"`
+	OwnRPM float64       `json:"own_rpm"` // mean of the last 3 own-tach samples (filled by EvalT1)
 	// T is the time of each sample after the write of the step in seconds
 	// (due time, TESTSPEC 0.4 §2); empty = every sample is judged.
 	T []float64 `json:"t_s,omitempty"`
@@ -600,11 +686,12 @@ func (s T1Step) judged(ch, i int) bool {
 // EvalT1 evaluates the mapping test of channel ch. own is the channel's tach
 // (0 = none, PCIe); rest is the per-tach rpm series at rest before the
 // first write (noise reference), restIn the table inputs of the other
-// channels at rest (pwm channel -> values; nil: not recorded); fans lists
-// the tachs (1..3). For pwm3 the DCR criterion covers DCR3 (T1Step.DCR) and
-// DCR4 (T1Step.DCR4). A DCR sample before the settle time of the channel
-// is recorded, not judged (TESTSPEC 0.4 §2.1).
-func EvalT1(ch, own int, rest map[int][]int, restIn map[int][]float64, steps []T1Step, fans []int) Result {
+// channels at rest (pwm channel -> values; nil: not recorded), restDCR the
+// duty registers of the other channels at rest (register -> values); fans
+// lists the tachs (1..3). For pwm3 the DCR criterion covers DCR3 (T1Step.DCR)
+// and DCR4 (T1Step.DCR4). A DCR sample before the settle time of the channel
+// is recorded, not judged (TESTSPEC §2.1).
+func EvalT1(ch, own int, rest map[int][]int, restIn map[int][]float64, restDCR map[int][]int, steps []T1Step, fans []int) Result {
 	res := Result{ID: "T1", Channel: ch}
 	var reasons []string
 	// DCR equals the written value in every judged sample of every step
@@ -692,9 +779,60 @@ func EvalT1(ch, own int, rest map[int][]int, restIn map[int][]float64, steps []T
 	}
 	nc := Criterion{Name: "tach noise at rest <= 50 rpm", Met: boolp(len(noisy) == 0), Detail: strings.Join(noisy, "; ")}
 	res.Criteria = append(res.Criteria, nc)
-	// other tachs +-50 around their rest mean
+	// another channel follows when its duty register leaves its rest value
+	// by >= T1OtherDCR in a judged sample (TESTSPEC §5.1, 0.5 #33); a smaller
+	// difference is reported: the EC automatic regulates on rpm and may
+	// correct a coupled fan
+	moved, small, otherMissing := []string{}, []string{}, []string{}
+	movedCh := map[int]bool{}
+	for _, n := range OtherRegs(ch) {
+		m, ok := mean(restDCR[n])
+		if !ok {
+			otherMissing = append(otherMissing, fmt.Sprintf("DCR%d: no rest reference", n))
+			continue
+		}
+		base := int(math.Round(m))
+		for _, st := range steps {
+			nJudged, maxDev, devVal := 0, 0, 0
+			for i, v := range st.Others[n] {
+				if !st.judged(ch, i) {
+					continue
+				}
+				nJudged++
+				if v < 0 {
+					otherMissing = append(otherMissing, fmt.Sprintf("step %d: DCR%d sample %d", st.Duty, n, i+1))
+					continue
+				}
+				if d := absInt(v - base); d > maxDev {
+					maxDev, devVal = d, v
+				}
+			}
+			switch {
+			case nJudged == 0:
+				otherMissing = append(otherMissing, fmt.Sprintf("step %d: no judged DCR%d sample", st.Duty, n))
+			case maxDev >= T1OtherDCR:
+				moved = append(moved, fmt.Sprintf("DCR%d %d at step %d (rest %d)", n, devVal, st.Duty, base))
+				movedCh[regChannel(n)] = true
+			case maxDev > 0:
+				small = append(small, fmt.Sprintf("DCR%d %d at step %d (rest %d)", n, devVal, st.Duty, base))
+			}
+		}
+	}
+	oc := Criterion{Name: fmt.Sprintf("duty registers of the other channels stay within %d counts of their rest value", T1OtherDCR), Detail: strings.Join(moved, "; ")}
+	switch {
+	case len(moved) > 0:
+		oc.Met = boolp(false)
+	case len(otherMissing) == 0:
+		oc.Met = boolp(true)
+		if len(small) > 0 {
+			oc.Detail = "reported: " + strings.Join(small, "; ")
+		}
+	default:
+		oc.Detail = "not readable: " + strings.Join(otherMissing, "; ")
+	}
+	res.Criteria = append(res.Criteria, oc)
+	// other tachs +-50 around their rest mean: reported, not judged (0.5 #30)
 	follows := []string{}
-	followsCh := map[int]bool{} // fanN is the tach of pwmN (TESTSPEC §2)
 	for _, f := range fans {
 		if f == own {
 			continue
@@ -707,13 +845,12 @@ func EvalT1(ch, own int, rest map[int][]int, restIn map[int][]float64, steps []T
 			for _, v := range st.Fans[f] {
 				if v >= 0 && math.Abs(float64(v)-base) > T1OtherRPM {
 					follows = append(follows, fmt.Sprintf("fan%d %d rpm at step %d (rest %.0f)", f, v, st.Duty, base))
-					followsCh[f] = true
 					break
 				}
 			}
 		}
 	}
-	res.Criteria = append(res.Criteria, Criterion{Name: "other tachs within +-50 rpm", Met: boolp(len(follows) == 0), Detail: strings.Join(follows, "; ")})
+	res.Criteria = append(res.Criteria, Criterion{Name: "other tachs within +-50 rpm (reported, not judged)", Met: boolp(len(follows) == 0), Detail: strings.Join(follows, "; ")})
 	// table input of every other channel with an EC automatic against its
 	// rest reference (TESTSPEC 0.4 §5.1 #24)
 	var crossed, crossedFollow []string
@@ -734,7 +871,7 @@ func EvalT1(ch, own int, rest map[int][]int, restIn map[int][]float64, steps []T
 		if x := Crossing(oc, ref, vals); x != "" {
 			c := fmt.Sprintf("table input of pwm%d crossed a step (%s)", oc, x)
 			crossed = append(crossed, c)
-			if followsCh[oc] {
+			if movedCh[oc] {
 				crossedFollow = append(crossedFollow, c)
 			}
 		}
@@ -809,15 +946,15 @@ func EvalT1(ch, own int, rest map[int][]int, restIn map[int][]float64, steps []T
 		} else {
 			reasons = append(reasons, "DCR differs from the written value")
 		}
-	case len(follows) > 0 && len(noisy) == 0 && len(crossed) == 0:
+	case len(moved) > 0 && len(crossed) == 0:
 		res.Verdict = Fail
-		reasons = append(reasons, "another tach follows the written channel")
+		reasons = append(reasons, "another channel's duty register follows the written channel: "+strings.Join(moved, "; "))
 	case len(crossedFollow) > 0:
-		// TESTSPEC 0.4 §5.1 #24: the other channel's EC automatic may have
+		// TESTSPEC §5.1 #24: the other channel's EC automatic may have
 		// followed its own input, not the written channel
 		res.Verdict = Inconclusive
-		reasons = append(reasons, strings.Join(crossedFollow, "; ")+"; another tach outside +-50 rpm")
-	case !dcrKnown:
+		reasons = append(reasons, strings.Join(crossedFollow, "; ")+"; another channel's duty register moved")
+	case !dcrKnown || len(otherMissing) > 0:
 		res.Verdict = Inconclusive
 		reasons = append(reasons, "DCR not readable: the verdict needs the duty registers (driver 0.2.1+sr1, debug_regs=1)")
 	case len(noisy) > 0:
@@ -835,12 +972,15 @@ func EvalT1(ch, own int, rest map[int][]int, restIn map[int][]float64, steps []T
 		res.Verdict = Pass
 		switch {
 		case ch == 3:
-			reasons = append(reasons, "DCR3 and DCR4 equal to the written value at every step, own tach moved >= 200 rpm per step, other tachs within +-50 rpm")
+			reasons = append(reasons, "DCR3 and DCR4 equal to the written value at every step, own tach moved >= 200 rpm per step, other channels' duty registers stayed")
 		case own > 0:
-			reasons = append(reasons, "DCR equal to the written value at every step, own tach moved >= 200 rpm per step, other tachs within +-50 rpm")
+			reasons = append(reasons, "DCR equal to the written value at every step, own tach moved >= 200 rpm per step, other channels' duty registers stayed")
 		default:
-			reasons = append(reasons, "DCR equal to the written value at every step, all tachs within +-50 rpm (channel without tach)")
+			reasons = append(reasons, "DCR equal to the written value at every step, other channels' duty registers stayed (channel without tach)")
 		}
+	}
+	if len(follows) > 0 {
+		reasons = append(reasons, "reported, not judged: tach outside +-50 rpm (airflow coupling unless a duty register moved): "+strings.Join(follows, "; "))
 	}
 	res.Reasons = reasons
 	res.Values = steps
@@ -946,11 +1086,13 @@ type G4Result struct {
 	Limit map[string]bool
 }
 
-// EvalG4 evaluates the G4 gate window (TESTSPEC 0.4 §3, #20): span (max -
-// min) of EC system (0x04), EC ambient (0x06) and HDD max each <
-// GateTempDeltaC, and every abort-limit sensor (Tctl, NVMe, HDD) with a
-// value in the window. Tctl is not a stability criterion (safety limit
-// only, §4).
+// EvalG4 evaluates the G4 gate window (TESTSPEC §3, 0.5 #29): per input (EC
+// system 0x04, EC ambient 0x06, HDD max) the mean of the last GateTrendS
+// seconds differs from the mean of the first by < GateTempDeltaC and max -
+// min is <= GateTempDeltaC (these sensors report whole degrees, so one step
+// without a trend is allowed), and every abort-limit sensor (Tctl, NVMe,
+// HDD) has a value in the window. Tctl is not a stability criterion (safety
+// limit only, §4).
 func EvalG4(rows []Sample) G4Result {
 	g := G4Result{Pass: true, Limit: map[string]bool{}}
 	// TESTSPEC §4 limits are only enforced when their sensor has a value:
@@ -980,12 +1122,20 @@ func EvalG4(rows []Sample) G4Result {
 		{"hdd", GateTempDeltaC, func(s Sample) float64 { return s.HDDMax }},
 	} {
 		lo, hi, n := math.Inf(1), math.Inf(-1), 0
+		var first, last []float64
+		t0, t1 := rows[0].TS, rows[len(rows)-1].TS
 		for _, s := range rows {
 			v := c.get(s)
 			if math.IsNaN(v) {
 				continue
 			}
 			lo, hi, n = math.Min(lo, v), math.Max(hi, v), n+1
+			if s.TS <= t0+GateTrendS {
+				first = append(first, v)
+			}
+			if s.TS >= t1-GateTrendS {
+				last = append(last, v)
+			}
 		}
 		if n == 0 {
 			if c.name != "hdd" { // hdd is reported above
@@ -994,14 +1144,23 @@ func EvalG4(rows []Sample) G4Result {
 			g.Pass = false
 			continue
 		}
-		d := hi - lo
-		ok := d < c.max
-		mark := "<"
+		a, okA := meanF(first)
+		b, okB := meanF(last)
+		if !okA || !okB {
+			g.Parts = append(g.Parts, c.name+" has no value in the first or last 60 s")
+			g.Pass = false
+			continue
+		}
+		span, trend := hi-lo, b-a
+		ok := span <= c.max+1e-9 && math.Abs(trend) < c.max
 		if !ok {
-			mark = ">="
 			g.Pass = false
 		}
-		g.Parts = append(g.Parts, fmt.Sprintf("%s %.1f C (%s %.0f C)", c.name, d, mark, c.max))
+		verdict := "ok"
+		if !ok {
+			verdict = "not stable"
+		}
+		g.Parts = append(g.Parts, fmt.Sprintf("%s span %.1f C, trend %+.2f C: %s", c.name, span, trend, verdict))
 	}
 	return g
 }

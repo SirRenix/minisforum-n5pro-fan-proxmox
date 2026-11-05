@@ -1,7 +1,7 @@
 # n5-ectest
 
 Test toolset for the fan EC (ITE IT5571) of the Minisforum N5 family. It runs the tests of
-[`docs/TESTSPEC.md`](../docs/TESTSPEC.md) (version 0.4), logs for days, and writes result
+[`docs/TESTSPEC.md`](../docs/TESTSPEC.md) (version 0.5), logs for days, and writes result
 bundles in one raw format with an HTML report, so results from different boxes compare
 without questions.
 
@@ -125,15 +125,18 @@ T1 channel mapping: 5 min gate window without writes, 60 s rest, then 255 → 21
 140, 60 s each. About 11 min. Writes one channel, never a duty below 100. Type
 `VALIDATE START` at the device; piped input and remote sessions are refused. Verdict from
 DCR, tachs as second measure. Samples are due every 5 s from the write; a DCR sample
-before the settle time (pwm1–3 10 s, pwm4 1 s; TESTSPEC §2.1) is recorded and listed in
+before the settle time (pwm3 10 s, the others 1 s; TESTSPEC §2.1) is recorded and listed in
 `verdict.json` (`not_judged`), not judged. When another channel's table input (EC 0x09,
 0x05, 0x06) crosses a table step by 2 °C, T1 is `INCONCLUSIVE`, not `FAIL`, also when
-every other tach stays within ±50 rpm (TESTSPEC §5.1). G6 reads the curve tables through
+every other DCR stays within 16 counts of its rest value. Another channel follows when its
+DCR leaves the rest value by 16 counts or more; another tach outside ±50 rpm alone is
+reported, not judged (airflow coupling; TESTSPEC §5.1). G6 reads the curve tables through
 the driver's debugfs `ecram` (0.2.1+sr2, `debug_regs=1`) before the first write
 (`meta.json` → `ec_ram_tables`); without it G6 is `PARTIAL`. Bundle `…-validate-pwm3/`.
 
-The gate window G4 (5 min) needs EC 0x04, EC 0x06 and the HDD temperature to change < 1 °C
-and every limit sensor (Tctl, NVMe, HDD) to have a value; Tctl is a limit only, its noise
+G3 needs the load average below 0.1 × online CPUs. The gate window G4 (5 min) needs EC 0x04,
+EC 0x06 and the HDD temperature each with max − min ≤ 1 °C and less than 1 °C between the
+means of the first and the last 60 s, and every limit sensor (Tctl, NVMe, HDD) to have a value; Tctl is a limit only, its noise
 on a host with running guests does not block. Without the board/vendor/driver gate (G7)
 the window is skipped.
 
@@ -150,9 +153,10 @@ Post: the bundle as `.tar.gz` and its `.report.html`.
 sudo n5-ectest handback pwm1 --boot warm --out /root/runs
 ```
 
-T2 hand-back and T3 settling: 5 min gate window, auto value A (15 min), then 3 runs of the
-sub-runs H = 255 and M = min(A + 48, 200): write, hold 60 s, auto, log 17 min. About 2 h
-10 min per channel. Samples come on a fixed 5-s cadence from the auto command, so the
+T2 hand-back and T3 settling: 5 min gate window, auto value A, then 3 runs of the sub-runs
+H = 255 and M = min(A + 48, 200): write, hold 60 s, auto, log. pwm1/pwm2: A 5 min, log 5 min,
+T3 limit 180 s, about 46 min. pwm3: A 15 min, log 17 min, T3 limit 900 s, about 2 h 10 min.
+Samples come on a fixed 5-s cadence from the auto command, so the
 12th sample is at 60 s; a read within ±0.5 s of its slot counts at the slot (`t_s`), the
 real time is in `t_iso`. Hold samples after the settle time that differ from the written
 value are listed in `verdict.json` (`hold_deviations`), not judged. A sub-run whose table
@@ -246,7 +250,7 @@ Recomputes every verdict (with its runs and sub-runs) from `samples.csv`, `event
 compares them with `meta.json`, checks `SHA256SUMS`, and writes `<bundle>.report.html`
 beside the bundle: verdicts with their numbers, provenance, `spec_deviations`,
 DCR/tach/temperature charts with the limits, per T2/T3 sub-run the DCR after the auto
-command with A, the ±2/±16 bands and the 60 s / 900 s marks, for log runs the K1–K7
+command with A, the ±2/±16 bands and the marks at 60 s and the T3 limit, for log runs the K1–K7
 counts. One file, opens offline. Exit 1 on a mismatch, a checksum problem, or a run that
 did not finish (killed: only the provisional `meta.json` written at the start).
 
@@ -282,8 +286,8 @@ set is in `meta.json` → `redaction`.
 
 ## Results and the spec
 
-Every bundle lists in `spec_deviations` where the tool knowingly differs from TESTSPEC 0.4
-(§1 rule 6): always the open conditions of rule 4 (#1 D4 cross-check, #4 `report` against
+Every bundle lists in `spec_deviations` where the tool knowingly differs from TESTSPEC 0.5
+(§1 rule 6): always the open conditions of rule 4 (#1 D4 cross-check, `n5-fangov validate` implements 0.4 only; #4 `report` against
 a hand evaluation of T4/T5); for `handback` T4/T5 not evaluated; a fixed pwm4 `stop`
 other than 255. Quote the list with a verdict. Dry runs and runs against a test tree
 (`N5ECTEST_ROOT`) are not results.

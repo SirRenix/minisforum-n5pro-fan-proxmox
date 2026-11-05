@@ -23,7 +23,7 @@ const (
 	SourceArg     = "--restore"
 	SourceConfig  = "n5-fangov config"
 	SourceBuiltin = "n5-fangov built-in stop value (config unreadable)"
-	SourceDefault = "default without n5-fangov config (TESTSPEC 0.4 §4)"
+	SourceDefault = "default without n5-fangov config (TESTSPEC §4)"
 	SourcePCIe    = "fixed 255 for pwm4 (no EC automatic; operator decision 3, 2026-10-16)"
 )
 
@@ -47,7 +47,7 @@ type RestoreValues struct {
 // §4 takes the stop value; "auto" is the hand-back, which writes 255 from
 // driver 0.2.1+sr1~rc2, so it is no deviation).
 func DeviationPCIeRestore(stop string) string {
-	return fmt.Sprintf("restore value of pwm4 is 255, not the n5-fangov stop value %q (PCIe/DCR5 has no EC automatic; TESTSPEC 0.4 §4 takes the stop value; operator decision 3, 2026-10-16)", stop)
+	return fmt.Sprintf("restore value of pwm4 is 255, not the n5-fangov stop value %q (PCIe/DCR5 has no EC automatic; TESTSPEC §4 takes the stop value; operator decision 3, 2026-10-16)", stop)
 }
 
 // ParseRestoreArg reads "pwmN=auto|D" (N 1..4, D 100..255); pwm4 takes
