@@ -1,12 +1,11 @@
 # Test specification — N5 Pro EC fan behaviour
 
-Version **0.4** (2026-10-17). Status: operator-approved 2026-10-17; every open point decided as
-recommended in the candidate. Applies to every run started after its publication. Results of
-maintenance window 1 and earlier keep their version 0.3 (§1 rule 1). §10 lists the changes
-adopted for 0.5 after maintenance window 2a (2026-11-01); they are not in force until `n5-ectest`
-implements them.
-Version 0.3 is kept in the Git history: branch `spec-0.3`, commit `5381b97`
-(`git show 5381b97:docs/TESTSPEC.md`).
+Version **0.5** (2026-11-05). Status: operator-approved 2026-11-01 (#29–#32) and 2026-11-05
+(#33–#36), in force with `n5-ectest` implementing it. Applies to every run started after its
+publication. Results of earlier runs keep their version (§1 rule 1); the T1 results of maintenance
+window 2a (2026-11-01) stay 0.4 results.
+Earlier versions are kept in the Git history: 0.4 `git show 701bb6a:docs/TESTSPEC.md`; 0.3 branch
+`spec-0.3`, commit `5381b97` (`git show 5381b97:docs/TESTSPEC.md`).
 
 This document fixes **how** a claim about the N5 Pro EC (ITE IT5571) is tested and **what counts
 as pass or fail** — before the measurement. Every published result names the spec version it was
@@ -19,8 +18,9 @@ in productive operation (guests running). No procedure requires stopping guests.
 cannot be produced without an intervention in the hardware is listed as "not testable without
 intervention" (`N/A` with that reason), not as a precondition (operator principle 2026-10-17).
 
-Text that differs from 0.3 is tagged **[Δ #n]**; the change is listed in the changelog (0.4) and
-its reason in the annex "Rationale 0.4" under the same number.
+Text that differs from 0.3 is tagged **[Δ #n]**, text that differs from 0.4 **[0.5 #n]**; the change
+is listed in the changelog of that version and its reason in the annex "Rationale" of that version
+under the same number.
 
 ## 1. Rules
 
@@ -36,9 +36,9 @@ its reason in the annex "Rationale 0.4" under the same number.
    tool for G1–G7, T0–T5 and T6 with the module loaded is `n5-ectest` (`map` T1, `handback`
    T2/T3, `snapshot`/`diff`, `report` incl. T4/T5 per §5.5); its `spec_version` names this
    version. C1, T6 before the module is loaded, F1 and F8a: the scripts in `tools/f8a/`.
-   `n5-fangov validate` from 0.5.0-rc4 implements this version independently; its bundles are
-   cross-checks for §9 (`result_role` "cross-check"), not results. Results of `validate` before
-   0.5.0-rc4 are 0.3 results. A hand evaluation of T4/T5 is no
+   `n5-fangov validate` from 0.5.0-rc4 implements version 0.4 independently, not this version; its
+   bundles are 0.4 cross-checks for §9 (`result_role` "cross-check"), not results. Results of
+   `validate` before 0.5.0-rc4 are 0.3 results. A hand evaluation of T4/T5 is no
    longer a result. *Conditions before this rule applies: #1 (D4 cross-check, §9) and #4
    (`report` matches a hand evaluation of the first T4/T5 log). Until then `n5-ectest` bundles
    carry `spec_deviations` naming the open condition.*
@@ -94,7 +94,7 @@ write.
 |---|---|---|
 | pwm4 (DCR5) | **1 s** (measured ≤ 0.215 s) | **1 s** (measured ≤ 0.212 s; DCR5 jumps to 0xff) |
 | pwm3 (DCR3, DCR4) | **10 s** (measured: the second register after ≤ 4.8 s; ×2, derived) | no fixed time: the EC ramps (below); judged only by the T2/T3 rules |
-| pwm1, pwm2 (DCR1, DCR2) | **10 s** (not measured; conservative, same as pwm3) | EC automatic: judged only by the T2/T3 rules |
+| pwm1, pwm2 (DCR1, DCR2) | **1 s** (measured ≤ 0.22 s, Z3) **[0.5 #32]** | **12 s** for a check of the settled value (255 → lowest table value at ≈ 20 steps/s, plus margin; Z3) **[0.5 #32]**. T2/T3 keep their own rules; `n5-ectest` has no other hand-back check on these channels |
 
 **HDD hand-back ramp (derived):** after the hand-back the EC moves DCR3 and DCR4 alternately in
 bursts (~4 counts per 0.22 s per burst); over the 15-s log of Z2 the mean rate was ~5 counts/s per
@@ -125,8 +125,8 @@ G7 failed.
 |---|---|---|
 | G1 | No other pwm writer: `n5-fangov` (also while restarting), `n5-fand`, `fancontrol` inactive; the writer lock is held by the run. Checked again at **every sample**; a writer that becomes active aborts the run | **[Δ #5]** systemd state of the known regulators; processes by exact `comm`/`argv[0]`; open fds on `pwm*`; `pwmN`/`pwmN_enable` against the expected value per sample; writer-lock inode per sample |
 | G2 | No scrub/resilver/backup | `zpool status` ("scrub in progress", "resilver in progress"; no `zpool` = met), process list: `vzdump`, `proxmox-backup-client` by process name or program in the command line, and PVE workers by their title `task UPID:…:vzdump:…`; `zpool status` failing = not met. Host-specific backup jobs that are neither are excluded by the operator in the run card |
-| G3 | Load average (1 min) < 1.0 | `/proc/loadavg`, first sample of the gate window; unreadable = not met |
-| G4 | **[Δ #20]** Stable channel inputs over 5 min (max − min of the gate window): EC 0x04 (system), EC 0x06 (ambient; HDD table input) and HDD (drivetemp max) each < 1 °C; **and** every limit sensor of §4 (Tctl, NVMe, HDD) has a value in that window. **Tctl is not a stability criterion**; it is a safety limit (§4) | gate window: 300 s of samples every 5 s without writes; a sensor without any value in the window = not met; an abort during the window = not met |
+| G3 | **[0.5 #31]** Load average (1 min) < 0.1 × number of online CPUs (reference host, 24 threads: < 2.4) | `/proc/loadavg`, first sample of the gate window; `/sys/devices/system/cpu/online`; either unreadable = not met |
+| G4 | **[Δ #20] [0.5 #29]** Stable channel inputs over 5 min, per input (EC 0x04 system, EC 0x06 ambient and HDD table input, HDD drivetemp max): \|mean of the last 60 s − mean of the first 60 s\| < 1 °C **and** max − min ≤ 1 °C; **and** every limit sensor of §4 (Tctl, NVMe, HDD) has a value in that window. These sensors report whole degrees, so one step without a trend is allowed. **Tctl is not a stability criterion**; it is a safety limit (§4) | gate window: 300 s of samples every 5 s without writes; a sensor without any value in the window, or without a value in its first or last 60 s = not met; an abort during the window = not met |
 | G5 | Operator at the device (writes are never run remotely) | interactive confirmation: `VALIDATE START` typed on a terminal. Always refused when standard input is not a terminal. Refused in a remote session (`SSH_*`, or `sshd`/`termproxy`/… among the ancestor processes), and when no local console (VT or serial login) is in the process chain, unless `--i-am-at-the-console` states that the operator sits at the device; the session is recorded |
 | G6 | Register snapshot before the first write since boot: duty registers **and** EC RAM curve tables (0x10–0x27, 0x30–0x38, 0x70–0x81) | see below |
 | G7 | **[Δ #7]** Board, vendor and driver state allow writes: board in the driver's write table, `sys_vendor` as measured for that board, module not loaded with `force` | DMI, driver parameters; failed → writing tests `INCONCLUSIVE` ("not run: gate G7"), nothing written |
@@ -177,9 +177,9 @@ from the written value **after the settle time (§2.1) [Δ #21]** counts as writ
 | ID | Question | Procedure | PASS | FAIL | INCONCLUSIVE |
 |---|---|---|---|---|---|
 | T0 | Identity | Read-only dump (§2) | all fields present | — | a field missing (named) |
-| T1 | Mapping | §5.1: 60 s rest reference, then one channel: 255 → 217 → 179 → 140, 60 s each | DCR equals the written value in every **judged** sample of every step (§2.1) (pwm3: DCR3 **and** DCR4); own tach changes ≥ 200 rpm per step in the expected direction; other tachs ±50 rpm. **Channel without tach (PCIe):** DCR equals the written value, all tachs ±50 rpm | DCR (pwm3: DCR3 or DCR4) differs from the written value in a judged sample, or another tach follows (§5.1) | tach noise > 50 rpm at rest; own tach changes < 200 rpm in a step; DCR not readable; **[Δ #24]** another channel's table input crossed a step (§5.1) |
-| T2 | Hand-back (leaves written value) | §5.2: auto value A first, then per run the sub-runs H = 255 and M = min(A + 48, 200): write, hold 60 s, send auto, log 1020 s | DCR differs from the written value by **≥ 16 counts** within 60 s in both sub-runs (pwm3: in DCR3 and DCR4) | DCR within ±2 of the written value in every sample of the 1020-s log in both sub-runs (pwm3: in DCR3 and DCR4) | mixed result; DCR3 and DCR4 disagree; a sub-run whose written value lies within 16 counts of A; **[Δ #17]** table input crossed a step (§5.2). **PCIe: `N/A`** |
-| T3 | Settling | from the T2 data, every sub-run (§5.2) | DCR constant ±2 for 120 s, reached within 15 min (pwm3: DCR3 and DCR4); settle time and final value reported | no steady state within 15 min (pwm3: in DCR3 and DCR4) | log ends before a decision; DCR3 and DCR4 disagree; **[Δ #17]** table input crossed a step. **PCIe: `N/A`** |
+| T1 | Mapping | §5.1: 60 s rest reference, then one channel: 255 → 217 → 179 → 140, 60 s each | DCR equals the written value in every **judged** sample of every step (§2.1) (pwm3: DCR3 **and** DCR4); own tach changes ≥ 200 rpm per step in the expected direction; **[0.5 #33]** the DCR of every other channel stays within 16 counts of its rest value. **Channel without tach (PCIe):** the same without the own-tach criterion. **[0.5 #30]** Another tach outside ±50 rpm is `REPORTED` | DCR (pwm3: DCR3 or DCR4) differs from the written value in a judged sample, or another channel's DCR follows (§5.1) | tach noise > 50 rpm at rest; own tach changes < 200 rpm in a step; DCR not readable; **[Δ #24]** another channel's table input crossed a step (§5.1) |
+| T2 | Hand-back (leaves written value) | §5.2: auto value A first, then per run the sub-runs H = 255 and M = min(A + 48, 200): write, hold 60 s, send auto, log 300 s (pwm1/pwm2) or 1020 s (pwm3) | DCR differs from the written value by **≥ 16 counts** within 60 s in both sub-runs (pwm3: in DCR3 and DCR4) | DCR within ±2 of the written value in every sample of the log in both sub-runs (pwm3: in DCR3 and DCR4) | mixed result; DCR3 and DCR4 disagree; a sub-run whose written value lies within 16 counts of A; **[Δ #17]** table input crossed a step (§5.2). **PCIe: `N/A`** |
+| T3 | Settling | from the T2 data, every sub-run (§5.2) | DCR constant ±2 for 120 s, reached within the T3 limit (pwm1/pwm2 180 s, pwm3 900 s; §5.2) (pwm3: DCR3 and DCR4); settle time and final value reported | no steady state within the T3 limit (pwm3: in DCR3 and DCR4) | log ends before a decision; DCR3 and DCR4 disagree; **[Δ #17]** table input crossed a step. **PCIe: `N/A`** |
 | C1 | Curve tables unchanged | EC RAM 0x10–0x27, 0x30–0x38, 0x70–0x81 before and after a run or a bracket of runs (§5.3) | byte-identical | any difference (reported with offsets; recovery path cold boot/power-off is then measured) | snapshot missing or incomplete; tool alone with the driver loaded (§5.3) |
 | T4 | Target band follows a falling input | §5.5 | after the input crossed the step by ≥ 2 °C, the tach settles into the new target band (target ± 100 rpm) within 10 min | the tach stays in the old target band for 10 min after the crossing | see §5.5. **PCIe: `N/A`** |
 | T5 | Target band follows a rising input (load) | §5.5 | as T4, for the rising input | as T4 | as T4. **PCIe: `N/A`** |
@@ -212,21 +212,25 @@ Evaluation:
   two differ are listed. A judged sample without DCR leaves this undecided ("DCR not readable"),
   unless another judged sample already differs.
 - **Noise at rest:** max − min of each tach over the rest reference; > 50 rpm = noisy.
-- **Other tachs:** every sample of every step within ±50 rpm of that tach's mean over the rest
-  reference.
+- **Other duty registers [0.5 #33]:** the rest value of each register of the other channels is its
+  mean over the rest reference, rounded. A judged sample ≥ 16 counts from it: that channel
+  follows. A difference of 1–15 counts is `REPORTED` with the value. A judged sample without the
+  register, or a register without rest samples, leaves this undecided ("DCR not readable").
+- **Other tachs [0.5 #30]:** a sample of a step outside ±50 rpm of that tach's mean over the rest
+  reference is `REPORTED` with the deviation (airflow coupling); it does not change the verdict.
 - **[Δ #24] Table input of another channel:** the table input (§6) of each other channel with an
   EC automatic (CPU EC 0x09, SSD EC 0x05, HDD EC 0x06) is recorded; a crossing = the input lies
   ≥ 2 °C beyond a step boundary S on the other side than in the rest reference.
 - **Own tach:** mean of the last 3 samples of each step; the mean drops by ≥ 200 rpm from each
   step to the next (255→217, 217→179, 179→140). A step whose last 3 own-tach samples are all
   unreadable has no mean and counts as "own tach < 200 rpm".
-- **Verdict, in this order:** DCR differs in a judged sample → FAIL; another tach outside ±50 rpm
-  and no tach noisy **and no table input of another channel crossed a step [Δ #24]** → FAIL;
-  another tach outside ±50 rpm while that channel's table input crossed a step → INCONCLUSIVE
-  ("table input of pwmN crossed a step") **[Δ #24]**; DCR not readable → INCONCLUSIVE; a tach
-  noisy → INCONCLUSIVE; own tach < 200 rpm in a step → INCONCLUSIVE; a table input of another
-  channel crossed a step, even with every other tach within ±50 rpm → INCONCLUSIVE ("table input
-  of pwmN crossed a step") **[Δ #24, operator decision 2026-10-17]**; otherwise PASS.
+- **Verdict, in this order:** DCR differs in a judged sample → FAIL; another channel's DCR follows
+  **and no table input of another channel crossed a step [Δ #24]** → FAIL; another channel's DCR
+  follows while that channel's table input crossed a step → INCONCLUSIVE ("table input of pwmN
+  crossed a step") **[Δ #24]**; DCR not readable → INCONCLUSIVE; a tach noisy → INCONCLUSIVE; own
+  tach < 200 rpm in a step → INCONCLUSIVE; a table input of another channel crossed a step, even
+  with every other DCR within 16 counts → INCONCLUSIVE ("table input of pwmN crossed a step")
+  **[Δ #24, operator decision 2026-10-17]**; otherwise PASS.
 
 Duration per channel: 5 min gate window + 60 s rest + 4 × 60 s ≈ 10 min.
 
@@ -235,24 +239,26 @@ Duration per channel: 5 min gate window + 60 s rest + 4 × 60 s ≈ 10 min.
 Not run for **pwm4**: `N/A` ("no EC automatic on DCR5 (firmware 0.14)", §6); nothing is written.
 What DCR5 does at a hand-back is checked by F1 (§5.3).
 
-1. **Auto value A:** send the auto command first and log 15 min (900 s), then A = the last DCR
-   sample of that window. Reason: after `systemctl stop n5-fangov` the failsafe leaves fixed
+1. **Auto value A [0.5 #34]:** send the auto command first and log the A window (pwm1/pwm2 300 s,
+   pwm3 900 s), then A = the last DCR sample of that window. Reason: after `systemctl stop n5-fangov` the failsafe leaves fixed
    channels at their stop duty (HDD 140), so the register before the auto command is not the
    EC's own value.
 2. **Second value:** M = min(A + 48, 200), never below 100.
 3. **Per run (3×), sub-runs H then M, back to back:** manual mode (driver sets 255), write the
-   value, hold 60 s, send the auto command, log **1020 s** (15 min plus the 120-s T3 window).
+   value, hold 60 s, send the auto command, log the T3 limit plus the 120-s T3 window: **[0.5 #34]**
+   pwm1/pwm2 180 s + 120 s = **300 s**, pwm3 900 s + 120 s = **1020 s**.
    Times are seconds after the auto command. **[Δ #21]** In the hold phase the DCR is recorded;
    samples after the settle time of the channel that differ from W are listed in the bundle
    (`hold_deviations`), they do not change the T2/T3 verdict.
 4. After the last run: restore value for the channel (§4).
 
-Per channel this takes about 2 h 10 min (300 s gate + 900 s + 3 × 2 × (60 s + 1020 s)).
+Per channel this takes about 46 min on pwm1/pwm2 (300 s gate + 300 s + 3 × 2 × (60 s + 300 s)) and
+about 2 h 10 min on pwm3 (300 s gate + 900 s + 3 × 2 × (60 s + 1020 s)).
 
 **[Δ #17] Table input crossing:** a T2/T3 sub-run is INCONCLUSIVE ("table input crossed a step")
 when the channel's table input (§6) crosses a step boundary S by ≥ 2 °C between the write and the
-end of the 1020-s log; the same for the 900-s window that determines A (then every sub-run of the
-tool run is INCONCLUSIVE). Reason: a load episode moves the target rpm and the duty during the
+end of the log; the same for the window that determines A (then every sub-run of the tool run is
+INCONCLUSIVE). Reason: a load episode moves the target rpm and the duty during the
 log; T2/T3 would judge a target change as hand-back or settling. Known on the reference host: a
 guest container raises EC 0x09 daily from ~35–38 to ~60–63 °C for about 70 min (crosses CPU steps
 45 and 55 °C); the run card schedules pwm1 outside that episode.
@@ -260,7 +266,7 @@ guest container raises EC 0x09 daily from ~35–38 to ~60–63 °C for about 70 
 **T2, per sub-run** (W = written value):
 
 - PASS: the first sample with |DCR − W| ≥ 16 lies at ≤ 60 s.
-- FAIL: every sample of the 1020-s log within ±2 of W.
+- FAIL: every sample of the log within ±2 of W.
 - INCONCLUSIVE: left W by ≥ 16 only after 60 s; or moved by 3–15 counts without leaving it.
 - Overrides the above: |W − A| < 16 → INCONCLUSIVE ("too close to the auto value"). This hits M
   for 185 ≤ A ≤ 215 (M = 200 for A ≥ 152) and H for A ≥ 240.
@@ -278,8 +284,8 @@ sub-run (abort) makes the run INCONCLUSIVE.
 ±2 of the window's first sample; the window must lie within the log. Settle time = its start,
 final value = its first sample.
 
-- PASS: settle time ≤ 900 s.
-- FAIL: settle time > 900 s, or no steady window in the full 1020-s log.
+- PASS: settle time ≤ the T3 limit (pwm1/pwm2 180 s, pwm3 900 s).
+- FAIL: settle time > the T3 limit, or no steady window in the full log.
 - INCONCLUSIVE: the log ends (abort) before either is decided.
 
 Run and test verdict as for T2.
@@ -474,7 +480,8 @@ Further facts the tests rely on (same source and status):
 - **[Δ #21] Register latency** (measured 2026-10-17, Z1/Z2): DCR5 takes a write and the hand-back
   within ≤ 0.22 s. DCR3 and DCR4 take a write one after the other (first after ~1.5–1.7 s, second
   after ~4.6–4.8 s). After the HDD hand-back the EC moves DCR3 and DCR4 alternately in steps
-  (ramp, §2.1). DCR1/DCR2 latency not measured.
+  (ramp, §2.1). DCR1/DCR2 take a write within ≤ 0.22 s and ramp ≈ 20 steps/s after the hand-back
+  (measured 2026-11-01, Z3).
 - **Boot state** (measured 2026-10-17, T6, one cold and one warm boot): BIOS/EC set DCR3/DCR4 to
   0x64 at both boots; DCR5 is 0x00 after a cold boot and keeps its last value over a warm boot.
 
@@ -497,10 +504,8 @@ T2–T5 `N/A` for pwm4; DCR5 at a hand-back is checked by F1 (§5.3).
   (module unloaded) and after reload; Super-I/O 0x2e/0x2f free afterwards; whether the region is
   claimed *during* the read was too short to observe. Closed with driver patch 0003 once approved.
 - Whether DCR4 drives a fan of its own (tach 0x88E0/E1) or reads the same signal as fan3.
-- **[Δ #21]** Write latency of DCR1/DCR2: measured 2026-11-01 (Z3, no verdict) — ≤ 0.22 s after
-  a write; after hand-back the EC ramps ≈ 20 steps/s (180 → table value in 4.9 s on pwm1, 5.3 s
-  on pwm2). Final value and duration of the HDD hand-back ramp: not measured. Used in §10, not in
-  this version.
+- **[Δ #21]** Final value and duration of the HDD hand-back ramp: not measured. Steadiness of DCR1
+  and DCR2 beyond +15 s after a hand-back: not measured (Z3 ended there; #34).
 - **[Δ #20]** Noise of EC 0x09 at 5-s sampling under normal guest load (not measured); needed only
   if a later version wants a CPU-side stability criterion.
 
@@ -510,7 +515,7 @@ Per run a directory `befunde/runs/<YYYYMMDD-HHMM>-<board>-<bios>-<test>/`:
 
 | File | Content |
 |---|---|
-| `meta.json` | identity, spec version, gate results, timing, `limit_sensors`, `restore_values`, `restore_failed`, `restore_warnings`, session (G5), `aborted`, `spec_deviations` (§1 rule 6), **[Δ #8]** redaction rule set, **[Δ #21]** settle times used |
+| `meta.json` | identity, spec version, gate results, timing, `limit_sensors`, `restore_values`, `restore_failed`, `restore_warnings`, session (G5), `aborted`, `spec_deviations` (§1 rule 6), **[Δ #8]** redaction rule set, **[Δ #21]** settle times used, **[0.5 #31]** `online_cpus` |
 | `samples.csv` | `t_iso, t_s, phase, ch, written, dcr1, dcr2, dcr3, dcr4, dcr5, fan1, fan2, fan3, ec_cpu, ec_sys, ec_board, ec_amb, hdd_max, nvme_max, tctl, load1, room_t, room_rh`; unknown values are empty cells; **[Δ #11]** `t_s` = due time, real read time in `t_iso` |
 | `events.log` | every write and auto command with timestamp, gate results, operator confirmation, restores, aborts |
 | `verdict.json` | verdict per test and criterion, with the numbers it was computed from; **[Δ #21]** samples recorded but not judged (settle time) listed per step |
@@ -522,14 +527,15 @@ under `befunde/raw/` and linked from the run record. Results are listed in `befu
 F8b) of boards outside the driver's write table go into RESULTS.md as well; they never raise the
 hardware status above `experimental`. Issue comments link the commit, not a summary.
 
-## 9. Acceptance conditions of 0.4 (before results are quoted)
+## 9. Acceptance conditions (before results are quoted)
 
 - **#1 / #27 — D4 cross-check:** `n5-ectest map pwm1` and a second implementation agree on the T1
   verdict, the DCR per step and the tach means (±50 rpm), on the same host and day. Second
   implementation: `n5-fangov validate` from 0.5.0-rc4, which implements 0.4 independently with an
   empty `spec_deviations` list; its bundle is a cross-check, not a result (operator decision
-  2026-10-17, replaces the frozen-0.3 variant). Fallback, if no independent 0.4 implementation is
-  available: a second reader logs `dcr` and tachs
+  2026-10-17, replaces the frozen-0.3 variant). It does not implement 0.5: under 0.5 this condition
+  stays open until `validate` follows or the fallback is used. Fallback, if no independent
+  implementation of the version is available: a second reader logs `dcr` and tachs
   independently during the `n5-ectest` T1 run; D4 compares the measurements and `report`
   recomputes the verdict (checks the measurement path, not the evaluation logic twice; named with
   the result).
@@ -537,21 +543,28 @@ hardware status above `experimental`. Issue comments link the commit, not a summ
   T4/T5 log. Until then T4/T5 results are not quoted.
 - **#9 — `ecram`:** byte-compare against f8a mode A before `ecram` is a C1 path (§5.3).
 
-## 10. Changes adopted for 0.5 (not yet in force)
-
-Operator decision 2026-11-01, after maintenance window 2a (`befunde/BEFUNDE.md` §Wartungsfenster
-2a). The changes below fix gaps that window showed. They take effect, as version 0.5, only once
-`n5-ectest` implements them; until then 0.4 applies unchanged and every run names 0.4. No run is
-required to adopt them, and no 0.4 verdict is re-labelled (§1 rule 1).
-
-| # | Section | 0.4 | 0.5 | Evidence |
-|---|---|---|---|---|
-| 29 | §3 G4 | max − min < 1 °C over 5 min per input | The EC reports whole degrees, so < 1 °C meant "no change at all". New: mean of the last 60 s − mean of the first 60 s < 1 °C **and** max − min ≤ 1 °C, per input (EC 0x04, EC 0x06, HDD) | 2026-11-01: EC 0x04 alternated 29/30 °C in every gate window without a trend; pwm2/pwm4 four times INCONCLUSIVE |
-| 30 | §5.1 T1 | another tach outside ±50 rpm → FAIL ("another tach follows") | FAIL only if the **duty register of that other channel** (DCR) changes during the step. Another tach outside ±50 rpm while its DCR stays constant → `REPORTED` as airflow coupling with the deviation; the T1 verdict is decided by the other criteria | 2026-11-01 pwm3: fan2 +58 rpm at pwm3 = 255, DCR2 = 75 in every sample |
-| 31 | §3 G3 | load average (1 min) < 1.0 | load average (1 min) < 0.1 × number of online CPUs (reference host, 24 threads: < 2.4) | absolute 1.0 is tight on a production host with 24 threads; 2026-11-01 met (0.1–0.75) |
-| 32 | §2.1 | settle 10 s for pwm1–3, used for writes and hand-back checks alike | write checks pwm1/pwm2: 1 s (PCIe already 1 s); hand-back checks pwm1/pwm2: 12 s (255 → lowest table value at ≈ 20 steps/s, plus margin); pwm3 unchanged (10 s) | Z3 2026-11-01 (§7) |
-
 ## Changelog
+
+### 0.5 (2026-11-05)
+
+Operator decisions 2026-11-01 (#29–#32, after maintenance window 2a) and 2026-11-05 (#33–#36, after
+checking the limits against the raw data). In force with `n5-ectest` implementing it. No run was
+required for it and no 0.4 verdict is re-labelled (§1 rule 1): T1 pwm3 of 2026-11-01 stays FAIL.
+Direction as in 0.4. Reason per point: annex "Rationale 0.5".
+
+| # | Change | Section | Direction | Decision |
+|---|---|---|---|---|
+| 29 | G4 per input: mean of the last 60 s against the first 60 s < 1 °C and max − min ≤ 1 °C, instead of max − min < 1 °C | §3 G4 | looser | operator decision 2026-11-01 |
+| 30 | T1: another tach outside ±50 rpm is `REPORTED`, no longer FAIL; the verdict comes from the other channel's DCR | §5, §5.1 | looser | operator decision 2026-11-01 |
+| 31 | G3: load average (1 min) < 0.1 × online CPUs instead of < 1.0 | §3 G3, §8 | looser | operator decision 2026-11-01 |
+| 32 | Settle time pwm1/pwm2: 1 s after a write, 12 s for a check of the settled value after a hand-back | §2.1, §6, §7 | looser (judges more samples) | operator decision 2026-11-01 |
+| 33 | T1: another channel follows when its DCR leaves the rest value by ≥ 16 counts; 1–15 counts `REPORTED` | §5, §5.1 | looser | operator decision 2026-11-05 |
+| 34 | T2/T3 on pwm1/pwm2: A window 300 s, log 300 s, T3 limit 180 s; pwm3 unchanged | §5, §5.2 | looser (time), stricter (T3 limit) | operator decision 2026-11-05 |
+| 35 | Status `tested` and `experimental` defined in `befunde/RESULTS.md` | `befunde/RESULTS.md` | equal (closes gap) | operator decision 2026-11-05 |
+| 36 | Derivation of the limits recorded | annex | equal | operator decision 2026-11-05 |
+
+Also: `n5-fangov validate` stays a 0.4 implementation (§1 rule 4, §9). **Not changed:** G5, the exact
+DCR match of T1, the minimum duty of 100, §4.
 
 ### 0.4 (2026-10-17, operator decision 2026-10-17)
 
@@ -606,6 +619,57 @@ Full text of 0.3: `git show 5381b97:docs/TESTSPEC.md` (branch `spec-0.3`).
 | 0.1-draft | 2026-10-08 | First version; after review: T1 for channels without tach, T2 minimum distance 16 counts and second value M derived from the auto value, new C1 (curve tables unchanged), T4 reworded (no "fixed default" verdict), T4/T5 only after §6; new §5a Stability: F8a (stress in maintenance window) and F8b (7-day watcher, criteria K1–K7, baseline vs patched driver), operator decision 2026-10-08 | 2026-09-14 run judged hand-back by tach after 20 s (±150 rpm of pre-test value); window too short, wrong measurand, no pre-write snapshot. See upstream issue #7 |
 | 0.2 | 2026-10-09 | (1) T1: 60-s rest reference before the steps; DCR checked in every sample; own tach = mean of the last 3 samples per step; order of the verdict rules, own tach < 200 rpm (or unreadable at the end of a step), a sample without DCR and noise with a following tach → INCONCLUSIVE (§5.1). (2) T2: A read after auto + 15 min (failsafe leaves HDD at 140); sub-runs H then M back to back; log 1020 s; FAIL needs ±2 over the whole log; written value within 16 counts of A → sub-run INCONCLUSIVE; left only after 60 s → INCONCLUSIVE; run/test aggregation incl. fewer than 3 runs (§5.2). (3) T3: definition of the steady window, FAIL also when no window in 1020 s, INCONCLUSIVE when the log ends early (§5.2). (4) §3: G6 PARTIAL and non-blocking, curve-table part from a mode-A snapshot; failed gate → writing tests INCONCLUSIVE, nothing written, except the two refusals before the run (running daemon, G5) that leave no bundle; G3/G4/G5 SKIPPED without writing test, G3/G4 also without readable duty registers; G1 checked at every sample incl. writer lock; G2/G3/G4/G5 measurement made explicit (G2: command line and PVE worker title, as `comm` cannot show `proxmox-backup-client` or a scheduled vzdump; G4: CPU = Tctl, all limit sensors present; G5: no local console without `--i-am-at-the-console` refused, piped input always refused). (5) §4: limit sensor unreadable 3 samples → abort; other writer → abort; restore value defined (configured stop value, never below 100), restore warnings/failures recorded. (6) T6 verdict `REPORTED` (§1, §5). (7) `spec_deviations` in `meta.json` (§1 rule 6, §8); dry-run/replay are no results (§1 rule 7). (8) C1 and G6 curve regions extended by 0x30–0x38; C1 procedure with `f8a-snapshot --diff`/`f8a-pcie` (module unloaded), bracket over several runs named as such (§5.3). (9) F8a procedure from `tools/f8a/` incl. unbind loop, kernel-log pattern list, any hit = FAIL (§5a). (10) T6 procedure (§5.4). (11) Identity: EC firmware = DMI `ec_firmware_release`, driver srcversion; DCR source per driver state; DCR4 recorded, not judged (§2). (12) §7 "for 0.2" list removed (integrated) | (1)–(7): the n5-fangov `validate` review (2026-10-09) found interpretations the 0.1 text did not cover (T3 needs 120 s after a start at 15 min; for 185 ≤ A ≤ 215, M = 200 lies within 16 counts of A; G6 has no safe read path with the driver loaded; restoring must not write < 100; a missing limit sensor would silently disable its limit); spec and code now agree, `spec_deviations` is empty. (8)–(10): P1 analysis 2026-10-08 found 0x30–0x38 to be a curve table (contains 0x34); the maintenance-window scripts are the only safe curve-table read path. (11): P1/BEFUNDE: `ec_firmware_release` = 0.14 is the readable source; the tool judges one register per channel |
 | 0.3 | 2026-10-09 | (1) G4: Tctl span < 5 °C over the 5-min window; EC system (0x04) and HDD max < 1 °C and all limit sensors present unchanged (§3) — operator decision 2026-10-09. (2) §6 rewritten: EC automatic decoded (rpm control, target ± 100 rpm by stepping the duty; table format `(target_rpm/100, T_upper, T_lower)`; inputs CPU EC 0x09, SSD EC 0x05, HDD EC 0x06 for DCR3 and DCR4; no EC automatic for PCIe; tables not OS-writable; open on the device: 0x28–0x2B, overrides, BIOS User Mode — M1). T2/T3 stay on DCR; T4/T5 redefined on the target band of the tach as a function of the table input, PASS/FAIL/INCONCLUSIVE per §5.5 (new); HDD expected INCONCLUSIVE (input 0x06 needs ≥ 34 °C); PCIe T2–T5 `N/A`, new result `N/A` (§1 rule 2); `validate` reports T4/T5 INCONCLUSIVE with the reasons of §5, pwm4 T2/T3 `N/A`. Two relaxations follow from this and are marked as such: §1 rule 4 — T4/T5 are evaluated by hand from the log and the result says "evaluated by hand" (not computed by the tool); §1 rule 5 — PCIe is **validated** with T1 alone (T2/T3 `N/A`) — operator decision 2026-10-09. Review 2026-10-10, before any run against 0.3: overlapping target bands in §5.5 — a sample in the overlap counts for neither band (no relaxation: such a sample can neither pass nor fail). (3) F8a: every kernel-log hit is FAIL unless explained with evidence (annotation), as F8b; no INCONCLUSIVE for a hit (§5a) — operator decision 2026-10-09. (4) Restore = the configured stop value (≥ 100), not necessarily the EC automatic, equally safe (§4) — operator decision 2026-10-09. (5) pwm3: DCR3 and DCR4 both judged in T1/T2/T3, disagreement reported, never PASS (§2, §5.1, §5.2) — operator decision 2026-10-09. (6) Five relaxations against 0.1 confirmed and marked: G6 non-blocking (`PARTIAL`); G3–G5 `SKIPPED` without writing test; sub-run with \|W − A\| < 16 → INCONCLUSIVE; tach noise / co-moving tach → INCONCLUSIVE; C1 as a bracket over several runs (§3, §5.1, §5.2, §5.3) — operator decision 2026-10-09 | (1) A Tctl span < 1 °C over 5 min is a stricter start condition than the gate needs; the EC-side inputs keep < 1 °C. (2) The EC firmware 0.14 analysis (`p1-ec-tabellen-20261008.md` §1–§5) showed that the automatic controls rpm, not duty, and which sensor feeds each table; criteria on DCR alone cannot show a curve response. (3) F8a and F8b now judge kernel-log hits by the same rule. (4)–(6) accepted by the operator after the 0.2 review; (5) DCR3 and DCR4 regulate separately on their own tachs (§6), judging DCR3 alone would hide a fault of DCR4 |
+
+## Annex: Rationale 0.5
+
+Limits are set from measured noise and from the size of the effect they must detect, never from a
+verdict they would change.
+
+**#29 G4.** The EC reports whole degrees, so < 1 °C meant "no change at all". 2026-11-01: EC 0x04
+alternated 29/30 °C in every gate window without a trend; pwm2/pwm4 four times INCONCLUSIVE, pwm1
+once on HDD 38 → 39 °C.
+
+**#30 Other tach.** 2026-11-01 pwm3: fan2 +58 rpm at pwm3 = 255, DCR2 = 75 in every sample; own tach,
+DCR3 and DCR4 as written. Airflow from the HDD fans turns the SSD fan (derived). The EC regulates on
+rpm; a tach is not proof of a channel fault.
+
+**#31 G3.** Absolute 1.0 is tight on a production host with 24 threads; 2026-11-01 met (0.1–0.75).
+
+**#32 Settle time.** Z3 2026-11-01 (`befunde/raw/z3-dcr12-latenz-20261101T143353Z.txt`): write
+≤ 0.22 s; hand-back from 180 reached the final DCR in 4.9 s (pwm1) and 5.3 s (pwm2).
+
+**#33 Other DCR.** #30 as adopted said "changes". A T1 step is 38–39 counts, so a swapped channel
+moves its DCR by more than twice the limit. The EC automatic regulates on rpm (§6): coupling that
+pushes a tach out of its target band can move that channel's DCR without any fault (**derived, not
+observed**). The automatic duty is not a fixed value: DCR2 80 before and 75 after the hand-back of
+Z3, DCR1 85 and 86 in different runs of 2026-11-01 (measured). Within a T1 run the DCR of the other
+channels stayed constant.
+
+**#34 T2/T3 timing.** The 15-min windows answered the 20-s window of 2026-09-14 and the HDD failsafe
+(§5.2 step 1); pwm1 and pwm2 stop in `auto`. Z3, one run per channel, DCR unchanged up to +15 s.
+**Not measured:** steadiness beyond +15 s after a hand-back; T2/T3 have never run. If the first run
+does not settle within the window, a new version takes this change back (§1 rule 1). pwm3 stays
+long: own ramp not measured to its end (§2.1), a F8NAB report names about 4 min.
+
+**#35 Status.** F8NAA has published runs but no PASS on every channel; neither old wording fit.
+§1 rule 5 needs two devices and T2/T3, which a single productive host does not reach. This is
+stated, not worked around.
+
+**#36 Derivation of the limits.** Version 0.1 (2026-10-08) was written in reaction to a
+false claim of 2026-09-14 ("the EC no longer regulates HDD"), caused by a 20-s window with ±150 rpm
+(`befunde/BEFUNDE.md`, correction of 2026-10-08). It predates measurements on the running host; the
+values below were not derived when they were set. "Not derived" means no reason is recorded.
+
+| Limit | Origin | Measured | Consequence |
+|---|---|---|---|
+| Tach noise at rest > 50 rpm (max − min) | not derived | 2026-11-01: 8–22 rpm in the 60-s rest references, 15–40 rpm over gate window plus rest (8 runs) | keep; margin 10 rpm on the 5-min span, not used by the verdict |
+| Other tach ±50 rpm | not derived | noise up to ±21 rpm; fan2 during pwm3: +58 rpm, step means +11…+43 rpm (2026-11-01); −32…+36 rpm against a one-sample baseline, mean at 255 about +16 rpm (2026-09-14, coupling not separable from noise) | reporting threshold only (#30) |
+| Own tach ≥ 200 rpm per step | not derived | smallest step 367 rpm (pwm3), 611 rpm (pwm1) on 2026-11-01; pwm2 440 rpm on 2026-09-14 (other tool) | keep |
+| G4 < 1 °C | kept for the EC inputs in 0.3 when Tctl got its own limit | whole-degree sensors; EC 0x04 alternated 29/30 °C | replaced (#29) |
+| G3 load < 1.0 | not derived | 0.1–0.75, never the cause of a failed gate | replaced (#31) |
+| T2 ≥ 16 counts, T2/T3 ±2 counts | 16 from the 0.1 review; ±2 not derived | no T2/T3 run yet | keep; review after the first run |
+| Each of T2–T5 3× | not derived | no T2–T5 run yet | keep; review after the first run |
+| §4 safety limits | set for safety, not from noise | not reached in any run | **not relaxed** |
 
 ## Annex: Rationale 0.4
 

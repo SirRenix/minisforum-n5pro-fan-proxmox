@@ -42,7 +42,7 @@ func TestMapPWM3(t *testing.T) {
 	}
 	// TESTSPEC 0.4: only real deviations (open conditions of rule 4); the
 	// 0.3 ones are normed now, #13 and G6 through ecram are implemented
-	if len(dev) != 1 || !strings.Contains(joined, "conditions of TESTSPEC 0.4 §1 rule 4 open") {
+	if len(dev) != 1 || !strings.Contains(joined, "conditions of TESTSPEC §1 rule 4 open") {
 		t.Errorf("spec_deviations:\n%s", joined)
 	}
 	for _, gone := range []string{"in place of n5-fangov validate", "restore value without n5-fangov config", "redaction beyond host name", "T4/T5 not evaluated", "#13", "ecram"} {
@@ -50,7 +50,7 @@ func TestMapPWM3(t *testing.T) {
 			t.Errorf("spec_deviations still name %q:\n%s", gone, joined)
 		}
 	}
-	if m["spec_version"] != "0.4" || m["settle_s"] != 10.0 {
+	if m["spec_version"] != "0.5" || m["settle_s"] != 10.0 {
 		t.Errorf("spec_version %v settle_s %v", m["spec_version"], m["settle_s"])
 	}
 	if rr, _ := m["redaction"].([]any); len(rr) == 0 {

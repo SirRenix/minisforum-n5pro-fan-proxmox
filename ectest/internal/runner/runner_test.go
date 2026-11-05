@@ -22,7 +22,7 @@ var t0 = time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 // The full procedure against the simulator on a virtual clock.
 func TestRunnerSimulated(t *testing.T) {
 	s := sim.New(t0)
-	r := runner.NewRunner(s, runner.SpecConfig(3, 3, []int{1, 2, 3}))
+	r := runner.NewRunner(s, gateCfg())
 	before := 0
 	r.BeforeWrite = func() error {
 		before++
@@ -319,11 +319,54 @@ func TestRunnerRestoreOutcome(t *testing.T) {
 	}
 }
 
+// gateCfg is the pwm3 timing with the online CPUs G3 needs.
+func gateCfg() runner.Config {
+	c := runner.SpecConfig(3, 3, []int{1, 2, 3})
+	c.OnlineCPUs = sim.OnlineCPUs
+	return c
+}
+
+// G3 (TESTSPEC §3, 0.5 #31): load below 0.1 x online CPUs.
+func TestG3RelativeToCPUs(t *testing.T) {
+	s := spec.NewSample(t0, 0, spec.PhaseGate, 3, -1)
+	for _, tc := range []struct {
+		load float64
+		cpus int
+		want string
+	}{{2.39, 24, "PASS"}, {2.40, 24, "FAIL"}, {0.39, 4, "PASS"}, {0.40, 4, "FAIL"}, {0.1, 0, "FAIL"}, {math.NaN(), 24, "FAIL"}} {
+		s.Load1 = tc.load
+		if got, d := runner.G3(s, tc.cpus); got != tc.want {
+			t.Errorf("load %.2f, %d CPUs: %s (%s)", tc.load, tc.cpus, got, d)
+		}
+	}
+}
+
+// T2/T3 on pwm1 run the short timing of TESTSPEC §5.2 (0.5 #34), pwm3 the
+// long one.
+func TestHandbackWindows(t *testing.T) {
+	for ch, want := range map[int][2]time.Duration{1: {300 * time.Second, 300 * time.Second}, 2: {300 * time.Second, 300 * time.Second}, 3: {900 * time.Second, 1020 * time.Second}} {
+		c := runner.SpecConfig(ch, ch, []int{1, 2, 3})
+		if c.PreWindow() != want[0] || c.HandbackObserve() != want[1] {
+			t.Errorf("pwm%d: A window %s, log %s", ch, c.PreWindow(), c.HandbackObserve())
+		}
+	}
+	s := sim.New(t0)
+	r := runner.NewRunner(s, runner.SpecConfig(1, 1, []int{1, 2, 3}))
+	t2, t3 := r.RunHandback(context.Background())
+	r.Close()
+	if t2.Verdict != spec.Pass || t3.Verdict != spec.Pass {
+		t.Fatalf("pwm1: T2 %s %v, T3 %s %v", t2.Verdict, t2.Reasons, t3.Verdict, t3.Reasons)
+	}
+	if got := s.Now().Sub(t0); got != 300*time.Second+3*2*(60+300)*time.Second {
+		t.Fatalf("pwm1 duration %s", got)
+	}
+}
+
 // The first sample of the gate window is checked against the limits.
 func TestGatesFirstSampleLimit(t *testing.T) {
 	s := sim.New(t0)
 	s.Tctl = spec.LimitTctlC + 1
-	r := runner.NewRunner(s, runner.SpecConfig(3, 3, []int{1, 2, 3}))
+	r := runner.NewRunner(s, gateCfg())
 	g3, g4 := r.Gates(context.Background())
 	if g3.Result != "PASS" || g4.Result != "FAIL" || !strings.Contains(r.Abort, "Tctl") || len(r.Samples) != 1 {
 		t.Fatalf("g3 %+v g4 %+v abort %q samples %d", g3, g4, r.Abort, len(r.Samples))
@@ -363,8 +406,13 @@ func TestGatesTctlSafetyOnly(t *testing.T) {
 		t.Fatalf("Tctl 13.5 C: %+v", g4)
 	}
 	r = runner.NewRunner(&wobbleEnv{Sim: sim.New(t0), sys: []float64{33, 34.5}}, runner.SpecConfig(3, 3, []int{1, 2, 3}))
-	if _, g4 := r.Gates(context.Background()); g4.Result != "FAIL" || !strings.Contains(g4.Detail, "system (ec 0x04) 1.5 C") {
+	if _, g4 := r.Gates(context.Background()); g4.Result != "FAIL" || !strings.Contains(g4.Detail, "system (ec 0x04) span 1.5 C") {
 		t.Fatalf("system 1.5 C: %+v", g4)
+	}
+	// one whole degree back and forth without a trend passes (0.5 #29)
+	r = runner.NewRunner(&wobbleEnv{Sim: sim.New(t0), sys: []float64{29, 30}}, runner.SpecConfig(3, 3, []int{1, 2, 3}))
+	if _, g4 := r.Gates(context.Background()); g4.Result != "PASS" {
+		t.Fatalf("system 29/30 C: %+v", g4)
 	}
 }
 
@@ -520,7 +568,7 @@ func TestFixedCadence(t *testing.T) {
 		if sub.T2 != spec.Pass || sub.LeftAtS == nil || *sub.LeftAtS != 60 {
 			t.Fatalf("sub-run %s: T2 %s, left at %v: %s", sub.Label, sub.T2, sub.LeftAtS, sub.T2Reason)
 		}
-		if sub.ObservedS != float64(spec.ObserveS+spec.SettleHoldS) {
+		if sub.ObservedS != float64(spec.T3LimitS(1)+spec.SettleHoldS) {
 			t.Fatalf("sub-run %s observed %.3f s", sub.Label, sub.ObservedS)
 		}
 	}

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SirRenix/minisforum-n5pro-fan-proxmox/ectest/internal/spec"
 	"github.com/SirRenix/minisforum-n5pro-fan-proxmox/ectest/internal/sysroot"
 	"github.com/SirRenix/minisforum-n5pro-fan-proxmox/go/n5/n5driver"
 )
@@ -35,6 +36,12 @@ type Reading struct {
 
 // EC temperature ids by hwmon label.
 var ecLabels = map[string]string{"CPU Temp": "cpu", "System Temp": "system", "Board Temp": "board", "Ambient Temp": "ambient"}
+
+// OnlineCPUs is the number of online CPUs below sysRoot (G3), 0 when it
+// cannot be read.
+func OnlineCPUs(sysRoot string) int {
+	return spec.ParseCPUList(sysroot.Read(filepath.Join(sysRoot, "devices", "system", "cpu", "online")))
+}
 
 // DriverHwmon returns <sys>/class/hwmon/hwmonN of the EC driver, "" if none.
 func DriverHwmon(sysRoot string) string {

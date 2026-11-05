@@ -41,6 +41,8 @@ type Meta struct {
 	Started        string            `json:"started"`
 	Finished       string            `json:"finished"`
 	Log            map[string]any    `json:"log"`
+	// OnlineCPUs: the G3 input (TESTSPEC 0.5; 0 in older bundles).
+	OnlineCPUs int `json:"online_cpus"`
 	// Provisional: the meta.json written right after the bundle was created;
 	// the run ended before it replaced it (killed).
 	Provisional bool `json:"provisional"`
@@ -166,7 +168,7 @@ func Recompute(l *bundle.Loaded) (*Result, error) {
 	ch := m.Channel
 	smp := l.Samples
 	if m.SpecVersion != "" && m.SpecVersion != spec.SpecVersion {
-		res.Notes = append(res.Notes, fmt.Sprintf("bundle written under TESTSPEC %s; recomputed with the rules of %s (differences are expected where the rules changed)", m.SpecVersion, spec.SpecVersion))
+		res.Notes = append(res.Notes, fmt.Sprintf("bundle written under TESTSPEC %s; recomputed with the rules of %s: differences are expected where the rules changed, and the stored verdict stands (TESTSPEC §1 rule 1)", m.SpecVersion, spec.SpecVersion))
 	}
 	if m.Provisional {
 		res.Notes = append(res.Notes, "meta.json is the provisional one written at the start: the run ended before it finished (killed); verdicts cannot be recomputed")
@@ -312,7 +314,10 @@ func checkGates(m Meta, smp []spec.Sample) []Mismatch {
 		got := "FAIL"
 		switch g.ID {
 		case "G3":
-			got, _ = runner.G3(gate[0])
+			if m.OnlineCPUs == 0 {
+				continue // a bundle before 0.5: the input of the rule is not in it
+			}
+			got, _ = runner.G3(gate[0], m.OnlineCPUs)
 		case "G4":
 			if spec.EvalG4(gate).Pass {
 				got = "PASS"
@@ -337,11 +342,13 @@ func recomputeT1(m Meta, smp []spec.Sample, ev []Event) spec.Result {
 	}
 	rest := map[int][]int{}
 	restIn := map[int][]float64{}
+	restDCR := map[int][]int{}
 	for _, s := range phaseSamples(smp, spec.PhaseT1Rest) {
 		for i, f := range s.Fan {
 			rest[i+1] = append(rest[i+1], f)
 		}
 		runner.AddInputs(restIn, ch, s)
+		runner.AddOtherDCR(restDCR, ch, s)
 	}
 	var steps []spec.T1Step
 	for _, d := range spec.T1Steps {
@@ -357,7 +364,7 @@ func recomputeT1(m Meta, smp []spec.Sample, ev []Event) spec.Result {
 		}
 		steps = append(steps, st)
 	}
-	return spec.EvalT1(ch, runner.TachOf(ch), rest, restIn, steps, []int{1, 2, 3})
+	return spec.EvalT1(ch, runner.TachOf(ch), rest, restIn, restDCR, steps, []int{1, 2, 3})
 }
 
 // writeTS is the run time of the first "write pwmC=D" event.
@@ -454,7 +461,7 @@ func recomputeT2(m Meta, smp []spec.Sample, ev []Event) (spec.Result, spec.Resul
 				}
 			}
 		}
-		hr := runner.HandbackRuns(label, written, regs, series, autoA)
+		hr := runner.HandbackRuns(ch, label, written, regs, series, autoA)
 		runner.MarkCrossing(hr, ch, preCross, in)
 		sr := spec.EvalHandbackRegs(hr)
 		if rep != cur {

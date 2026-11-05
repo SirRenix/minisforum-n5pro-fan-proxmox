@@ -112,6 +112,9 @@ var curves = map[int][][2]float64{
 	3: {{87, 1237}, {105, 1650}, {140, 2250}, {179, 2725}, {217, 3160}, {255, 3540}},
 }
 
+// OnlineCPUs is the number of online CPUs of the model (G3).
+const OnlineCPUs = 24
+
 // RPM is the model's tach for fan f at duty d (also used by the fake tree).
 func RPM(f, duty int) int {
 	c, ok := curves[f]

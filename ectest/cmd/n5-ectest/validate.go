@@ -34,7 +34,7 @@ func init() {
 	register("map", command{usage: "map pwmN [--boot cold|warm] [--restore pwmN=auto|D] [--out DIR] [--i-am-at-the-console] | --dry-run",
 		help: "T1 channel mapping: WRITES one channel, at the device only (about 11 min)", run: func(a []string) int { return cmdValidate("map", a) }})
 	register("handback", command{usage: "handback pwmN [--boot cold|warm] [--restore pwmN=auto|D] [--out DIR] [--i-am-at-the-console] | --dry-run",
-		help: "T2/T3 hand-back and settling: WRITES one channel, at the device only (about 2 h 10 min)", run: func(a []string) int { return cmdValidate("handback", a) }})
+		help: "T2/T3 hand-back and settling: WRITES one channel, at the device only (pwm1/pwm2 about 46 min, pwm3 about 2 h 10 min)", run: func(a []string) int { return cmdValidate("handback", a) }})
 }
 
 // confirmText is what the operator types before anything is written
@@ -120,7 +120,7 @@ func parseRunOpts(test string, args []string) (runOpts, int) {
 	fs.StringVar(&o.configPath, "fangov-config", "", "n5-fangov configuration with the stop values (default /etc/n5-fangov/config.toml)")
 	hold := fs.Duration("hold", spec.T1StepHoldS*time.Second, "time per step (--dry-run only)")
 	sample := fs.Duration("sample", spec.SampleS*time.Second, "sample interval (--dry-run only)")
-	observe := fs.Duration("observe", spec.ObserveS*time.Second, "log time after the auto command (--dry-run only)")
+	observe := fs.Duration("observe", 0, "T3 limit and A window, default as TESTSPEC for the channel (--dry-run only)")
 	window := fs.Duration("gate-window", spec.GateWindowS*time.Second, "G4 window (--dry-run only)")
 	repeat := fs.Int("repeat", spec.RunsRequired, "T2/T3 repetitions (--dry-run only)")
 	valued := map[string]bool{"boot": true, "out": true, "restore": true, "fangov-config": true, "hold": true, "sample": true, "observe": true, "gate-window": true, "repeat": true}
@@ -163,7 +163,7 @@ func parseRunOpts(test string, args []string) (runOpts, int) {
 		fmt.Fprintf(stderr, "%s: --boot is cold or warm\n", test)
 		return o, exitUsage
 	}
-	if *sample <= 0 || *hold < *sample || *observe < *sample || *window < 0 || *repeat < 1 {
+	if *sample <= 0 || *hold < *sample || (*observe != 0 && *observe < *sample) || *window < 0 || *repeat < 1 {
 		fmt.Fprintf(stderr, "%s: --sample > 0, --hold and --observe >= --sample, --repeat >= 1\n", test)
 		return o, exitUsage
 	}
@@ -171,8 +171,13 @@ func parseRunOpts(test string, args []string) (runOpts, int) {
 		o.configPath = filepath.Join(sysroot.Etc(), "n5-fangov", "config.toml")
 	}
 	o.cfg = runner.SpecConfig(ch, runner.TachOf(ch), []int{1, 2, 3})
+	o.cfg.OnlineCPUs = hwread.OnlineCPUs(sysroot.Sys())
 	if o.dry {
-		o.cfg.Hold, o.cfg.Sample, o.cfg.Observe, o.cfg.Window, o.cfg.Repeat = *hold, *sample, *observe, *window, *repeat
+		o.cfg.Hold, o.cfg.Sample, o.cfg.Window, o.cfg.Repeat = *hold, *sample, *window, *repeat
+		o.cfg.OnlineCPUs = sim.OnlineCPUs
+		if *observe != 0 {
+			o.cfg.Observe, o.cfg.Pre = *observe, *observe
+		}
 	}
 	return o, exitOK
 }
@@ -332,7 +337,7 @@ func (v *validation) run(lock *writerlock.Lock, statePath string) (rc int) {
 			if o.test == "map" {
 				fmt.Fprintf(stdout, "Duration: about %s (gate window and T1).\n", cfg.Window+time.Duration(len(spec.T1Steps)+1)*cfg.Hold)
 			} else {
-				fmt.Fprintf(stdout, "Duration: about %s (gate window, A, %d runs of T2/T3).\n", cfg.Window+cfg.Observe+time.Duration(cfg.Repeat)*2*(cfg.Hold+cfg.HandbackObserve()), cfg.Repeat)
+				fmt.Fprintf(stdout, "Duration: about %s (gate window, A, %d runs of T2/T3).\n", cfg.Window+cfg.PreWindow()+time.Duration(cfg.Repeat)*2*(cfg.Hold+cfg.HandbackObserve()), cfg.Repeat)
 			}
 			fmt.Fprintf(stdout, "Restore value pwm%d: %s (%s)\n", o.ch, v.rv.Values[o.ch], v.rv.Sources[o.ch])
 			fmt.Fprintf(stdout, "Run it inside tmux; if both n5-ectest processes are killed, run: n5-ectest restore\n")
@@ -455,7 +460,7 @@ func (v *validation) run(lock *writerlock.Lock, statePath string) (rc int) {
 	if firstAbort != "" {
 		r.Stop(firstAbort)
 	}
-	g3 := spec.Gate{ID: "G3", Condition: "load average (1 min) < 1.0", Result: "SKIPPED"}
+	g3 := spec.Gate{ID: "G3", Condition: runner.G3Condition, Result: "SKIPPED"}
 	g4 := spec.Gate{ID: "G4", Condition: runner.G4Condition, Result: "SKIPPED"}
 	switch {
 	case !o.writing():
@@ -565,10 +570,11 @@ func (v *validation) run(lock *writerlock.Lock, statePath string) (rc int) {
 		"spec_version": spec.SpecVersion, "tool": toolName, "tool_version": version, "command": o.test,
 		"mode": mode, "channel": o.ch, "started": started.UTC().Format(time.RFC3339), "finished": finishedAt.UTC().Format(time.RFC3339),
 		"boot_type": o.boot, "identity": id, "gates": gates, "aborted": r.Abort,
-		"timing": map[string]any{"hold_s": cfg.Hold.Seconds(), "sample_s": cfg.Sample.Seconds(), "observe_s": cfg.Observe.Seconds(),
+		"timing": map[string]any{"hold_s": cfg.Hold.Seconds(), "sample_s": cfg.Sample.Seconds(), "observe_s": cfg.Observe.Seconds(), "a_window_s": cfg.PreWindow().Seconds(),
 			"handback_observe_s": cfg.HandbackObserve().Seconds(), "gate_window_s": cfg.Window.Seconds(), "repeat": cfg.Repeat,
 			"due_tolerance_s": spec.DueToleranceS},
 		"settle_s":              spec.SettleS(o.ch),
+		"online_cpus":           cfg.OnlineCPUs,
 		"ec_ram_tables":         ecTables,
 		"redaction":             redactionRules,
 		"limit_sensors":         limits,
@@ -673,7 +679,7 @@ func gateG6(dcrOK bool, dcrErr error) (spec.Gate, map[string]string) {
 	return g, tables
 }
 
-const g7Condition = "board, vendor and driver state allow writes (TESTSPEC 0.4 G7): N5 PRO/F8NAA in the write table, measured sys_vendor, driver +sr1, force=N, dcr readable, not in a container"
+const g7Condition = "board, vendor and driver state allow writes (TESTSPEC G7): N5 PRO/F8NAA in the write table, measured sys_vendor, driver +sr1, force=N, dcr readable, not in a container"
 
 const g1Condition = "no other pwm writer: units and processes n5-fangov, n5-fand, fancontrol, fan2go, coolercontrold, thinkfan; processes f8a-pcie.sh, f8a-stress.sh; no pwm file held open; writer lock held and in place; pwm cache unchanged by others"
 

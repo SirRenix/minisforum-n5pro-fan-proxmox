@@ -80,9 +80,12 @@ dabei funktioniert (Delta ≤ 9 RPM nach Restore).
 | Kanal | erwarteter Lüfter | reagiert tatsächlich | RPM 100 % | 85 % | 70 % | 54 % | andere Tachos | Bemerkung |
 |---|---|---|---|---|---|---|---|---|
 | pwm4 | PCIe | **kein Tacho bewegt sich** | n/a | n/a | n/a | n/a | ±15 RPM (Rauschen) | kein Lüfter am Header; alle Writes akzeptiert |
-| pwm1 | CPU | **ja, nur fan1** | 5073 | 4445 | 3830 | 3120 | fan2/fan3 ±10 | EC-Idle: 2020 RPM ≈ Duty 85 |
-| pwm2 | SSD | **ja, nur fan2** | 4687 | 4230 | 3790 | 3280 | fan1/fan3 ±10 | NVMe fiel dabei 46 → 44 °C |
-| pwm3 | HDD-Gruppe | **ja, nur fan3** | 3540 | 3160 | 2725 | 2250 | fan1/fan2 ±20 | langsamer Anlauf (1873 → 2668 → 3523 in 10 s) |
+| pwm1 | CPU | **ja, nur fan1** | 5073 | 4445 | 3830 | 3120 | fan2 −29…+16, fan3 −28…−6 | EC-Idle: 2020 RPM ≈ Duty 85 |
+| pwm2 | SSD | **ja, nur fan2** | 4687 | 4230 | 3790 | 3280 | fan1 −15…0, fan3 −12…+8 | NVMe fiel dabei 46 → 44 °C |
+| pwm3 | HDD-Gruppe | **ja, nur fan3** | 3540 | 3160 | 2725 | 2250 | fan1 −6…+11, fan2 −32…+36 | langsamer Anlauf (1873 → 2668 → 3523 in 10 s) |
+
+Spalte „andere Tachos“: Spanne der Abweichung vom Ausgangswert (ein Sample) aus den Rohdaten
+`raw/06-pwmtest-ch*`, je 36 Samples.
 
 **Kanalzuordnung des N5-Pro-Profils ist vollständig bestätigt.** DCR3 und DCR4
 tragen im I2EC-Register immer denselben Wert — die Gruppierung der beiden
@@ -513,6 +516,21 @@ Build-Host; Referenzhost nur gelesen. Protokoll `raw/sr2-build-20261102.txt`.
 | Alias-Load ohne `modules-load.d` | DMI-Modalias des Referenzhosts passt weiter auf zwei Aliase (`svn…pn*N5PRO*:rn*F8NAA*`, `pn*N5*:rn*F8NAA*`) → udev lädt beim Boot. Nicht per Neustart geprüft | Abschnitt A |
 | `modprobe -b` (#50) | echtes kmod: gesperrtes Modul → Exit 0, nicht geladen; per Name → Ladeversuch. postinst prüft deshalb `lsmod` und meldet die Sperre | T1 |
 | `test-deb.sh` | PASS (inkl. Blacklist-Fall, keine `modules-load.d`-Datei im Paket) | T1 |
+
+### Einspielen auf dem Referenzhost (02.11.2026, 20:53)
+
+Paket per `apt install`, Modul neu geladen, Lücke ohne Regler ≈ 1 s. Prüfung danach nur lesend.
+Für diese Tabelle gibt es kein Rohprotokoll im Repo; sie gibt die Prüfung am Host wieder.
+
+| Punkt | Ergebnis |
+|---|---|
+| Modul | `0.2.1+sr2`, srcversion `CDDEDE26904251994A0DE35` |
+| DKMS | sr2 für alle 4 installierten Kernel gebaut |
+| `modules-load.d` | Datei unter `/usr/lib/modules-load.d/` entfernt |
+| Alias | `pn*N5PRO*:rn*F8NAB*` vorhanden |
+| Regler | n5-fangov aktiv, `NRestarts=0`; `check` bestanden, nur Warnung `experimental` |
+| Kernel-Log | nur die zwei erwarteten Zeilen |
+| Autoload | nach echtem Neustart nicht geprüft, nur per Modalias belegt |
 
 ## Für den GitHub-Issue an ltdstudio/minisforum-n5-it5571
 

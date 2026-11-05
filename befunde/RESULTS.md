@@ -11,8 +11,8 @@ Schreib-Allowlist (Patch 0002) sind Schreib-Gates, keine Statusaussage.
 | Status | Bedeutung |
 |---|---|
 | `validated` | TESTSPEC T1–T3 PASS auf ≥ 2 Geräten |
-| `tested` | TESTSPEC-Lauf auf 1 Gerät, Bündel veröffentlicht |
-| `experimental` | lädt, kein TESTSPEC-Lauf; Schreiben nur, wenn in der Allowlist des Treibers |
+| `tested` | auf 1 Gerät unter einer Spec-Version: T1 PASS auf jedem Kanal und F8b PASS, Bündel veröffentlicht |
+| `experimental` | lädt, `tested` nicht erreicht; Schreiben nur, wenn in der Allowlist des Treibers |
 | `unknown` | nicht in der Tabelle; nur read-only |
 
 Schlüssel: DMI `product_name`, `board_name`, `bios_version` und EC-Firmware

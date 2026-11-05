@@ -132,6 +132,11 @@ sets `MODULE_VERSION` `0.2.1+sr1~rc3`. Code otherwise identical to `rc2`
   `snapshot`, long-term `log`, `map` and `handback` at the device, offline HTML `report`,
   `diff`, `restore`. Read-only except `map` and `handback`. Workflow `ectest.yml`.
 - Shared Go packages (driver state, hardware status, writer lock) as module `go/n5`.
+- TESTSPEC 0.5 (2026-11-05): G3 relative to the online CPUs (`meta.json` → `online_cpus`); G4
+  per input trend < 1 °C and span ≤ 1 °C; settle time pwm1/pwm2 1 s; T1 decides "another
+  channel follows" on its DCR (≥ 16 counts), other tachs outside ±50 rpm are reported; T2/T3
+  on pwm1/pwm2 with A window and log 300 s, T3 limit 180 s. `report` on an older bundle says
+  that the stored verdict stands.
 - TESTSPEC 0.4 (2026-10-31): after an abort on a temperature limit the channel of that sensor
   (Tctl → pwm1, NVMe → pwm2, HDD → pwm3) is set to 255 and stays there, only in a run that
   wrote; `restore_values` names the reason, the guardian state file records 255 (§4, #13).

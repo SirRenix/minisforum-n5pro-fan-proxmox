@@ -55,17 +55,29 @@ type Config struct {
 	Tachs   []int // all tachs (1..3)
 	Hold    time.Duration
 	Sample  time.Duration
-	Observe time.Duration
-	Window  time.Duration // G4 window
-	Repeat  int           // T2/T3 repetitions
+	Observe time.Duration // T3 limit; the log adds spec.SettleHoldS
+	// Pre is the window that determines A (0: Observe).
+	Pre    time.Duration
+	Window time.Duration // G4 window
+	// OnlineCPUs is the number of online CPUs (G3); 0: not readable.
+	OnlineCPUs int
+	Repeat     int // T2/T3 repetitions
 	// Guard, when set, is asked at every sample whether another pwm writer
 	// became active (G1 for the whole run); a non-empty answer aborts.
 	Guard func() string
 }
 
+// PreWindow is the window that determines A.
+func (c Config) PreWindow() time.Duration {
+	if c.Pre > 0 {
+		return c.Pre
+	}
+	return c.Observe
+}
+
 // HandbackObserve is how long a T2 sub-run logs after the auto command:
 // Observe plus SettleHoldS, so a steady state that starts at Observe can
-// still be seen for its full 120 s (TESTSPEC §5.2, 1020 s).
+// still be seen for its full 120 s (TESTSPEC §5.2).
 func (c Config) HandbackObserve() time.Duration {
 	return c.Observe + spec.SettleHoldS*time.Second
 }
@@ -83,7 +95,8 @@ const lostAfter = 3
 // channel ch.
 func SpecConfig(ch, ownTach int, tachs []int) Config {
 	return Config{Channel: ch, OwnTach: ownTach, Tachs: tachs,
-		Hold: spec.T1StepHoldS * time.Second, Sample: spec.SampleS * time.Second, Observe: spec.ObserveS * time.Second,
+		Hold: spec.T1StepHoldS * time.Second, Sample: spec.SampleS * time.Second,
+		Observe: time.Duration(spec.T3LimitS(ch)) * time.Second, Pre: time.Duration(spec.PreWindowS(ch)) * time.Second,
 		Window: spec.GateWindowS * time.Second, Repeat: spec.RunsRequired}
 }
 
@@ -462,7 +475,7 @@ func (r *Runner) restore(ch int, when string) bool {
 // (§2.1); a register that differs then is a restore warning, as for any
 // restore value.
 func (r *Runner) restoreHot(ch int, when string) bool {
-	why := fmt.Sprintf("255 (temperature abort: %s; TESTSPEC 0.4 §4)", r.hotWhy)
+	why := fmt.Sprintf("255 (temperature abort: %s; TESTSPEC §4)", r.hotWhy)
 	if r.BeforeHot != nil {
 		if err := r.BeforeHot(ch); err != nil {
 			r.event("restore pwm%d=255%s: before the write: %v (255 is written anyway)%s", ch, when, err, r.tag())
@@ -512,7 +525,7 @@ func (r *Runner) Unrestored() []string {
 
 // Gates samples the G3/G4 window (no writes) and evaluates both.
 func (r *Runner) Gates(ctx context.Context) (g3, g4 spec.Gate) {
-	g3 = spec.Gate{ID: "G3", Condition: "load average (1 min) < 1.0"}
+	g3 = spec.Gate{ID: "G3", Condition: G3Condition}
 	g4 = spec.Gate{ID: "G4", Condition: G4Condition}
 	if r.Abort != "" {
 		g3.Result, g3.Detail = "FAIL", "not sampled: "+r.Abort
@@ -528,7 +541,7 @@ func (r *Runner) Gates(ctx context.Context) (g3, g4 spec.Gate) {
 	} else {
 		ok = r.hold(ctx, spec.PhaseGate, -1, r.Cfg.Window, func(s spec.Sample) { rows = append(rows, s) })
 	}
-	g3.Result, g3.Detail = G3(first)
+	g3.Result, g3.Detail = G3(first, r.Cfg.OnlineCPUs)
 	if !ok {
 		g4.Result, g4.Detail = "FAIL", "window not completed: "+r.Abort
 		return g3, g4
@@ -544,18 +557,26 @@ func (r *Runner) Gates(ctx context.Context) (g3, g4 spec.Gate) {
 	return g3, g4
 }
 
-// G4Condition is the G4 text of TESTSPEC 0.4 §3 (#20).
-const G4Condition = "over 5 min: EC 0x04 (system), EC 0x06 (ambient) and HDD temperature each change < 1 C; every abort-limit sensor (Tctl, NVMe, HDD) readable; Tctl is a safety limit only"
+// G3Condition and G4Condition are the gate texts of TESTSPEC §3.
+const (
+	G3Condition = "load average (1 min) < 0.1 x online CPUs"
+	G4Condition = "over 5 min: EC 0x04 (system), EC 0x06 (ambient) and HDD temperature each with mean of the last 60 s - mean of the first 60 s < 1 C and max - min <= 1 C; every abort-limit sensor (Tctl, NVMe, HDD) readable; Tctl is a safety limit only"
+)
 
-// G3 judges the load of the first gate sample.
-func G3(first spec.Sample) (result, detail string) {
+// G3 judges the load of the first gate sample against cpus online CPUs.
+func G3(first spec.Sample, cpus int) (result, detail string) {
 	switch {
 	case math.IsNaN(first.Load1):
 		return "FAIL", "load average not readable"
-	case first.Load1 < spec.GateLoad1:
-		return "PASS", fmt.Sprintf("load1 %.2f", first.Load1)
+	case cpus <= 0:
+		return "FAIL", fmt.Sprintf("load1 %.2f, online CPUs not readable", first.Load1)
 	}
-	return "FAIL", fmt.Sprintf("load1 %.2f", first.Load1)
+	limit := spec.GateLoadLimit(cpus)
+	detail = fmt.Sprintf("load1 %.2f, limit %.2f (%d online CPUs)", first.Load1, limit, cpus)
+	if first.Load1 < limit {
+		return "PASS", detail
+	}
+	return "FAIL", detail
 }
 
 // RegDCR is DCRn of the sample, -1 when not read.
@@ -586,12 +607,14 @@ func (r *Runner) RunT1(ctx context.Context) spec.Result {
 	}
 	rest := map[int][]int{}
 	restIn := map[int][]float64{}
+	restDCR := map[int][]int{}
 	r.event("T1 pwm%d: rest reference", ch)
 	if !r.hold(ctx, spec.PhaseT1Rest, -1, r.Cfg.Hold, func(s spec.Sample) {
 		for i, f := range s.Fan {
 			rest[i+1] = append(rest[i+1], f)
 		}
 		AddInputs(restIn, ch, s)
+		AddOtherDCR(restDCR, ch, s)
 	}) {
 		return spec.NotImplemented("T1", ch, "aborted: "+r.Abort)
 	}
@@ -623,7 +646,7 @@ func (r *Runner) RunT1(ctx context.Context) spec.Result {
 	if r.restore(ch, " after T1") {
 		delete(r.touched, ch)
 	}
-	return spec.EvalT1(ch, r.Cfg.OwnTach, rest, restIn, steps, r.Cfg.Tachs)
+	return spec.EvalT1(ch, r.Cfg.OwnTach, rest, restIn, restDCR, steps, r.Cfg.Tachs)
 }
 
 // AddInputs appends the table inputs of the channels other than ch with an
@@ -633,6 +656,14 @@ func AddInputs(in map[int][]float64, ch int, s spec.Sample) {
 		if oc != ch {
 			in[oc] = append(in[oc], spec.TableInput(oc, s))
 		}
+	}
+}
+
+// AddOtherDCR appends the duty registers of the channels other than ch of
+// sample s to in (TESTSPEC §5.1, 0.5 #33).
+func AddOtherDCR(in map[int][]int, ch int, s spec.Sample) {
+	for _, n := range spec.OtherRegs(ch) {
+		in[n] = append(in[n], RegDCR(s, n))
 	}
 }
 
@@ -652,6 +683,10 @@ func AddT1Sample(st *spec.T1Step, ch int, s spec.Sample, tws float64) {
 		st.Inputs = map[int][]float64{}
 	}
 	AddInputs(st.Inputs, ch, s)
+	if st.Others == nil {
+		st.Others = map[int][]int{}
+	}
+	AddOtherDCR(st.Others, ch, s)
 }
 
 // observeIn samples after an auto command stamped at t0 and returns the DCR
@@ -750,7 +785,7 @@ func (r *Runner) RunHandback(ctx context.Context) (spec.Result, spec.Result) {
 	}
 	regs := spec.JudgedRegs(ch)
 	var preIn []float64
-	pre, ok := r.observeIn(ctx, ta, spec.PhaseT2Pre, r.Cfg.Observe, &preIn)
+	pre, ok := r.observeIn(ctx, ta, spec.PhaseT2Pre, r.Cfg.PreWindow(), &preIn)
 	if !ok || len(pre[regs[0]]) == 0 {
 		return spec.NotImplemented("T2", ch, "aborted: "+orText(r.Abort, "no DCR sample")), spec.NotImplemented("T3", ch, "aborted: "+orText(r.Abort, "no DCR sample"))
 	}
@@ -760,7 +795,7 @@ func (r *Runner) RunHandback(ctx context.Context) (spec.Result, spec.Result) {
 	r.event("T2 pwm%d: %s, H=255, M=%d", ch, strings.Join(aText, ", "), m)
 	preCross := PreCrossing(ch, preIn)
 	if preCross != "" {
-		r.event("T2 pwm%d: table input crossed a step in the A window: %s (every sub-run INCONCLUSIVE, TESTSPEC 0.4 §5.2)", ch, preCross)
+		r.event("T2 pwm%d: table input crossed a step in the A window: %s (every sub-run INCONCLUSIVE, TESTSPEC §5.2)", ch, preCross)
 	}
 	var runs [][]spec.SubResult
 	var holdDev []string
@@ -799,7 +834,7 @@ func (r *Runner) RunHandback(ctx context.Context) (spec.Result, spec.Result) {
 			// report rebuilds the series from it
 			t0 := r.eventAt("%s", EventT2Auto(rep, sub.label))
 			smp, ok := r.observeIn(ctx, t0, spec.PhaseT2Auto(rep, sub.label), r.Cfg.HandbackObserve(), &subIn)
-			hr := HandbackRuns(sub.label, sub.duty, regs, smp, autoA)
+			hr := HandbackRuns(ch, sub.label, sub.duty, regs, smp, autoA)
 			MarkCrossing(hr, ch, preCross, subIn)
 			subs = append(subs, spec.EvalHandbackRegs(hr))
 			if !ok {
@@ -839,8 +874,8 @@ func AutoValues(pre map[int][]spec.DCRSample, regs []int) (map[int]int, []string
 	return autoA, aText
 }
 
-// HandbackRuns builds the per-register data of one sub-run.
-func HandbackRuns(label string, duty int, regs []int, smp map[int][]spec.DCRSample, autoA map[int]int) []spec.HandbackRun {
+// HandbackRuns builds the per-register data of one sub-run of channel ch.
+func HandbackRuns(ch int, label string, duty int, regs []int, smp map[int][]spec.DCRSample, autoA map[int]int) []spec.HandbackRun {
 	var hr []spec.HandbackRun
 	for _, n := range regs {
 		av, known := autoA[n]
@@ -848,7 +883,7 @@ func HandbackRuns(label string, duty int, regs []int, smp map[int][]spec.DCRSamp
 		if len(regs) > 1 {
 			reg = fmt.Sprintf("DCR%d", n)
 		}
-		hr = append(hr, spec.HandbackRun{Label: label, Reg: reg, Written: duty, Samples: smp[n], TimingKnown: true, Auto: av, AutoKnown: known})
+		hr = append(hr, spec.HandbackRun{Label: label, Reg: reg, Written: duty, Samples: smp[n], TimingKnown: true, Auto: av, AutoKnown: known, LimitS: spec.T3LimitS(ch)})
 	}
 	return hr
 }

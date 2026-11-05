@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -151,6 +152,23 @@ func TestAggregateHandback(t *testing.T) {
 	}
 }
 
+// evalT1 is EvalT1 with every other channel's duty register constant at 75.
+func evalT1(ch, own int, rest map[int][]int, restIn map[int][]float64, steps []T1Step, fans []int) Result {
+	restDCR := map[int][]int{}
+	for _, n := range OtherRegs(ch) {
+		restDCR[n] = []int{75, 75}
+	}
+	for i := range steps {
+		steps[i].Others = map[int][]int{}
+		for _, n := range OtherRegs(ch) {
+			for range steps[i].Fans[1] {
+				steps[i].Others[n] = append(steps[i].Others[n], 75)
+			}
+		}
+	}
+	return EvalT1(ch, own, rest, restIn, restDCR, steps, fans)
+}
+
 func TestEvalT1(t *testing.T) {
 	rest := map[int][]int{1: {2000, 2010}, 2: {2160, 2170}, 3: {1640, 1650}}
 	mk := func(dcrOff int, follow bool) []T1Step {
@@ -165,45 +183,47 @@ func TestEvalT1(t *testing.T) {
 		}
 		return out
 	}
-	if r := EvalT1(3, 3, rest, nil, mk(0, false), []int{1, 2, 3}); r.Verdict != Pass {
+	if r := evalT1(3, 3, rest, nil, mk(0, false), []int{1, 2, 3}); r.Verdict != Pass {
 		t.Fatalf("pass: %+v", r)
 	}
-	if r := EvalT1(3, 3, rest, nil, mk(5, false), []int{1, 2, 3}); r.Verdict != Fail {
+	if r := evalT1(3, 3, rest, nil, mk(5, false), []int{1, 2, 3}); r.Verdict != Fail {
 		t.Fatalf("dcr off: %+v", r)
 	}
-	if r := EvalT1(3, 3, rest, nil, mk(0, true), []int{1, 2, 3}); r.Verdict != Fail {
-		t.Fatalf("other tach follows: %+v", r)
+	// another tach outside +-50 rpm with constant duty registers is reported,
+	// not judged (0.5 #30)
+	if r := evalT1(3, 3, rest, nil, mk(0, true), []int{1, 2, 3}); r.Verdict != Pass || !strings.Contains(strings.Join(r.Reasons, "; "), "reported, not judged") {
+		t.Fatalf("other tach follows, DCR constant: %+v", r)
 	}
 	noisy := map[int][]int{1: {2000, 2100}, 2: {2160}, 3: {1640}}
-	if r := EvalT1(3, 3, noisy, nil, mk(0, false), []int{1, 2, 3}); r.Verdict != Inconclusive {
+	if r := evalT1(3, 3, noisy, nil, mk(0, false), []int{1, 2, 3}); r.Verdict != Inconclusive {
 		t.Fatalf("noise: %+v", r)
 	}
 	nodcr := mk(0, false)
 	for i := range nodcr {
 		nodcr[i].DCR, nodcr[i].DCR4 = nil, nil
 	}
-	if r := EvalT1(3, 3, rest, nil, nodcr, []int{1, 2, 3}); r.Verdict != Inconclusive {
+	if r := evalT1(3, 3, rest, nil, nodcr, []int{1, 2, 3}); r.Verdict != Inconclusive {
 		t.Fatalf("no dcr: %+v", r)
 	}
 	// one sample of one step without DCR: every sample is required
 	gap := mk(0, false)
 	gap[2].DCR = []int{gap[2].Duty, -1}
-	if r := EvalT1(3, 3, rest, nil, gap, []int{1, 2, 3}); r.Verdict != Inconclusive || r.Criteria[0].Met != nil {
+	if r := evalT1(3, 3, rest, nil, gap, []int{1, 2, 3}); r.Verdict != Inconclusive || r.Criteria[0].Met != nil {
 		t.Fatalf("dcr gap: %+v", r)
 	}
 	// a differing sample still decides FAIL even with a gap elsewhere
 	gap[1].DCR = []int{gap[1].Duty + 3, gap[1].Duty}
-	if r := EvalT1(3, 3, rest, nil, gap, []int{1, 2, 3}); r.Verdict != Fail {
+	if r := evalT1(3, 3, rest, nil, gap, []int{1, 2, 3}); r.Verdict != Fail {
 		t.Fatalf("dcr gap + mismatch: %+v", r)
 	}
 	// own tach unreadable at the end of the last step: no fake drop, not PASS
 	blind := mk(0, false)
 	blind[3].Fans[3] = []int{-1, -1}
-	if r := EvalT1(3, 3, rest, nil, blind, []int{1, 2, 3}); r.Verdict != Inconclusive {
+	if r := evalT1(3, 3, rest, nil, blind, []int{1, 2, 3}); r.Verdict != Inconclusive {
 		t.Fatalf("own tach unreadable: %+v", r)
 	}
 	// PCIe: no own tach, DCR equal, others quiet
-	if r := EvalT1(4, 0, rest, nil, func() []T1Step {
+	if r := evalT1(4, 0, rest, nil, func() []T1Step {
 		s := mk(0, false)
 		for i := range s {
 			s[i].Fans[3] = []int{1645, 1645}
@@ -214,8 +234,8 @@ func TestEvalT1(t *testing.T) {
 	}
 }
 
-// G4 (TESTSPEC 0.4 §3, #20): EC system, EC ambient and HDD span < 1 C,
-// every limit sensor present; Tctl is no stability criterion.
+// G4 (TESTSPEC §3, 0.5 #29): per input trend < 1 C and span <= 1 C, every
+// limit sensor present; Tctl is no stability criterion.
 func TestEvalG4(t *testing.T) {
 	c := func(v float64) func(int) float64 { return func(int) float64 { return v } }
 	alt := func(a, b float64) func(int) float64 {
@@ -226,10 +246,18 @@ func TestEvalG4(t *testing.T) {
 			return b
 		}
 	}
+	jump := func(a, b float64, at int) func(int) float64 {
+		return func(i int) float64 {
+			if i < at {
+				return a
+			}
+			return b
+		}
+	}
 	rows := func(tctl, sys, amb, hdd, nvme func(int) float64) []Sample {
 		var out []Sample
 		for i := 0; i <= GateWindowS/SampleS; i++ {
-			out = append(out, Sample{Tctl: tctl(i), ECSys: sys(i), ECAmb: amb(i), HDDMax: hdd(i), NVMeMax: nvme(i)})
+			out = append(out, Sample{TS: float64(i * SampleS), Tctl: tctl(i), ECSys: sys(i), ECAmb: amb(i), HDDMax: hdd(i), NVMeMax: nvme(i)})
 		}
 		return out
 	}
@@ -239,12 +267,20 @@ func TestEvalG4(t *testing.T) {
 		pass                    bool
 		detail                  string
 	}{
-		{"tctl 13.5 C (window 1, 2026-10-17)", alt(35, 48.5), c(33), c(22), c(38), c(45), true, "system (ec 0x04) 0.0 C (< 1 C)"},
-		{"system 1.0 C", c(40), alt(33, 34), c(22), c(38), c(45), false, "system (ec 0x04) 1.0 C (>= 1 C)"},
-		{"system 0.9 C", c(40), alt(33, 33.9), c(22), c(38), c(45), true, "system (ec 0x04) 0.9 C (< 1 C)"},
-		{"ambient 1.0 C", c(40), c(33), alt(22, 23), c(38), c(45), false, "ambient (ec 0x06) 1.0 C (>= 1 C)"},
+		{"tctl 13.5 C (window 1, 2026-10-17)", alt(35, 48.5), c(33), c(22), c(38), c(45), true, "system (ec 0x04) span 0.0 C, trend +0.00 C: ok"},
+		{"system alternates 29/30 C (2026-11-01)", c(40), alt(29, 30), c(22), c(38), c(45), true, "system (ec 0x04) span 1.0 C, trend +0.00 C: ok"},
+		{"system span 2 C", c(40), alt(33, 35), c(22), c(38), c(45), false, "system (ec 0x04) span 2.0 C, trend +0.00 C: not stable"},
+		{"system rises 1 C for good", c(40), jump(33, 34, 30), c(22), c(38), c(45), false, "system (ec 0x04) span 1.0 C, trend +1.00 C: not stable"},
+		{"system falls 1 C for good", c(40), jump(34, 33, 30), c(22), c(38), c(45), false, "system (ec 0x04) span 1.0 C, trend -1.00 C: not stable"},
+		{"hdd 38 -> 39 C in the last minute", c(40), c(33), c(22), jump(38, 39, 55), c(45), true, "hdd span 1.0 C, trend +0.46 C: ok"},
+		{"ambient span 2 C", c(40), c(33), alt(22, 24), c(38), c(45), false, "ambient (ec 0x06) span 2.0 C"},
 		{"ambient missing", c(40), c(33), c(math.NaN()), c(38), c(45), false, "ambient (ec 0x06) not available"},
-		{"hdd 1.0 C", c(40), c(33), c(22), alt(38, 39), c(45), false, "hdd 1.0 C (>= 1 C)"},
+		{"ambient lost before the last minute", c(40), c(33), func(i int) float64 {
+			if i > 40 {
+				return math.NaN()
+			}
+			return 22
+		}, c(38), c(45), false, "ambient (ec 0x06) has no value in the first or last 60 s"},
 		{"nvme missing", c(40), c(33), c(22), c(38), c(math.NaN()), false, "limit sensor nvme not available"},
 		{"tctl missing", c(math.NaN()), c(33), c(22), c(38), c(45), false, "limit sensor tctl not available"},
 	}
@@ -259,6 +295,125 @@ func TestEvalG4(t *testing.T) {
 	}
 	if g := EvalG4(rows(c(40), c(33), c(22), c(38), c(math.NaN()))); g.Limit["nvme"] || !g.Limit["tctl"] || !g.Limit["hdd"] {
 		t.Errorf("limit sensors %v", g.Limit)
+	}
+}
+
+// T1, another channel's duty register (TESTSPEC §5.1, 0.5 #33).
+func TestEvalT1OtherDCR(t *testing.T) {
+	rest := map[int][]int{1: {2000, 2010}, 2: {2150, 2160}, 3: {1640, 1650}}
+	restDCR := map[int][]int{1: {85, 85}, 2: {75, 75}, 5: {255, 255}}
+	rpm := map[int]int{255: 3519, 217: 3152, 179: 2721, 140: 2243}
+	// dcr2 is the value of DCR2 at step 179, ts the sample times of a step
+	mk := func(dcr2 int, ts []float64) []T1Step {
+		var out []T1Step
+		for _, d := range T1Steps {
+			v := 75
+			if d == 179 {
+				v = dcr2
+			}
+			out = append(out, T1Step{Duty: d, T: ts, DCR: []int{d, d}, DCR4: []int{d, d},
+				Fans:   map[int][]int{1: {2005, 2003}, 2: {2213, 2190}, 3: {rpm[d], rpm[d]}},
+				Others: map[int][]int{1: {85, 85}, 2: {v, v}, 5: {255, 255}},
+				Inputs: map[int][]float64{1: {37, 37}, 2: {27, 27}}})
+		}
+		return out
+	}
+	restIn := map[int][]float64{1: {37, 37}, 2: {27, 27}}
+	eval := func(s []T1Step) Result { return EvalT1(3, 3, rest, restIn, restDCR, s, []int{1, 2, 3}) }
+	join := func(r Result) string { return strings.Join(r.Reasons, "; ") }
+	// the pwm3 run of 2026-11-01: fan2 +58 rpm, DCR2 constant
+	r := eval(mk(75, nil))
+	if r.Verdict != Pass || !strings.Contains(join(r), "fan2 2213 rpm") {
+		t.Fatalf("coupling: %s %v", r.Verdict, r.Reasons)
+	}
+	// 15 counts: the EC may correct a coupled fan; reported
+	r = eval(mk(90, nil))
+	if r.Verdict != Pass || !strings.Contains(fmt.Sprint(r.Criteria), "reported: DCR2 90 at step 179 (rest 75)") {
+		t.Fatalf("15 counts: %s %+v", r.Verdict, r.Criteria)
+	}
+	// 16 counts: follows
+	r = eval(mk(91, nil))
+	if r.Verdict != Fail || !strings.Contains(r.Reasons[0], "DCR2 91 at step 179 (rest 75)") {
+		t.Fatalf("16 counts: %s %v", r.Verdict, r.Reasons)
+	}
+	if r := eval(mk(59, nil)); r.Verdict != Fail {
+		t.Fatalf("16 counts down: %s %v", r.Verdict, r.Reasons)
+	}
+	// before the settle time of the channel: recorded, not judged
+	s := mk(75, []float64{5, 10})
+	s[2].Others[2] = []int{120, 75}
+	if r := eval(s); r.Verdict != Pass {
+		t.Fatalf("not judged: %s %v", r.Verdict, r.Reasons)
+	}
+	// that channel's table input crossed a step: INCONCLUSIVE, not FAIL (#24)
+	s = mk(91, nil)
+	for i := range s {
+		s[i].Inputs[2] = []float64{63, 63}
+	}
+	if r := eval(s); r.Verdict != Inconclusive || !strings.Contains(r.Reasons[0], "table input of pwm2 crossed a step") {
+		t.Fatalf("crossed: %s %v", r.Verdict, r.Reasons)
+	}
+	// a judged sample without the register: not PASS
+	s = mk(75, nil)
+	s[1].Others[2] = []int{75, -1}
+	if r := eval(s); r.Verdict != Inconclusive || !strings.HasPrefix(r.Reasons[0], "DCR not readable") {
+		t.Fatalf("gap: %s %v", r.Verdict, r.Reasons)
+	}
+	if r := EvalT1(3, 3, rest, restIn, nil, mk(75, nil), []int{1, 2, 3}); r.Verdict != Inconclusive {
+		t.Fatalf("no rest reference: %s %v", r.Verdict, r.Reasons)
+	}
+}
+
+// T2/T3 timing per channel (TESTSPEC §5.2, 0.5 #34).
+func TestHandbackTiming(t *testing.T) {
+	for ch, want := range map[int][2]int{1: {300, 180}, 2: {300, 180}, 3: {900, 900}} {
+		if PreWindowS(ch) != want[0] || T3LimitS(ch) != want[1] {
+			t.Fatalf("pwm%d: A window %d, T3 limit %d", ch, PreWindowS(ch), T3LimitS(ch))
+		}
+	}
+	series := func(n int, v func(float64) int) []DCRSample {
+		var out []DCRSample
+		for ts := 5.0; ts <= float64(n); ts += 5 {
+			out = append(out, DCRSample{T: ts, DCR: v(ts)})
+		}
+		return out
+	}
+	r := HandbackRun{Label: "H", Written: 255, TimingKnown: true, LimitS: 180}
+	// pwm1 of Z3: at the table value after about 5 s
+	r.Samples = series(300, func(float64) int { return 86 })
+	if s := EvalHandback(r); s.T2 != Pass || s.T3 != Pass {
+		t.Fatalf("settled: %s %s", s.T2, s.T3)
+	}
+	// steady from 190 s: past the limit, the steady window still fits the log
+	r.Samples = series(310, func(ts float64) int {
+		if ts < 190 {
+			return 86 + int(ts)/5%2*10
+		}
+		return 86
+	})
+	if s := EvalHandback(r); s.T3 != Fail {
+		t.Fatalf("late: %s %q", s.T3, s.T3Reason)
+	}
+	// stayed at the written value for the whole 300-s log: T2 FAIL
+	r.Samples = series(300, func(float64) int { return 255 })
+	if s := EvalHandback(r); s.T2 != Fail {
+		t.Fatalf("held: %s %q", s.T2, s.T2Reason)
+	}
+	// the same log is too short for pwm3
+	r.LimitS = 900
+	if s := EvalHandback(r); s.T2 != Inconclusive {
+		t.Fatalf("short log on pwm3: %s %q", s.T2, s.T2Reason)
+	}
+}
+
+func TestParseCPUList(t *testing.T) {
+	for in, want := range map[string]int{"0-23\n": 24, "0": 1, "0-3,8,10-11": 7, "": 0, "x": 0, "3-1": 0} {
+		if got := ParseCPUList(in); got != want {
+			t.Errorf("%q: %d, want %d", in, got, want)
+		}
+	}
+	if GateLoadLimit(24) < 2.39 || GateLoadLimit(24) > 2.41 {
+		t.Errorf("limit %f", GateLoadLimit(24))
 	}
 }
 
@@ -284,7 +439,7 @@ func TestEvalT1SettleTime(t *testing.T) {
 		}
 		return out
 	}
-	r := EvalT1(3, 3, rest, nil, mk(0x64), []int{1, 2, 3})
+	r := evalT1(3, 3, rest, nil, mk(0x64), []int{1, 2, 3})
 	if r.Verdict != Pass {
 		t.Fatalf("pwm3, +5 s off: %s %v", r.Verdict, r.Reasons)
 	}
@@ -295,7 +450,7 @@ func TestEvalT1SettleTime(t *testing.T) {
 	// +10 s is judged
 	st := mk(0x64)
 	st[2].DCR4[1] = 0x64
-	if r := EvalT1(3, 3, rest, nil, st, []int{1, 2, 3}); r.Verdict != Fail {
+	if r := evalT1(3, 3, rest, nil, st, []int{1, 2, 3}); r.Verdict != Fail {
 		t.Fatalf("pwm3, +10 s off: %s", r.Verdict)
 	}
 	// pwm4: 1 s, so +5 s is judged
@@ -304,7 +459,7 @@ func TestEvalT1SettleTime(t *testing.T) {
 		pc[i].Fans[3] = []int{1645, 1645, 1645, 1645, 1645, 1645, 1645, 1645, 1645, 1645, 1645, 1645}
 		pc[i].DCR4 = nil
 	}
-	if r := EvalT1(4, 0, rest, nil, pc, []int{1, 2, 3}); r.Verdict != Fail {
+	if r := evalT1(4, 0, rest, nil, pc, []int{1, 2, 3}); r.Verdict != Fail {
 		t.Fatalf("pwm4, +5 s off: %s %v", r.Verdict, r.Reasons)
 	}
 }
@@ -324,12 +479,13 @@ func TestEvalT1TableInputCrossing(t *testing.T) {
 		}
 		return out
 	}
-	r := EvalT1(3, 3, rest, restIn, mk(61), []int{1, 2, 3})
+	r := evalT1(3, 3, rest, restIn, mk(61), []int{1, 2, 3})
 	if r.Verdict != Inconclusive || !strings.Contains(r.Reasons[0], "table input of pwm1 crossed a step") {
 		t.Fatalf("crossed: %s %v", r.Verdict, r.Reasons)
 	}
-	// 46 C is not >= 45 + 2: no crossing, fan1 follows -> FAIL
-	if r := EvalT1(3, 3, rest, restIn, mk(46), []int{1, 2, 3}); r.Verdict != Fail {
+	// 46 C is not >= 45 + 2: no crossing; fan1 follows with a constant DCR1:
+	// reported only (0.5 #30)
+	if r := evalT1(3, 3, rest, restIn, mk(46), []int{1, 2, 3}); r.Verdict != Pass {
 		t.Fatalf("not crossed: %s %v", r.Verdict, r.Reasons)
 	}
 	if x := Crossing(1, 60, []float64{53.5}); x != "" {
@@ -361,29 +517,29 @@ func TestEvalT1CrossingWithoutFollowing(t *testing.T) {
 		return out
 	}
 	// every other tach within +-50 rpm, EC 0x09 37.5 -> 61 C (steps 45, 55)
-	r := EvalT1(3, 3, rest, restIn, mk(61, 2165, rpm), []int{1, 2, 3})
+	r := evalT1(3, 3, rest, restIn, mk(61, 2165, rpm), []int{1, 2, 3})
 	if r.Verdict != Inconclusive || len(r.Reasons) != 1 || !strings.HasPrefix(r.Reasons[0], "table input of pwm1 crossed a step") || strings.Contains(r.Reasons[0], "another tach") {
 		t.Fatalf("crossed, tachs quiet: %s %v", r.Verdict, r.Reasons)
 	}
 	// the same run without the crossing passes
-	if r := EvalT1(3, 3, rest, restIn, mk(46, 2165, rpm), []int{1, 2, 3}); r.Verdict != Pass {
+	if r := evalT1(3, 3, rest, restIn, mk(46, 2165, rpm), []int{1, 2, 3}); r.Verdict != Pass {
 		t.Fatalf("not crossed: %s %v", r.Verdict, r.Reasons)
 	}
 	// fan2 outside +-50 while only pwm1's input crossed: no FAIL (a crossing
 	// rules it out), not the "that channel crossed" rule either -> the
 	// crossing rule at the end
-	if r := EvalT1(3, 3, rest, restIn, mk(61, 2400, rpm), []int{1, 2, 3}); r.Verdict != Inconclusive || !strings.HasPrefix(r.Reasons[0], "table input of pwm1 crossed a step") {
+	if r := evalT1(3, 3, rest, restIn, mk(61, 2400, rpm), []int{1, 2, 3}); r.Verdict != Inconclusive || !strings.HasPrefix(r.Reasons[0], "table input of pwm1 crossed a step") {
 		t.Fatalf("fan2 follows, pwm1 crossed: %s %v", r.Verdict, r.Reasons)
 	}
 	// own tach < 200 rpm comes before the crossing rule (§5.1 order)
 	flat := map[int]int{255: 3540, 217: 3500, 179: 3460, 140: 3420}
-	if r := EvalT1(3, 3, rest, restIn, mk(61, 2165, flat), []int{1, 2, 3}); r.Verdict != Inconclusive || !strings.HasPrefix(r.Reasons[0], "own tach") {
+	if r := evalT1(3, 3, rest, restIn, mk(61, 2165, flat), []int{1, 2, 3}); r.Verdict != Inconclusive || !strings.HasPrefix(r.Reasons[0], "own tach") {
 		t.Fatalf("own tach and crossing: %s %v", r.Verdict, r.Reasons)
 	}
 	// a DCR that differs stays FAIL with a crossing
 	bad := mk(61, 2165, rpm)
 	bad[1].DCR = []int{217, 200}
-	if r := EvalT1(3, 3, rest, restIn, bad, []int{1, 2, 3}); r.Verdict != Fail {
+	if r := evalT1(3, 3, rest, restIn, bad, []int{1, 2, 3}); r.Verdict != Fail {
 		t.Fatalf("DCR differs and crossing: %s %v", r.Verdict, r.Reasons)
 	}
 }
@@ -416,7 +572,7 @@ func TestEvalT1DCR4(t *testing.T) {
 		}
 		return out
 	}
-	r := EvalT1(3, 3, rest, nil, mk(), []int{1, 2, 3})
+	r := evalT1(3, 3, rest, nil, mk(), []int{1, 2, 3})
 	last := r.Criteria[len(r.Criteria)-1]
 	if r.Verdict != Pass || last.Met == nil || !*last.Met {
 		t.Fatalf("both equal: %+v", r)
@@ -424,7 +580,7 @@ func TestEvalT1DCR4(t *testing.T) {
 	// DCR4 differs in one sample: FAIL, the difference is listed
 	st := mk()
 	st[2].DCR4 = []int{179, 182}
-	r = EvalT1(3, 3, rest, nil, st, []int{1, 2, 3})
+	r = evalT1(3, 3, rest, nil, st, []int{1, 2, 3})
 	last = r.Criteria[len(r.Criteria)-1]
 	if r.Verdict != Fail || !strings.Contains(r.Criteria[0].Detail, "step 179: DCR4 182") || last.Met == nil || *last.Met || !strings.Contains(last.Detail, "DCR3 179, DCR4 182") {
 		t.Fatalf("DCR4 differs: %+v", r)
@@ -437,7 +593,7 @@ func TestEvalT1DCR4(t *testing.T) {
 	for i := range st {
 		st[i].DCR4 = nil
 	}
-	r = EvalT1(3, 3, rest, nil, st, []int{1, 2, 3})
+	r = evalT1(3, 3, rest, nil, st, []int{1, 2, 3})
 	if r.Verdict != Inconclusive || r.Criteria[0].Met != nil || !strings.Contains(r.Criteria[0].Detail, "no judged DCR4 sample") {
 		t.Fatalf("DCR4 missing: %+v", r)
 	}
@@ -446,7 +602,7 @@ func TestEvalT1DCR4(t *testing.T) {
 	for i := range st {
 		st[i].DCR4 = nil
 	}
-	if r = EvalT1(1, 1, rest, nil, func() []T1Step {
+	if r = evalT1(1, 1, rest, nil, func() []T1Step {
 		s := st
 		for i := range s {
 			s[i].Fans[1], s[i].Fans[3] = []int{rpm[s[i].Duty], rpm[s[i].Duty]}, []int{1645, 1645}
