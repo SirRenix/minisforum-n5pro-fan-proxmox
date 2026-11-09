@@ -14,7 +14,7 @@ and reports under [`docs/`](docs/) and [`befunde/`](befunde/BEFUNDE.md).
 `n5-ectest` (`ectest/`) is versioned and tagged separately (`ectest/vX.Y.Z`); its entries
 are listed here until it has its own changelog.
 
-## [0.2.1+sr3] — unreleased
+## [0.2.1+sr3] — 2026-11-09
 
 Third downstream revision of upstream `v0.2.1` (`feb6d9a`): `sr2` plus one driver patch. From
 this revision on the driver is developed independently of `ltdstudio/minisforum-n5-it5571`;
