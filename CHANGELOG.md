@@ -14,7 +14,37 @@ and reports under [`docs/`](docs/) and [`befunde/`](befunde/BEFUNDE.md).
 `n5-ectest` (`ectest/`) is versioned and tagged separately (`ectest/vX.Y.Z`); its entries
 are listed here until it has its own changelog.
 
-## [0.2.1+sr2] — unreleased
+## [0.2.1+sr3] — unreleased
+
+Third downstream revision of upstream `v0.2.1` (`feb6d9a`): `sr2` plus one driver patch. From
+this revision on the driver is developed independently of `ltdstudio/minisforum-n5-it5571`;
+upstream `v0.2.1` stays the base of the series. Built and statically checked (W=1, sparse,
+smatch, checkpatch on Proxmox kernel headers 7.0.14-26-pve, 7.0.14-28-pve and 7.0.12-1-pve,
+`befunde/raw/sr3-build-20261109.txt`); userspace harness and `packaging/test/test-deb.sh`
+PASS. No hardware test. Hardware status of the N5 Pro stays `experimental`.
+
+### Driver patches
+
+- `0009` read cache for `temp*_input` and `fan*_input`: each input refreshes from the EC at
+  most once per second; a read within that second is served without port I/O. An EC timeout
+  (`-ETIMEDOUT`) is cached for the same second, a torn tachometer read (`-EAGAIN`) is not.
+  Readers of these world-readable files wait with `mutex_lock_killable`. Before, every read
+  by any local user did live EC I/O under the driver lock (measured on the reference host
+  with sr2: about 1.5 ms per `temp1_input`, 3.9 ms per `fan1_input` read, unprivileged
+  user), so a reader loop could keep the EC and the lock busy (audit-20261016 #28). pwm and
+  pwm_enable paths and debugfs `dcr` are unchanged. Draft r2 of 2026-10-17 on the released
+  series; the debugfs `ecram` draft it was built on is not adopted.
+- `0001` `MODULE_VERSION` `0.2.1+sr3`, change-notice date 2026-11-09; `0002` only its context
+  line for that date.
+
+### Packaging
+
+- `test-deb.sh`: the blacklist check piped `modprobe -c` into `grep -q` under `pipefail`;
+  `modprobe -c` (about 2 MB with a kernel's module aliases) could die of SIGPIPE and fail
+  the check although the line is there. The output is now captured first; the
+  "not loaded" check reads `/proc/modules` instead of piping `lsmod` into `grep -q`.
+
+## [0.2.1+sr2] — 2026-11-02
 
 Second downstream revision of upstream `v0.2.1` (`feb6d9a`): `sr1` plus one driver patch and
 two packaging changes. Built and statically checked (W=1, sparse, smatch, checkpatch on

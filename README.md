@@ -1,8 +1,9 @@
 # N5 Pro EC / IT5571 — fan driver package and validation
 
-DKMS package of the community driver
-[`ltdstudio/minisforum-n5-it5571`](https://github.com/ltdstudio/minisforum-n5-it5571) for
-the Minisforum N5 Pro, plus the validation data of its experimental N5 Pro profile.
+DKMS package of a fan driver for the Minisforum N5 Pro, based on the community driver
+[`ltdstudio/minisforum-n5-it5571`](https://github.com/ltdstudio/minisforum-n5-it5571) `v0.2.1`,
+plus the validation data of its experimental N5 Pro profile. From `0.2.1+sr3` on the patch series
+is developed here independently of upstream; upstream `v0.2.1` stays its base.
 The regulator on top is [n5-fangov](https://github.com/SirRenix/n5-fangov).
 
 ## Install (Proxmox VE 9 / Debian 13)
@@ -35,19 +36,20 @@ The driver source lives in [`driver/`](driver/README.md): `driver/upstream/` is 
 byte-identical copy of upstream `v0.2.1` (commit `feb6d9a`, checked against GitHub in
 CI and against its `SHA256SUMS` at build time), `driver/patches/` holds our patch series.
 Package `0.2.1-1` ships upstream unchanged. Packages from `0.2.1+sr1~rc1` on apply the
-series `0001`–`0007`, from `0.2.1+sr2` on `0001`–`0008`; `modinfo -F version minisforum_n5_it5571`
+series `0001`–`0007`, from `0.2.1+sr2` on `0001`–`0008`, from `0.2.1+sr3` on `0001`–`0009`; `modinfo -F version minisforum_n5_it5571`
 shows which one runs (`0.2.0` = upstream as shipped, `0.2.1+srN…` = patched). The current
-release is `sr2`: `sr1` (code of `rc3`: `rc1` plus the PCIe hand-back at 255 from `rc2`, below;
-`rc3` corrected only comments in `0006`) plus the read-only `N5 PRO` / `F8NAB` entry (0008)
-and two packaging changes ([CHANGELOG](CHANGELOG.md)); the N5 Pro stays `experimental`
+release is `sr3`: `sr1` (code of `rc3`: `rc1` plus the PCIe hand-back at 255 from `rc2`, below;
+`rc3` corrected only comments in `0006`) plus the read-only `N5 PRO` / `F8NAB` entry and two
+packaging changes (`sr2`, 0008) plus a 1 s read cache for temperatures and fans (`sr3`, 0009)
+([CHANGELOG](CHANGELOG.md)); the N5 Pro stays `experimental`
 (results: `befunde/RESULTS.md`).
 Versions and tags: [`packaging/UPSTREAM`](packaging/UPSTREAM). The release workflow
 builds the package and tests the installation in Debian 13.
 
 Unless marked otherwise, the driver behaviour below is the same in upstream `0.2.1`
 and in `sr1`/`sr2`. "0.2.1:" marks upstream behaviour that `sr1` changes; "sr1" marks the
-patched behaviour (patch number in brackets, `driver/patches/`), which `sr2` keeps; "sr2"
-marks what only `sr2` changes.
+patched behaviour (patch number in brackets, `driver/patches/`), which `sr2` and `sr3` keep;
+"sr2" and "sr3" mark what that revision changes.
 
 ## Supported hardware
 
@@ -69,7 +71,7 @@ that vendor, so an `N5 PRO` / `F8NAA` board from another vendor binds only with
 `F8NAB`, 0008) match without vendor (their vendor string is not measured): on a vendor
 mismatch they bind read-only. N5 Air, `N5 PRO` / `F8NAB` and `force=1` are always read-only. Read-only means no PWM write: every
 temperature or fan read still sends EC read commands (0x80 to 0x66; 0xd5 plus
-subcommand to 0x6c/0x68). Other vendors' boards with this EC are not excluded in
+subcommand to 0x6c/0x68); sr3: at most once per second per input (0009). Other vendors' boards with this EC are not excluded in
 principle, but they need their own validation and a patch; the package does not
 write there.
 The EC firmware version is readable without port access:
@@ -154,9 +156,9 @@ With writes enabled:
 
 | Attribute | Mode | Read from | Value |
 |---|---|---|---|
-| `temp1..4_input` | 0444 | EC live: EC RAM 0x09 / 0x04 / 0x05 / 0x06 | m°C; raw byte as signed 8 bit × 1000; raw `0x00` and `0xff` → `-ENODATA` |
+| `temp1..4_input` | 0444 | EC live: EC RAM 0x09 / 0x04 / 0x05 / 0x06 (sr3: per input cached for 1 s, 0009) | m°C; raw byte as signed 8 bit × 1000; raw `0x00` and `0xff` → `-ENODATA` |
 | `temp1..4_label` | 0444 | constant | `CPU Temp`, `System Temp`, `Board Temp`, `Ambient Temp` |
-| `fan1..3_input` | 0444 | EC live: PMC2 high/low/high byte | RPM; CPU / SSD / HDD group; raw `0xffff` is reported as 65535 (sr1: `-ENODATA`, 0007) |
+| `fan1..3_input` | 0444 | EC live: PMC2 high/low/high byte (sr3: per input cached for 1 s, 0009) | RPM; CPU / SSD / HDD group; raw `0xffff` is reported as 65535 (sr1: `-ENODATA`, 0007) |
 | `fan4_input` | 0444 | constant `0` | PCIe header has no tachometer; `0` is not a stall (sr1: hidden, 0007) |
 | `fan1..4_label` | 0444 | constant | `CPU Fan`, `SSD Fan`, `HDD Fan`, `PCIe Fan (no tach)` (sr1: `fan4_label` hidden, 0007) |
 | `fan1..4_min` | 0644 | driver memory | 0.2.1: 0–65535; stored only, no effect on the EC, no alarm, writable even read-only. sr1: removed (0007) |
@@ -206,9 +208,10 @@ and `docs/publication/RESULTS.en.md` at `feb6d9a`, not vendored; excerpt in
 | Attribute / step | errno | Cause |
 |---|---|---|
 | any write | `-EINVAL`, `-ERANGE` | not a decimal number or out of `long` range (hwmon core, before the driver) |
-| `tempN_input` | `-ETIMEDOUT` | EC status poll ran out (see [Timing](#timing)) |
+| `tempN_input` | `-ETIMEDOUT` | EC status poll ran out (see [Timing](#timing)); sr3: returned from the cache for 1 s (0009) |
+| `tempN_input`, `fan1..3_input` | sr3: `-EINTR` | reader killed while waiting for the driver lock (0009) |
 | | `-ENODATA` | raw value `0x00` or `0xff` (sensor not valid) |
-| `fan1..3_input` | `-ETIMEDOUT` | PMC2 status poll ran out |
+| `fan1..3_input` | `-ETIMEDOUT` | PMC2 status poll ran out; sr3: returned from the cache for 1 s (0009) |
 | | `-EAGAIN` | high byte changed in all 4 attempts (no consistent sample) |
 | | sr1: `-ENODATA` | raw `0xffff` (0007) |
 | `fan4_input`, labels, `pwmN`, `pwmN_enable` (read) | – | no EC access; 0.2.1: never fail |

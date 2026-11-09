@@ -3,7 +3,7 @@ Description: Mark the downstream build: change notice, MODULE_VERSION, parameter
  SPDX line and header, pointing to driver/patches/.
  .
  MODULE_VERSION was "0.2.0" while the package is 0.2.1; it is now the DKMS
- PACKAGE_VERSION "0.2.1+sr2" (packaging/build-deb.sh checks this).
+ PACKAGE_VERSION "0.2.1+sr3" (packaging/build-deb.sh checks this).
  Resolves F6.
  .
  MODULE_PARM_DESC(force) said "Load read-only without a known Minisforum
@@ -22,7 +22,7 @@ Description: Mark the downstream build: change notice, MODULE_VERSION, parameter
 Author: SirRenix <7069603+SirRenix@users.noreply.github.com>
 Origin: vendor
 Forwarded: not-needed
-Last-Update: 2026-11-02
+Last-Update: 2026-11-09
 ---
 --- a/driver-prototype/minisforum_n5_it5571.c
 +++ b/driver-prototype/minisforum_n5_it5571.c
@@ -31,7 +31,7 @@ Last-Update: 2026-11-02
   * ACPI EC RAM provides four useful temperature bytes:
   *   0x09 CPU, 0x04 system, 0x05 board/aux, 0x06 ambient.
 + *
-+ * Modified 2026-11-02 by SirRenix for the Debian/Proxmox DKMS package
++ * Modified 2026-11-09 by SirRenix for the Debian/Proxmox DKMS package
 + * minisforum-n5-it5571-dkms; changes: driver/patches/ in
 + * https://github.com/SirRenix/minisforum-n5pro-fan-proxmox
   */
@@ -58,4 +58,4 @@ Last-Update: 2026-11-02
  MODULE_DESCRIPTION("Minisforum N5 family IT5571 fan/temp hwmon driver; N5 Pro/Air support is experimental; not affiliated with Minisforum; use at your own risk");
  MODULE_LICENSE("GPL");
 -MODULE_VERSION("0.2.0");
-+MODULE_VERSION("0.2.1+sr2");
++MODULE_VERSION("0.2.1+sr3");

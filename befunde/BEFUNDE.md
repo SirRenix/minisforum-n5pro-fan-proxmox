@@ -532,6 +532,23 @@ Für diese Tabelle gibt es kein Rohprotokoll im Repo; sie gibt die Prüfung am H
 | Kernel-Log | nur die zwei erwarteten Zeilen |
 | Autoload | nach echtem Neustart nicht geprüft, nur per Modalias belegt |
 
+## Build `0.2.1+sr3` (09.11.2026, ohne Hardware)
+
+`sr2` + `0009` (Lese-Cache `temp*_input`/`fan*_input`, BACKLOG #28; Entwurf r2 vom 17.10. auf
+die released Serie umgesetzt, ohne den `ecram`-Entwurf). Gebaut gegen `7.0.14-26-pve`
+(läuft), `7.0.14-28-pve` (installiert, nicht gebootet) und `7.0.12-1-pve` im Container auf dem
+Build-Host; Referenzhost nur gelesen. Protokoll `raw/sr3-build-20261109.txt`.
+
+| Punkt | Ergebnis | Beleg |
+|---|---|---|
+| Ausgangsmessung sr2 (09.11. 18:14, Referenzhost, unprivilegierter Benutzer, ein Prozess, 2 × 200 Lesezugriffe) | jedes Lesen ein EC-Zugriff: `temp1_input` Mittel ≈ 1,55 ms (max 3,2 ms), `fan1_input` ≈ 3,9 ms (max 9,1 ms) | Messschleife, Werte im Patch-Kopf 0009 |
+| Statische Prüfung | plain, W=1, sparse, smatch ohne Meldung (drei Kernel); checkpatch 0/0, `--strict` 6 CHECKs wie sr2; srcversion `1F34C0D951CB0937C489768` | Abschnitte F1–F7 |
+| Delta zu sr2 | nur Änderungsvermerk-Datum, `MODULE_VERSION`, `0009`; Code von 0009 zeilengleich mit Entwurf r2 | S1, D |
+| Harness | h9 (Cache) 58/58, ASan/UBSan sauber; Gegenprobe ohne Cache 18 Fehlschläge genau in den Cache-Prüfungen; H8 (pwm/Rückgabe/`.shutdown`) 55/55 | H0–H3 |
+| `test-deb.sh` | erster Lauf FAIL durch Testfehler (`grep -q` + `pipefail` → SIGPIPE bei 2 MB `modprobe -c`); Prüfung fängt die Ausgabe jetzt erst ein, `lsmod`-Prüfung liest `/proc/modules` (Hinweis aus dem Review); dann PASS | T0, T1 |
+| Unabhängiges Review (Delta sr2 → sr3) | `0009` ohne Befund (Sperren, jiffies, Fehlerpfade, Sentinel, `dead`, Rebind, pwm-Pfad geprüft); zwei Hinweise zu `test-deb.sh`, beide umgesetzt | T0 |
+| #35 (Erfolgszeile `.shutdown`) | **nicht umgesetzt**: Journal stoppt vor `.shutdown`, Konsole `quiet` + Loglevel 3 zeigt weder Info noch Warnung, `efi_pstore` sichert nur bei Panic → Zeile wäre nirgends lesbar (gemessen 09.11.) | `/proc/sys/kernel/printk`, Journal Vor-Boot |
+
 ## Für den GitHub-Issue an ltdstudio/minisforum-n5-it5571
 
 - [x] Distribution + Kernel: Proxmox VE 9.2.3 / Debian 13, `7.0.12-1-pve`
