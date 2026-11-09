@@ -60,9 +60,13 @@ fi
 
 echo "--- real kmod: modprobe -b honours a blacklist and exits 0 without loading; by name it ignores it (#50)"
 echo 'blacklist minisforum_n5_it5571' >/etc/modprobe.d/zz-test-blacklist.conf
-modprobe -c | grep -qx 'blacklist minisforum_n5_it5571' || fail "modprobe -c does not list the blacklist"
+# No pipe into an early-exiting grep: modprobe -c is large with a kernel's
+# module aliases (about 2 MB), and grep -q quitting at the match made it die
+# of SIGPIPE, which pipefail turned into a failed check.
+cfg=$(modprobe -c)
+grep -qx 'blacklist minisforum_n5_it5571' <<<"$cfg" || fail "modprobe -c does not list the blacklist"
 modprobe -b -S "$K" minisforum_n5_it5571 || fail "modprobe -b of a blacklisted module did not exit 0"
-lsmod | grep -q '^minisforum_n5_it5571 ' && fail "modprobe -b loaded a blacklisted module"
+grep -q '^minisforum_n5_it5571 ' /proc/modules && fail "modprobe -b loaded a blacklisted module"
 modprobe -S "$K" minisforum_n5_it5571 2>/dev/null && fail "modprobe by name succeeded in the container (expected an insert attempt and its failure)"
 echo "modprobe -b: exit 0, not loaded; by name: insert attempted (fails here, no N5 board / no CAP_SYS_MODULE)"
 rm -f /etc/modprobe.d/zz-test-blacklist.conf

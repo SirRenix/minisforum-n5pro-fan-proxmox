@@ -11,7 +11,7 @@ gets the next free number and is rebased onto the sr2 series.
 | Patch | Purpose | Status |
 |---|---|---|
 | `0008-debugfs-ecram.patch` | read-only debugfs file `ecram`: EC RAM 0x00-0xff through the driver's locked EC read path | draft 2026-10-16, revised after review (r2); build/static analysis clean, never run on hardware. Operator decision 2026-10-17: regenerated on rc2/rc3 only when sr2 starts, not before |
-| `0009-hwmon-read-cache.patch` | `temp*_input`/`fan*_input` from a per-input cache, EC refresh at most once per second per input; EC timeouts cached for the same 1 s (audit-20261016 #28) | draft r2 2026-10-17, untested on the device; see [0009](#0009-hwmon-read-cache) |
+| `0009-hwmon-read-cache.patch` | `temp*_input`/`fan*_input` from a per-input cache, EC refresh at most once per second per input; EC timeouts cached for the same 1 s (audit-20261016 #28) | **adopted 2026-11-09** as r3 into `driver/patches/0009-hwmon-read-cache.patch` (`0.2.1+sr3`, [`sr3-build-20261109.txt`](../../befunde/raw/sr3-build-20261109.txt)): same code on the sr2 series, without `0008-debugfs-ecram`; this r2 copy is kept as the reviewed draft |
 | `rc3/0006-shutdown.patch` | replacement for `driver/patches/0006-shutdown.patch` (rc3): HDD statement in header and `n5_shutdown` comment corrected (#27); comment text only | **adopted 2026-10-17** into `driver/patches/` (`0.2.1+sr1~rc3`, [`rc3-build-20261017.txt`](../../befunde/raw/rc3-build-20261017.txt)); this copy is kept as the reviewed draft |
 
 ## 0008-debugfs-ecram
@@ -153,7 +153,7 @@ and G6(b); T6 "before load" still needs a boot without the module (or mode A), a
 
 ## 0009-hwmon-read-cache
 
-**Status: draft r2 2026-10-17 (r1 2026-10-16), untested on the device.** Target sr2 (with 0008).
+**Status: adopted 2026-11-09 as r3 (sr3, without the ecram draft); r2 2026-10-17, r1 2026-10-16.** The notes below describe r1/r2 on rc2/rc3 + ecram 0008.
 r2 adds the operator decision of 2026-10-17: EC timeouts are cached for 1 s (see Design).
 Source: audit-20261016 BACKLOG #28, c-review rc2 DOS-001 (reviewer finding, not measured).
 

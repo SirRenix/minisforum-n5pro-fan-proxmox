@@ -1,0 +1,217 @@
+Description: Cache temp*_input and fan*_input for 1 s (hwmon read cache)
+ temp*_input and fan*_input are mode 0444. Every read took data->lock
+ with mutex_lock() and did live EC/PMC2 I/O: one EC RAM read (command
+ 0x80) per temperature, up to 4 x 3 PMC2 reads per tachometer, within the
+ 1 s access budget of 0005. There was no cache and no minimum interval.
+ A local user without privileges (also a container that sees the host's
+ sysfs) could loop on these files from many threads: the pwm/pwm_enable
+ writes of the regulator and the unbind restore queued behind every
+ reader, and the EC got a continuous command stream (audit-20261016
+ BACKLOG #28, c-review rc2 DOS-001). Measured on the reference host
+ with 0.2.1+sr2 (2026-11-09, unprivileged user, one process, 200 reads
+ each): every read of temp1_input took about 1.5 ms and every read of
+ fan1_input about 3.9 ms of live EC I/O. The effect of a reader flood
+ on the regulator's writes was not measured.
+ .
+ Now each of the 7 inputs (temp1-temp4, fan1-fan3) keeps the result of
+ its last refresh (raw value or error code) with a jiffies timestamp and
+ a valid flag in struct n5_data (usual hwmon valid/last_updated pattern).
+ A read within N5_CACHE_MS = 1000 ms after the last cached refresh of
+ that input is served from the cache under data->lock without port I/O.
+ Otherwise the read does exactly the EC access it did before (same
+ transaction, same n5_access_begin() budget) and stores the result. The
+ timestamp is taken after the EC access, so two refreshes of one input
+ start at least 1 s plus the access time apart.
+ .
+ Granularity: one input, not the whole group. A group refresh (all four
+ temperatures or all three tachometers in one lock hold) would hold the
+ lock for up to 4 EC reads or 36 PMC2 reads, longer than one uncached
+ read today; the regulator's writes must not wait longer than before.
+ Per input, a lock hold is either a cache hit (no I/O) or the same access
+ as before. Upper bound on EC accesses from hwmon reads: 7 per second
+ (each bounded by the 1 s budget), independent of the number of readers.
+ .
+ Errors (operator decision 2026-10-17): a refresh that ends in
+ -ETIMEDOUT (a status wait ran out, the EC does not answer) is cached as
+ that error for N5_CACHE_MS; reads in that window return -ETIMEDOUT from
+ the cache without port I/O and without a new kernel warning. Without
+ this, a reader flood while the EC hangs makes every read a refresh that
+ holds the lock until its wait times out. -EAGAIN (torn tachometer read
+ after four attempts; the EC answered) is not cached: the next read tries
+ the EC again. The previous valid value is never served after a failed
+ refresh because it is stale by then. The EC sentinels (temperature
+ 0x00/0xff, tachometer 0xffff) are successful EC answers: they are cached
+ as raw values and still reported as -ENODATA (0007), also from the
+ cache.
+ .
+ dead (0004/0006): checked before the cache, so after unbind/unload or
+ .shutdown every read returns -ENODEV as before, cache or not. The cache
+ lives in the devm-allocated n5_data and starts empty on every bind.
+ .
+ Lock: temperature and fan reads take data->lock with
+ mutex_lock_killable(); a fatal signal while waiting returns -EINTR, no
+ state is touched before the lock is held. Reason: these readers are
+ unprivileged and may wait behind a refresh that uses up the 1 s budget;
+ they can now be killed. pwm and
+ pwm_enable reads and all writes keep mutex_lock() and are unchanged.
+ .
+ Effect on the regulator: queued readers no longer add one EC access
+ each. A pwm write waits for at most one refresh per input whose cache
+ has expired (<= 7, each as long as one uncached read before) plus
+ queued cache hits (no I/O). Before, it waited for one EC access per
+ queued reader, without bound.
+ .
+ Residual risk: while the EC does not answer, each input still does one
+ timed-out refresh per N5_CACHE_MS plus access time, independent of the
+ number of readers; with all 7 inputs read in a loop the lock is busy
+ for up to 7 timed-out accesses per such window. A reader that hits a
+ cached -ETIMEDOUT (also n5-fangov) sees the error up to 1 s after the EC
+ answers again. Fan RPM may be up to 1 s (plus the access time) old;
+ n5-fangov reads at intervals of >= 2 s. debugfs dcr (root only) is not
+ cached.
+ .
+ Checklist: C1/C2 unchanged (one EC transaction per lock hold), C3 (cache
+ only under data->lock), C9 (lock hold per read <= before; cache hits
+ without I/O), G5 unchanged (modes and visibility untouched), H5
+ (MODULE_VERSION unchanged by this patch, 0001 sets 0.2.1+sr3).
+ .
+ Base: 0001-0008 as released in 0.2.1+sr2. Drafts r1/r2 (2026-10-16/17)
+ sat on a debugfs ecram draft numbered 0008 that was not adopted; this
+ r3 is the r2 change on the released series. Only the context of the
+ define hunk and these notes differ from r2.
+ .
+ Tested: build/static analysis and userspace harness only
+ (r1: befunde/raw/p9-draft-build-20261016.txt; r2 error caching:
+ befunde/raw/rc3-build-20261017.txt, sections B/H; r3 on sr2:
+ befunde/raw/sr3-build-20261109.txt).
+ Not tested on hardware: values and timing of cached reads (sensors,
+ n5-fangov), reader flood vs. pwm write latency, kill of a waiting reader,
+ reads after unbind and after .shutdown.
+Author: SirRenix <7069603+SirRenix@users.noreply.github.com>
+Origin: vendor
+Forwarded: no
+Last-Update: 2026-11-09
+---
+--- a/driver-prototype/minisforum_n5_it5571.c
++++ b/driver-prototype/minisforum_n5_it5571.c
+@@ -43,6 +43,7 @@
+ #include <linux/io.h>
+ #include <linux/iopoll.h>
+ #include <linux/ioport.h>
++#include <linux/jiffies.h>
+ #include <linux/ktime.h>
+ #include <linux/minmax.h>
+ #include <linux/module.h>
+@@ -122,6 +123,21 @@
+ #define N5_I2EC_PWM_BASE        0x1800
+ #define N5_I2EC_PWM_LEN         16
+ 
++/*
++ * Sensor read cache. temp*_input and fan*_input are world-readable, and an
++ * uncached read did live EC/PMC2 I/O under data->lock, so any local user
++ * could keep the lock and the EC busy in a loop. Each input keeps the
++ * result of its last refresh; for N5_CACHE_MS after that a read is served
++ * from the cache under data->lock without port I/O. A refresh covers one
++ * input (one temperature byte or one tachometer channel), i.e. exactly the
++ * EC access of an uncached read with the same access budget, so it holds
++ * the lock no longer than before. A refresh that timed out (-ETIMEDOUT, EC
++ * not answering) is cached as that error for the same time, so a reader
++ * flood cannot keep the lock busy with one timed-out access per read while
++ * the EC hangs. Other errors (-EAGAIN, torn tachometer read) are not cached.
++ */
++#define N5_CACHE_MS             1000
++
+ static bool force;
+ module_param(force, bool, 0444);
+ MODULE_PARM_DESC(force,
+@@ -162,6 +178,18 @@
+ 	/* A wait on this interface timed out; resync before the next use. */
+ 	bool resync_ec;
+ 	bool resync_pmc2;
++	/*
++	 * Sensor cache (N5_CACHE_MS), under lock; *_updated in jiffies,
++	 * *_err 0 or the cached -ETIMEDOUT of the last refresh.
++	 */
++	u8 temp_raw[N5_TEMP_CHANNELS];
++	int temp_err[N5_TEMP_CHANNELS];
++	unsigned long temp_updated[N5_TEMP_CHANNELS];
++	bool temp_valid[N5_TEMP_CHANNELS];
++	long fan_rpm[N5_TACH_CHANNELS];
++	int fan_err[N5_TACH_CHANNELS];
++	unsigned long fan_updated[N5_TACH_CHANNELS];
++	bool fan_valid[N5_TACH_CHANNELS];
+ };
+ 
+ static struct platform_device *n5_pdev;
+@@ -185,6 +213,19 @@
+ 	"PCIe Fan (no tach)",
+ };
+ 
++/* Caller holds data->lock. A cached sensor result younger than N5_CACHE_MS. */
++static bool n5_cache_fresh(bool valid, unsigned long updated)
++{
++	return valid &&
++	       time_before(jiffies, updated + msecs_to_jiffies(N5_CACHE_MS));
++}
++
++/* Refresh results that are cached: a value or an EC timeout. */
++static bool n5_cache_result(int ret)
++{
++	return !ret || ret == -ETIMEDOUT;
++}
++
+ /* Caller holds data->lock. Starts the time budget of one sysfs access. */
+ static void n5_access_begin(struct n5_data *data)
+ {
+@@ -591,13 +632,24 @@
+ 	case hwmon_temp:
+ 		if (attr != hwmon_temp_input || channel >= N5_TEMP_CHANNELS)
+ 			return -EOPNOTSUPP;
+-		mutex_lock(&data->lock);
++		/* World-readable: a waiting reader can be killed. */
++		if (mutex_lock_killable(&data->lock))
++			return -EINTR;
+ 		if (data->dead) {
+ 			ret = -ENODEV;
++		} else if (n5_cache_fresh(data->temp_valid[channel],
++					  data->temp_updated[channel])) {
++			ret = data->temp_err[channel];
++			temp = data->temp_raw[channel];
+ 		} else {
+ 			n5_access_begin(data);
+ 			ret = n5_ec_read_locked(data, n5_temp_reg[channel],
+ 						&temp);
++			data->temp_valid[channel] = n5_cache_result(ret);
++			if (!ret)
++				data->temp_raw[channel] = temp;
++			data->temp_err[channel] = ret;
++			data->temp_updated[channel] = jiffies;
+ 		}
+ 		mutex_unlock(&data->lock);
+ 		if (ret)
+@@ -610,12 +662,24 @@
+ 	case hwmon_fan:
+ 		if (channel >= N5_TACH_CHANNELS || attr != hwmon_fan_input)
+ 			return -EOPNOTSUPP;
+-		mutex_lock(&data->lock);
++		/* World-readable: a waiting reader can be killed. */
++		if (mutex_lock_killable(&data->lock))
++			return -EINTR;
+ 		if (data->dead) {
+ 			ret = -ENODEV;
++		} else if (n5_cache_fresh(data->fan_valid[channel],
++					  data->fan_updated[channel])) {
++			ret = data->fan_err[channel];
++			if (!ret)
++				*value = data->fan_rpm[channel];
+ 		} else {
+ 			n5_access_begin(data);
+ 			ret = n5_read_fan_locked(data, channel, value);
++			data->fan_valid[channel] = n5_cache_result(ret);
++			if (!ret)
++				data->fan_rpm[channel] = *value;
++			data->fan_err[channel] = ret;
++			data->fan_updated[channel] = jiffies;
+ 		}
+ 		mutex_unlock(&data->lock);
+ 		/* 0xffff: no valid tachometer reading (0 = fan stopped). */

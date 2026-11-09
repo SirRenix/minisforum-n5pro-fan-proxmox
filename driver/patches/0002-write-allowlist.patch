@@ -45,7 +45,7 @@ Last-Update: 2026-10-09
 --- a/driver-prototype/minisforum_n5_it5571.c
 +++ b/driver-prototype/minisforum_n5_it5571.c
 @@ -23,6 +23,13 @@
-  * Modified 2026-11-02 by SirRenix for the Debian/Proxmox DKMS package
+  * Modified 2026-11-09 by SirRenix for the Debian/Proxmox DKMS package
   * minisforum-n5-it5571-dkms; changes: driver/patches/ in
   * https://github.com/SirRenix/minisforum-n5pro-fan-proxmox
 + *

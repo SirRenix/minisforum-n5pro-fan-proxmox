@@ -11,3 +11,4 @@
 0006-shutdown.patch
 0007-abi-fixes.patch
 0008-dmi-n5pro-f8nab.patch
+0009-hwmon-read-cache.patch
